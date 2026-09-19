@@ -1,0 +1,27 @@
+# Build
+/target/
+
+# Datos locales y sensibles
+/data/*.mv.db
+/data/*.trace.db
+/data/geocache.json
+/data/audios_crudos/*
+/data/audios_encriptados/*
+/logs/
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# SO
+.DS_Store
+Thumbs.db
+
+# ASR local (modelos binarios y logs, no versionar)
+/tools/asr/models/
+/tools/asr/asr.log
+/tools/asr/*.tar.bz2
+
+# Secretos locales persistentes del launcher
+data/.codes-secrets.ps1
