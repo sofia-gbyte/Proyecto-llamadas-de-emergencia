@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CODES · Centro de Operaciones y Despacho de Emergencias</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+
+    <!-- ===== PANTALLA AUTH ===== -->
+    <div class="pantalla-auth" id="pantalla-auth">
+        <div class="auth-caja">
+            <h1>CODES <span>·</span></h1>
+            <p class="sub">Centro de Operaciones y Despacho de Emergencias</p>
+            <span class="modo-badge">Servidor · <span class="aviso">Autenticación segura</span></span>
+
+            <div class="auth-tabs" id="auth-tabs">
+                <button class="auth-tab activo" data-tab="login">Iniciar Sesión</button>
+                <button class="auth-tab" data-tab="registro">Registrarse</button>
+            </div>
+
+            <form class="auth-form" id="form-login">
+                <div class="campo">
+                    <label for="login-usuario">Usuario o Correo</label>
+                    <input id="login-usuario" type="text" placeholder="ej. operador@codes.cl" required autofocus />
+                </div>
+                <div class="campo">
+                    <label for="login-password">Contraseña</label>
+                    <input id="login-password" type="password" placeholder="••••••••" required />
+                </div>
+                <p class="auth-error" id="login-error" hidden></p>
+                <button class="btn-auth" type="submit">Ingresar a CODES</button>
+                <div class="auth-demo-hint">
+                    <div class="demo-label">🔐 Acceso seguro</div>
+                    <div class="row">La cuenta debe estar activa para ingresar. Si te registras, un administrador deberá activarla.</div>
+                </div>
+            </form>
+
+            <form class="auth-form" id="form-registro" hidden>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.8rem;">
+                    <div class="campo">
+                        <label for="reg-nombre">Nombre</label>
+                        <input id="reg-nombre" type="text" placeholder="Ana" required />
+                    </div>
+                    <div class="campo">
+                        <label for="reg-apellido">Apellido</label>
+                        <input id="reg-apellido" type="text" placeholder="Pérez" required />
+                    </div>
+                </div>
+                <div class="campo">
+                    <label for="reg-usuario">Usuario</label>
+                    <input id="reg-usuario" type="text" placeholder="ana.perez" required pattern="[a-zA-Z0-9._-]{3,30}" title="3-30 caracteres: letras, números, . _ -" />
+                    <small style="color:#3d4d66; font-size:0.55rem;">3-30 caracteres: letras, números, . _ -</small>
+                </div>
+                <div class="campo">
+                    <label for="reg-correo">Correo</label>
+                    <input id="reg-correo" type="email" placeholder="ana@codes.cl" required />
+                </div>
+                <div class="campo">
+                    <label for="reg-password">Contraseña</label>
+                    <input id="reg-password" type="password" placeholder="mín. 10 caracteres" required minlength="10" />
+                </div>
+                <div class="campo">
+                    <label for="reg-password-confirm">Confirmar contraseña</label>
+                    <input id="reg-password-confirm" type="password" placeholder="Repite tu contraseña" required minlength="6" />
+                </div>
+                <div class="campo">
+                    <label for="reg-institucion">Institución</label>
+                    <select id="reg-institucion" required>
+                        <option value="">Selecciona tu institución</option>
+                        <option value="bomberos">Bomberos</option>
+                        <option value="carabineros">Carabineros</option>
+                        <option value="samu">SAMU</option>
+                    </select>
+                </div>
+                <p class="auth-error" id="registro-error" hidden></p>
+                <p class="auth-success" id="registro-success" hidden></p>
+                <button class="btn-auth" type="submit">Crear cuenta</button>
+                <p style="color: #3d4d66; font-size:0.6rem; text-align:center; margin-top:0.5rem;">
+                    ⏳ Las cuentas se crean en estado <strong>pendiente</strong>.
+                    Un administrador debe activarlas.
+                </p>
+            </form>
+
+            <div class="auth-creditos">
+                <span>CODES · Consola operativa</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== ALERTA ===== -->
+    <div class="alerta-urgente" id="alerta-urgente" hidden>
+        <span class="alerta-punto"></span>
+        <span id="alerta-texto">Nueva llamada urgente</span>
+    </div>
+
+    <!-- ===== HEADER ===== -->
+    <header class="barra-estado">
+        <div class="marca">
+            <span class="marca-nombre">CODES</span>
+            <span class="marca-sub">Centro de Operaciones y Despacho de Emergencias</span>
+        </div>
+
+        <div class="metricas" id="metricas">
+            <div class="metrica-tarjeta">
+                <span class="icono">📋</span>
+                <div class="info">
+                    <span class="valor" id="m-pendientes">–</span>
+                    <span class="label">Sin asignar</span>
+                </div>
+            </div>
+            <div class="metrica-tarjeta">
+                <span class="icono">🚗</span>
+                <div class="info">
+                    <span class="valor" id="m-en-curso">–</span>
+                    <span class="label">En curso</span>
+                </div>
+            </div>
+            <div class="metrica-tarjeta urgente">
+                <span class="icono">🚨</span>
+                <div class="info">
+                    <span class="valor" id="m-urgentes">–</span>
+                    <span class="label">Urgentes</span>
+                </div>
+            </div>
+            <div class="metrica-tarjeta">
+                <span class="icono">⏱</span>
+                <div class="info">
+                    <span class="valor" id="m-tiempo">–</span>
+                    <span class="label">Respuesta</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="header-derecha">
+            <div class="sistema-estado">
+                <span class="indicador online" id="indicador-estado"></span>
+                <span id="estado-texto">Operativo</span>
+                <span class="modo-badge" id="modo-badge">Demo</span>
+                <span class="ultima-actualizacion" id="ultima-actualizacion">· --:--:--</span>
+            </div>
+
+            <div class="admin-selector" id="admin-selector">
+                <span class="label">Modo:</span>
+                <span class="btn-vista activo" aria-label="Vista administrativa general">Supervisión general</span>
+            </div>
+
+            <div class="info-usuario">
+                <span class="reloj" id="reloj">--:--:--</span>
+                <span class="rol-tag" id="rol-tag">Operador</span>
+                <span class="usuario-estado" id="usuario-estado"></span>
+                <span id="usuario-nombre" style="color:#8b9bb5; font-size:0.75rem;">usuario</span>
+                <button class="btn-accion primario btn-live" id="btn-llamada-en-vivo" type="button">🎙 Llamada en vivo</button>
+                <button class="btn-salir" id="btn-salir">Salir</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- ===== ADMIN TABS ===== -->
+    <div class="admin-tabs" id="admin-tabs">
+        <button class="admin-tab activo" data-admin-tab="incidentes">📋 Incidentes</button>
+        <button class="admin-tab" data-admin-tab="usuarios">👥 Usuarios</button>
+    </div>
+
+    <!-- ===== MAIN ===== -->
+    <main class="consola">
+        <!-- PANEL COLUMNA IZQUIERDA -->
+        <section class="panel-cola" id="panel-cola">
+            <nav class="tabs" role="tablist">
+                <button class="tab activo" data-tab="pendientes">
+                    Sin asignar <span class="contador" id="cont-pendientes">0</span>
+                </button>
+                <button class="tab" data-tab="en-curso">
+                    En curso <span class="contador" id="cont-en-curso">0</span>
+                </button>
+                <button class="tab" data-tab="cerradas">
+                    Cerradas <span class="contador" id="cont-cerradas">0</span>
+                </button>
+            </nav>
+            <div class="lista-llamadas" id="lista-llamadas">
+                <p class="estado-vacio">Cargando llamadas…</p>
+            </div>
+        </section>
+
+        <!-- PANEL DETALLE -->
+        <section class="panel-detalle" id="panel-detalle">
+            <div class="detalle-menu" id="detalle-menu">
+                <button class="detalle-menu-btn activo" data-vista="info">Información</button>
+                <button class="detalle-menu-btn" data-vista="mapa">Mapa</button>
+            </div>
+            <div id="mapa-container">
+                <div id="mapa" aria-label="Mapa de ubicación del incidente"></div>
+                <div class="mapa-overlay" id="mapa-overlay">
+                    <strong id="mapa-titulo">Sin incidente seleccionado</strong>
+                    <span id="mapa-direccion">Selecciona una llamada para mostrar su ubicación.</span>
+                    <button type="button" class="btn-accion secundario" id="btn-abrir-mapa" disabled>↗ Abrir mapa</button>
+                </div>
+            </div>
+            <div id="info-container">
+                <p class="estado-vacio">Selecciona una llamada de la cola para ver el detalle.</p>
+            </div>
+
+            <!-- GESTIÓN DE USUARIOS (ADMIN) -->
+            <div class="gestion-usuarios" id="gestion-usuarios">
+                <div class="header">
+                    <h2>👥 Gestión de Usuarios</h2>
+                    <span class="total" id="usuarios-total">Total: 0 usuarios</span>
+                </div>
+                <div id="lista-usuarios">
+                    <p class="estado-vacio">Cargando usuarios…</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- PANEL FEED -->
+        <section class="panel-feed" id="panel-feed">
+            <div class="feed-header">
+                <span>Actividad reciente</span>
+                <span class="feed-contador" id="feed-contador">0 eventos</span>
+            </div>
+            <div class="feed-lista" id="feed-lista">
+                <p class="estado-vacio" style="font-size:0.7rem; padding:1rem;">Esperando actividad…</p>
+            </div>
+        </section>
+    </main>
+
+    
+<div class="modal" id="modal-live" hidden>
+  <div class="modal-caja modal-live-caja">
+    <button class="modal-cerrar" id="live-cerrar" aria-label="Cerrar">×</button>
+    <div class="live-cabecera">
+      <div>
+        <span class="live-kicker">CODES · ASR LOCAL</span>
+        <h2>🎙 Llamada en vivo</h2>
+      </div>
+      <span class="live-status" id="live-status">Listo</span>
+    </div>
+    <p class="live-ayuda">Habla normalmente. La transcripción llega en tiempo real desde sherpa-onnx, sin enviar el audio a una API externa.</p>
+    <div class="live-transcripcion" id="live-transcripcion">Presiona <strong>Iniciar micrófono</strong> para comenzar…</div>
+    <div class="live-meta">
+      <span id="live-tiempo">00:00</span>
+      <span id="live-asr">ASR: desconectado</span>
+    </div>
+    <div class="live-acciones">
+      <button class="btn-accion primario" id="live-iniciar" type="button">🎙 Iniciar micrófono</button>
+      <button class="btn-accion peligro" id="live-detener" type="button" disabled>■ Detener y guardar</button>
+    </div>
+    <p class="live-nota" id="live-nota">Necesitas tener el servidor ASR en <code>ws://localhost:6006</code>.</p>
+  </div>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-caja">
+    <button class="modal-cerrar" id="modal-cerrar" aria-label="Cerrar">×</button>
+    <h2 id="modal-titulo">Cerrar caso</h2>
+    <div id="modal-cuerpo"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="script.js"></script>
+</body>
+</html>

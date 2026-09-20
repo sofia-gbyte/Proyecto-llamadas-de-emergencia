@@ -1,0 +1,26 @@
+# Build and generated output
+/target/
+.github/
+.vscode/
+logs/
+
+# Local app data
+/data/*.mv.db
+/data/*.trace.db
+/data/geocache.json
+/data/audios_crudos/*
+/data/audios_encriptados/*
+
+# IDE / OS
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Local ASR artifacts
+/tools/asr/models/
+/tools/asr/asr.log
+/tools/asr/*.tar.bz2
+
+# Local secrets
+/data/.codes-secrets.ps1
