@@ -73,7 +73,8 @@ python tools/streets/extract_calles_chile.py chile-latest.osm.pbf data/calles_ch
 ```
 
 El archivo PBF puede borrarse después de la extracción. La aplicación lo carga desde
-`app.calles-diccionario` al iniciar.
+`app.calles-diccionario` al iniciar. Si el archivo no existe, el proyecto conserva la
+transcripción original sin romper el flujo.
 
 ## Estructura relevante
 

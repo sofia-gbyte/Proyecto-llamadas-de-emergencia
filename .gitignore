@@ -3,6 +3,8 @@
 .github/
 .vscode/
 logs/
+__pycache__/
+*.pyc
 
 # Local app data
 /data/*.mv.db
