@@ -59,11 +59,15 @@ public class ChileStreetCorrectionService {
 
     public String correct(String transcription) {
         if (transcription == null || transcription.isBlank() || streets.isEmpty()) return transcription;
+        String clean = transcription.replaceAll("[.,;]", " ").replaceAll("\\s+", " ").trim();
+        if (clean.length() > 140) return transcription;
+
         Matcher matcher = ADDRESS.matcher(transcription);
         StringBuffer result = new StringBuffer();
         boolean changed = false;
         while (matcher.find()) {
             String original = matcher.group(2).strip();
+            if (original.split("\\s+").length > 6) continue;
             String corrected = correctStreetName(original);
             if (corrected != null && !corrected.equalsIgnoreCase(original)) {
                 matcher.appendReplacement(result, Matcher.quoteReplacement(matcher.group(1) + corrected));
