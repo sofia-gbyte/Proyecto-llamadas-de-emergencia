@@ -1870,6 +1870,114 @@ body { min-height: 100dvh; }
 .live-nota code { color:#94a3b8; }
 @media (max-width: 720px) { .btn-live { font-size:.58rem !important; padding:.4rem .5rem !important; } .live-transcripcion { min-height:170px; } }
 
+/* ===== ALINEACION VISUAL CON LA BETA ===== */
+body {
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    font-size: 1rem;
+}
+
+.pantalla-auth {
+    background: #0b0f17;
+    backdrop-filter: none;
+}
+.auth-caja {
+    max-width: 490px;
+    border-radius: 24px;
+    padding: 2.5rem 2.4rem 2.2rem;
+}
+.auth-caja h1 { font-size: 2.2rem; }
+.auth-caja .sub { margin: .2rem 0 1.6rem; font-size: .9rem; }
+.auth-tabs { padding: .25rem; }
+.auth-tab { padding: .6rem; font-size: .9rem; }
+.auth-form .campo { margin-bottom: 1.1rem; }
+.auth-form .campo label { font-size: .75rem; margin-bottom: .3rem; }
+.auth-form .campo input,
+.auth-form .campo select { padding: .7rem 1rem; font-size: 1rem; }
+.btn-auth { padding: .8rem; font-size: 1rem; }
+
+.barra-estado {
+    padding: .6rem 2rem;
+    min-height: 68px;
+}
+.marca { gap: .7rem; }
+.marca-nombre { font-size: 1.5rem; }
+.marca-sub { font-size: .78rem; }
+.sistema-estado { font-size: .8rem; }
+.sistema-estado .modo-badge { padding: .15rem .7rem; font-size: .7rem; color: #34d399; }
+.ultima-actualizacion { font-size: .75rem; }
+.info-usuario { gap: .7rem; }
+.info-usuario .rol-tag { font-size: .72rem; padding: .2rem .9rem; }
+.info-usuario .usuario-estado { font-size: .65rem; padding: .1rem .5rem; }
+.btn-salir { padding: .3rem .9rem; font-size: .75rem; }
+.reloj { font-size: .85rem; }
+
+.metricas { gap: 1rem; }
+.metrica-tarjeta {
+    padding: .5rem 1.3rem .5rem 1.1rem;
+    min-width: 105px;
+}
+.metrica-tarjeta .icono { font-size: 1.3rem; }
+.metrica-tarjeta .valor { font-size: 1.25rem; }
+.metrica-tarjeta .label { font-size: .68rem; }
+
+.consola { min-height: 0; }
+.panel-cola { width: 470px; min-width: 360px; }
+.tab { padding: .7rem .4rem; font-size: .78rem; }
+.tab .contador { padding: .1rem .55rem; font-size: .7rem; min-width: 24px; }
+.lista-llamadas { padding: .6rem .9rem 1rem; }
+.llamada-item { padding: .8rem 1rem; margin-bottom: .6rem; }
+.llamada-item .inst-estado { margin-top: .4rem; padding-top: .4rem; }
+.llamada-item .inst-estado .tag { font-size: .68rem; padding: .15rem .6rem; gap: .3rem; }
+.llamada-item .llamada-categoria { font-size: .72rem; margin: .15rem 0; }
+.llamada-id { font-size: .85rem; }
+.llamada-urgencia { font-size: .68rem; padding: .15rem .6rem; }
+.llamada-titulo { font-size: 1rem; }
+.llamada-desc { font-size: .82rem; -webkit-line-clamp: 2; }
+.llamada-footer { margin-top: .4rem; font-size: .72rem; }
+
+.detalle-menu-btn { padding: .55rem .6rem; font-size: .78rem; }
+#info-container { padding: 1rem 1.5rem; }
+.detalle-titulo { font-size: 1.4rem; }
+.detalle-id { font-size: .85rem; }
+.detalle-categoria { font-size: .75rem; margin: .3rem 0 .4rem; padding: .3rem .7rem; }
+.asignaciones-grid { gap: .6rem; margin: .6rem 0 .9rem; }
+.asignacion-card { padding: .6rem; }
+.asignacion-card .inst-nombre { font-size: .75rem; }
+.asignacion-card .estado-tag { font-size: .68rem; padding: .15rem .6rem; margin-top: .3rem; }
+.asignacion-card .operador-info { font-size: .68rem; margin-top: .3rem; }
+.timeline-estados { margin: .7rem 0 .9rem; padding: .4rem 0; }
+.timeline-paso { min-width: 60px; padding: .4rem .3rem; font-size: .65rem; gap: .15rem; }
+.timeline-paso .circulo { width: 26px; height: 26px; font-size: .7rem; }
+.timeline-paso .etiqueta { font-size: .62rem; }
+.timeline-paso .sub-etiqueta { font-size: .55rem; }
+
+.panel-feed { width: 300px; min-width: 260px; }
+.feed-item { font-size: .8rem; }
+
+@media (max-width: 900px) {
+    .panel-cola { width: 340px; min-width: 260px; }
+    .marca-sub, .ultima-actualizacion { display: none; }
+    .detalle-grid { grid-template-columns: 1fr; }
+    .asignaciones-grid { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 650px) {
+    .consola { flex-direction: column; }
+    .panel-cola {
+        width: 100%;
+        min-width: 0;
+        height: 42dvh;
+        min-height: 260px;
+        border-right: 0;
+        border-bottom: 1px solid #1a2332;
+    }
+    .panel-detalle { height: 58dvh; min-height: 380px; }
+    .barra-estado { flex-direction: column; align-items: stretch; gap: .4rem; }
+    .metricas { justify-content: space-around; }
+    .asignaciones-grid { grid-template-columns: 1fr; }
+    .banner-narracion { left: .6rem; right: .6rem; bottom: .6rem; max-width: none; }
+}
+
 
 /* ===== V1: llamadas reales integradas ===== */
 .detalle-resumen {
