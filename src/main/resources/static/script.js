@@ -20,6 +20,45 @@ let feedEventos = [];
 
 const $ = (id) => document.getElementById(id);
 
+function aplicarTema(tema) {
+  const temaClaro = tema === 'claro';
+
+  document.body.classList.toggle('tema-claro', temaClaro);
+
+  const boton = $('btn-tema');
+  if (!boton) return;
+
+  boton.textContent = temaClaro ? '☾ Oscuro' : '☼ Claro';
+  boton.setAttribute(
+    'aria-label',
+    temaClaro ? 'Cambiar a tema oscuro' : 'Cambiar a tema claro'
+  );
+}
+
+function inicializarTema() {
+  let tema = 'oscuro';
+
+  try {
+    tema = localStorage.getItem('codes-tema') || tema;
+  } catch (error) {
+  }
+
+  aplicarTema(tema);
+
+  $('btn-tema')?.addEventListener('click', () => {
+    const nuevoTema = document.body.classList.contains('tema-claro')
+      ? 'oscuro'
+      : 'claro';
+
+    aplicarTema(nuevoTema);
+
+    try {
+      localStorage.setItem('codes-tema', nuevoTema);
+    } catch (error) {
+    }
+  });
+}
+
 function escapeHtml(v) {
   return String(v ?? '').replace(
     /[&<>'"]/g,
@@ -3031,6 +3070,8 @@ async function detenerLive(
 document.addEventListener(
   'DOMContentLoaded',
   () => {
+
+    inicializarTema();
 
     document
       .querySelectorAll(

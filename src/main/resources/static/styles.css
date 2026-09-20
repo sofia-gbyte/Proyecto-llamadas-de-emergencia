@@ -1954,6 +1954,119 @@ body {
 .panel-feed { width: 300px; min-width: 260px; }
 .feed-item { font-size: .8rem; }
 
+.btn-tema {
+    border: 1px solid #2f405a;
+    border-radius: 40px;
+    padding: .35rem .7rem;
+    background: #141b26;
+    color: #c8d0dc;
+    font: 600 .7rem 'IBM Plex Sans', sans-serif;
+    cursor: pointer;
+    transition: background .2s, border-color .2s, color .2s;
+    white-space: nowrap;
+}
+.btn-tema:hover {
+    border-color: #00c8b0;
+    color: #00c8b0;
+}
+
+body.tema-claro {
+    background: #eef3f1;
+    color: #17252b;
+}
+body.tema-claro .barra-estado,
+body.tema-claro .panel-cola,
+body.tema-claro .panel-feed {
+    background: #ffffff;
+    border-color: #d5e0df;
+}
+body.tema-claro .consola,
+body.tema-claro .panel-detalle,
+body.tema-claro #info-container,
+body.tema-claro .gestion-usuarios {
+    background: #eef3f1;
+}
+body.tema-claro .tabs,
+body.tema-claro .admin-tabs,
+body.tema-claro .detalle-menu {
+    background: #e4ecea;
+    border-color: #d5e0df;
+}
+body.tema-claro .tab.activo,
+body.tema-claro .admin-tab.activo,
+body.tema-claro .detalle-menu-btn.activo {
+    background: #ffffff;
+    color: #17252b;
+}
+body.tema-claro .tab,
+body.tema-claro .admin-tab,
+body.tema-claro .detalle-menu-btn,
+body.tema-claro .sistema-estado,
+body.tema-claro .reloj,
+body.tema-claro .marca-sub,
+body.tema-claro .ultima-actualizacion {
+    color: #587078;
+}
+body.tema-claro .marca-nombre,
+body.tema-claro .detalle-titulo,
+body.tema-claro .valor,
+body.tema-claro .llamada-titulo,
+body.tema-claro .detalle-grid .valor,
+body.tema-claro .historial-item .accion {
+    color: #17252b;
+}
+body.tema-claro .metrica-tarjeta,
+body.tema-claro .llamada-item,
+body.tema-claro .usuario-card,
+body.tema-claro .asignacion-card,
+body.tema-claro .historial-container,
+body.tema-claro .detalle-desc {
+    background: #ffffff;
+    border-color: #d5e0df;
+}
+body.tema-claro .llamada-item:hover { background: #f5faf8; }
+body.tema-claro .llamada-item.seleccionada { background: #e7f8f4; }
+body.tema-claro .llamada-item .inst-estado,
+body.tema-claro .historial-item { border-color: #e3ebea; }
+body.tema-claro .llamada-desc,
+body.tema-claro .llamada-footer,
+body.tema-claro .detalle-id,
+body.tema-claro .detalle-grid .label,
+body.tema-claro .operador-info,
+body.tema-claro .estado-vacio { color: #6b8389; }
+body.tema-claro .btn-tema { background: #e7f8f4; color: #087f72; border-color: #7acfc2; }
+body.tema-claro .auth-caja,
+body.tema-claro .modal-caja,
+body.tema-claro .alerta-urgente,
+body.tema-claro .mapa-overlay,
+body.tema-claro .panel-guion,
+body.tema-claro .banner-narracion {
+    background: #ffffff;
+    border-color: #c9d9d7;
+    color: #17252b;
+}
+body.tema-claro .pantalla-auth { background: #eef3f1; }
+body.tema-claro .auth-tabs,
+body.tema-claro .auth-form .campo input,
+body.tema-claro .auth-form .campo select,
+body.tema-claro .panel-guion .progreso,
+body.tema-claro .panel-guion .btn-guion,
+body.tema-claro .live-transcripcion { background: #edf4f2; }
+body.tema-claro .auth-form .campo input,
+body.tema-claro .auth-form .campo select,
+body.tema-claro .modal textarea { color: #17252b; border-color: #c9d9d7; }
+body.tema-claro .auth-caja .sub,
+body.tema-claro .auth-form .campo label,
+body.tema-claro .auth-creditos,
+body.tema-claro .auth-demo-hint,
+body.tema-claro .live-ayuda,
+body.tema-claro .live-nota { color: #587078; }
+body.tema-claro .feed-header { border-color: #d5e0df; color: #587078; }
+body.tema-claro .feed-item { border-color: #e3ebea; }
+body.tema-claro .feed-item .mensaje { color: #587078; }
+body.tema-claro .mapa-overlay strong,
+body.tema-claro .banner-narracion h3 { color: #17252b; }
+
 @media (max-width: 900px) {
     .panel-cola { width: 340px; min-width: 260px; }
     .marca-sub, .ultima-actualizacion { display: none; }
