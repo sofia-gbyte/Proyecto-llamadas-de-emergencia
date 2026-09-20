@@ -70,9 +70,26 @@ public class ChileStreetCorrectionService {
                 changed = true;
             }
         }
-        if (!changed) return transcription;
-        matcher.appendTail(result);
-        return result.toString();
+        if (changed) {
+            matcher.appendTail(result);
+            return result.toString();
+        }
+
+        String fallback = fallbackStreetCandidate(transcription);
+        return fallback == null ? transcription : fallback;
+    }
+
+    private String fallbackStreetCandidate(String transcription) {
+        String clean = transcription.replaceAll("[.,;]", " ").replaceAll("\\s+", " ").trim();
+        if (clean.isBlank()) return null;
+        if (clean.split("\\s+").length > 6) return null;
+        String lower = clean.toLowerCase(Locale.ROOT);
+        if (lower.contains("ayuda") || lower.contains("hay") || lower.contains("necesito")
+                || lower.contains("persona") || lower.contains("hombre") || lower.contains("mujer")) {
+            return null;
+        }
+        String corrected = correctStreetName(clean);
+        return corrected == null ? null : corrected;
     }
 
     String correctStreetName(String candidate) {
