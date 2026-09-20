@@ -1556,6 +1556,7 @@
         .mapa-overlay strong { font-size:.72rem; color:#e8edf5; }
         .mapa-overlay span { font-size:.6rem; color:#8b9bb5; }
         .mapa-overlay .btn-accion { align-self:flex-start; margin-top:.25rem; padding:.28rem .7rem; font-size:.62rem; }
+        .mapa-overlay #ubicacion-estado { color:#78a9d8; line-height:1.35; }
         .leaflet-control-attribution { font-size:8px !important; }
 
 

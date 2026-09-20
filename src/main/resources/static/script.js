@@ -5,6 +5,8 @@ const REFRESCO_MS = 8000;
 let sesion = null;
 let mapa = null;
 let marcador = null;
+let marcadorDispositivo = null;
+let precisionDispositivo = null;
 let llamadaSeleccionada = null;
 let vistaActual = 'info';
 let colaActual = 'pendientes';
@@ -504,6 +506,72 @@ function initMapa() {
       }
     )
     .addTo(mapa);
+
+  $('btn-mi-ubicacion')?.addEventListener(
+    'click',
+    mostrarUbicacionDispositivo,
+    { once: true }
+  );
+}
+
+function mostrarUbicacionDispositivo() {
+  const estado = $('ubicacion-estado');
+  const boton = $('btn-mi-ubicacion');
+
+  if (!navigator.geolocation) {
+    if (estado) estado.textContent = 'Geolocalización no disponible en este navegador.';
+    return;
+  }
+
+  initMapa();
+  if (!mapa) return;
+
+  if (estado) estado.textContent = 'Solicitando ubicación aproximada...';
+  if (boton) boton.disabled = true;
+
+  navigator.geolocation.getCurrentPosition(
+    posicion => {
+      const latLng = [
+        posicion.coords.latitude,
+        posicion.coords.longitude
+      ];
+      const accuracy = Math.max(posicion.coords.accuracy || 100, 40);
+
+      if (marcadorDispositivo) mapa.removeLayer(marcadorDispositivo);
+      if (precisionDispositivo) mapa.removeLayer(precisionDispositivo);
+
+      precisionDispositivo = L.circle(latLng, {
+        radius: accuracy,
+        color: '#4da3ff',
+        fillColor: '#4da3ff',
+        fillOpacity: 0.14,
+        weight: 1.5
+      }).addTo(mapa);
+
+      marcadorDispositivo = L.circleMarker(latLng, {
+        radius: 8,
+        color: '#ffffff',
+        weight: 3,
+        fillColor: '#1683ff',
+        fillOpacity: 1
+      })
+        .addTo(mapa)
+        .bindPopup(`Tu ubicación aproximada<br>Precisión: ${Math.round(accuracy)} m`);
+
+      mapa.setView(latLng, Math.max(mapa.getZoom(), 15));
+      if (estado) estado.textContent = `Ubicación aproximada · margen de ${Math.round(accuracy)} m`;
+      if (boton) boton.disabled = false;
+    },
+    () => {
+      if (estado) estado.textContent = 'No se pudo obtener la ubicación del dispositivo.';
+      if (boton) boton.disabled = false;
+    },
+    {
+      enableHighAccuracy: false,
+      timeout: 8000,
+      maximumAge: 300000
+    }
+  );
 }
 
 function actualizarMapa(l) {
