@@ -58,6 +58,23 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 El directorio `tools/asr` contiene el script de instalación y arranque del modelo ASR.
 
+## Corrección de calles chilenas
+
+El ASR se mantiene sin cambios. Después de transcribir, CODES corrige nombres de calles
+con coincidencia fonética y difusa contra un diccionario de OpenStreetMap. El archivo es
+opcional: si no existe, se conserva el texto original.
+
+Para generarlo en Windows:
+
+```powershell
+python -m pip install osmium
+Invoke-WebRequest https://download.geofabrik.de/south-america/chile-latest.osm.pbf -OutFile chile-latest.osm.pbf
+python tools/streets/extract_calles_chile.py chile-latest.osm.pbf data/calles_chile.txt
+```
+
+El archivo PBF puede borrarse después de la extracción. La aplicación lo carga desde
+`app.calles-diccionario` al iniciar.
+
 ## Estructura relevante
 
 ```text

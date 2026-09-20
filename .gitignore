@@ -8,6 +8,7 @@ logs/
 /data/*.mv.db
 /data/*.trace.db
 /data/geocache.json
+/data/calles_chile.txt
 /data/audios_crudos/*
 /data/audios_encriptados/*
 
@@ -21,6 +22,7 @@ Thumbs.db
 /tools/asr/models/
 /tools/asr/asr.log
 /tools/asr/*.tar.bz2
+*.osm.pbf
 
 # Local secrets
 /data/.codes-secrets.ps1

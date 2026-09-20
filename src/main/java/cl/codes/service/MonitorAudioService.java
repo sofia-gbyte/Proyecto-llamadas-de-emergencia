@@ -36,6 +36,7 @@ public class MonitorAudioService {
     private final Path encryptedAudioFolder;
     private final TranscriptionService transcriptionService;
     private final GeocoderService geocoderService;
+    private final ChileStreetCorrectionService streetCorrection;
     private final SecurityService securityService;
     private final CallRepository repo;
     private final ObjectMapper mapper = new ObjectMapper();
@@ -45,6 +46,7 @@ public class MonitorAudioService {
             @Value("${app.audio-encriptado-dir}") String encryptedAudioDir,
             TranscriptionService transcriptionService,
             GeocoderService geocoderService,
+            ChileStreetCorrectionService streetCorrection,
             SecurityService securityService,
             CallRepository repo
     ) throws IOException {
@@ -52,6 +54,7 @@ public class MonitorAudioService {
         this.encryptedAudioFolder = Path.of(encryptedAudioDir);
         this.transcriptionService = transcriptionService;
         this.geocoderService = geocoderService;
+        this.streetCorrection = streetCorrection;
         this.securityService = securityService;
         this.repo = repo;
         Files.createDirectories(rawAudioFolder);
@@ -97,7 +100,7 @@ public class MonitorAudioService {
     private void processAudio(Path audioPath) {
         log.info("New audio detected: {}", audioPath);
         try {
-            String transcription = transcriptionService.transcribe(audioPath);
+            String transcription = streetCorrection.correct(transcriptionService.transcribe(audioPath));
             log.info("Transcription: {}", transcription);
 
             Classifier.ResultadoClasificacion classification = Classifier.classifyCall(transcription);

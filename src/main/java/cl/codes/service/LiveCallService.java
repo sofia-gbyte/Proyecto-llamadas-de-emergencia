@@ -23,6 +23,7 @@ public class LiveCallService {
 
     private final CallRepository repo;
     private final GeocoderService geocoder;
+    private final ChileStreetCorrectionService streetCorrection;
     private final SecurityService securityService;
     private final OperationalSummaryService operationalSummaryService;
     private final ObjectMapper mapper = new ObjectMapper();
@@ -31,12 +32,14 @@ public class LiveCallService {
     public LiveCallService(
             CallRepository repo,
             GeocoderService geocoder,
+            ChileStreetCorrectionService streetCorrection,
             SecurityService securityService,
             OperationalSummaryService operationalSummaryService,
             @org.springframework.beans.factory.annotation.Value("${app.audio-encriptado-dir}") String encryptedFolder
     ) throws IOException {
         this.repo = repo;
         this.geocoder = geocoder;
+        this.streetCorrection = streetCorrection;
         this.securityService = securityService;
         this.operationalSummaryService = operationalSummaryService;
         this.encryptedFolder = Path.of(encryptedFolder);
@@ -48,7 +51,7 @@ public class LiveCallService {
     }
 
     public Call create(String transcription, MultipartFile audio, String user, String ip, Double operatorLatitude, Double operatorLongitude) throws Exception {
-        String texto = cleanTranscription(transcription);
+        String texto = streetCorrection.correct(cleanTranscription(transcription));
         if (texto.isBlank()) throw new IllegalArgumentException("The transcription is empty.");
         Classifier.ResultadoClasificacion classification = Classifier.classifyCall(texto);
         GeocoderService.Coordinates coords = geocoder.geocode(classification.direccion(), texto, operatorLatitude, operatorLongitude);
