@@ -248,7 +248,7 @@ async function iniciarSesion(e) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          nombreUsuario,
+          username: nombreUsuario,
           password
         })
       }
@@ -273,7 +273,7 @@ async function iniciarSesion(e) {
     actualizarUsuarioUI();
 
     registrarEvento(
-      `Inició sesión como ${d.nombreUsuario}.`,
+      `Inició sesión como ${d.username}.`,
       'admin'
     );
 
