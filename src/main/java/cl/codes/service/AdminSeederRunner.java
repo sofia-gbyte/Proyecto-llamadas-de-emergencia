@@ -32,10 +32,6 @@ public class AdminSeederRunner implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        if (repo.count() > 0) {
-            return;
-        }
-
         if (adminUsername.isBlank() || adminPassword.isBlank()) {
             log.warn("No users are registered and the environment variables CODES_ADMIN_USER and CODES_ADMIN_PASSWORD are not defined.");
             return;
@@ -43,6 +39,17 @@ public class AdminSeederRunner implements CommandLineRunner {
 
         if (adminPassword.length() < 12) {
             log.warn("The initial admin password is shorter than 12 characters. Consider using a longer one.");
+        }
+
+        var existingAdmin = repo.findByUsername(adminUsername);
+        if (existingAdmin.isPresent()) {
+            User admin = existingAdmin.get();
+            admin.setPasswordHash(securityService.hashPassword(adminPassword));
+            admin.setRole("administrator");
+            admin.setActive(true);
+            repo.save(admin);
+            log.info("Administrator user '{}' credentials synchronized from environment variables.", adminUsername);
+            return;
         }
 
         User admin = new User();
