@@ -2,6 +2,35 @@
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
+$javaInstallRoots = @(
+    'C:\Program Files\Microsoft\jdk-21.0.12.101-hotspot\bin',
+    'C:\Program Files\Microsoft\jdk-21\bin',
+    'C:\Program Files\Java\jdk-21\bin',
+    'C:\Program Files\Java\jdk-26\bin',
+    'C:\Program Files\Java\latest\bin',
+    'C:\Program Files\Eclipse Adoptium\bin',
+    'C:\Program Files\OpenJDK\bin',
+    'C:\Program Files\Amazon Corretto\bin'
+)
+foreach ($javaDir in $javaInstallRoots) {
+    if (Test-Path $javaDir) {
+        $env:Path = "$javaDir;$env:Path"
+    }
+}
+
+$mavenInstallRoots = @(
+    'C:\Users\Basti\maven\apache-maven-3.9.9\bin',
+    'C:\Program Files\Apache\Maven\apache-maven-3.9.16\bin',
+    'C:\Program Files\Apache\Maven\apache-maven-3.9.15\bin',
+    (Join-Path $HOME '.maven\apache-maven-3.9.9\bin'),
+    (Join-Path $HOME '.maven\maven-3.9.15\bin')
+)
+foreach ($mavenDir in $mavenInstallRoots) {
+    if ($mavenDir -and (Test-Path $mavenDir)) {
+        $env:Path = "$mavenDir;$env:Path"
+    }
+}
+
 function Test-PortOpen {
     param([string]$HostName = '127.0.0.1', [int]$Port)
     try {
@@ -16,36 +45,77 @@ function Test-PortOpen {
 }
 
 function Get-JavaInfo {
-    $javaCmd = Get-Command java -ErrorAction SilentlyContinue
-    if ($javaCmd) {
+    function Parse-JavaMajorVersion([string]$Text) {
+        if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
+
+        $match = [regex]::Match($Text, 'version\s+"?(\d+)')
+        if ($match.Success) {
+            return [int]$match.Groups[1].Value
+        }
+
+        $fallback = [regex]::Match($Text, '(\d+)')
+        if ($fallback.Success) {
+            return [int]$fallback.Groups[1].Value
+        }
+
+        return $null
+    }
+
+    function Get-JavaMajorVersion([string]$JavaPath) {
         try {
-            $output = & $javaCmd.Source -version 2>&1 | Select-Object -First 1
-            if ($output -match 'version\s+"?(\d+)(?:\.(\d+))?') {
-                return @{ Exists = $true; Version = [int]$Matches[1]; Path = $javaCmd.Source }
+            $fileVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($JavaPath).ProductVersion
+            $majorVersion = Parse-JavaMajorVersion -Text $fileVersion
+            if ($majorVersion) { return $majorVersion }
+        }
+        catch {}
+
+        try {
+            $versionOutput = cmd.exe /d /c "`"$JavaPath`" -version 2^>^&1"
+            return Parse-JavaMajorVersion -Text ($versionOutput -join ' ')
+        }
+        catch {
+            return $null
+        }
+    }
+
+    $explicitCandidates = @(
+        'C:\Program Files\Microsoft\jdk-21.0.12.101-hotspot\bin\java.exe',
+        'C:\Program Files\Microsoft\jdk-21\bin\java.exe',
+        'C:\Program Files\Java\jdk-21\bin\java.exe',
+        'C:\Program Files\Java\jdk-26\bin\java.exe',
+        'C:\Program Files\Java\latest\bin\java.exe',
+        'C:\Program Files\Eclipse Adoptium\jdk-21\bin\java.exe',
+        'C:\Program Files\OpenJDK\bin\java.exe',
+        'C:\Program Files\Amazon Corretto\bin\java.exe'
+    )
+
+    foreach ($javaExe in $explicitCandidates | Where-Object { $_ -and (Test-Path $_) }) {
+        try {
+            $majorVersion = Get-JavaMajorVersion -JavaPath $javaExe
+            if ($majorVersion) {
+                $javaDir = Split-Path -Parent $javaExe
+                if (-not ($env:Path -split ';' | Where-Object { $_ -eq $javaDir })) {
+                    $env:Path = "$javaDir;$env:Path"
+                }
+                return @{ Exists = $true; Version = [int]$majorVersion; Path = $javaExe }
             }
         }
         catch {}
     }
 
-    $javaHome = @(
-        $env:JAVA_HOME,
-        'C:\Program Files\Microsoft\jdk-21',
-        'C:\Program Files\Java\jdk-21',
-        'C:\Program Files\Microsoft\jdk-17',
-        'C:\Program Files\Java\jdk-17'
-    ) | Where-Object { $_ }
-
-    foreach ($candidate in $javaHome) {
-        $javaExe = Join-Path $candidate 'bin\java.exe'
-        if (Test-Path $javaExe) {
-            try {
-                $output = & $javaExe -version 2>&1 | Select-Object -First 1
-                if ($output -match 'version\s+"?(\d+)(?:\.(\d+))?') {
-                    return @{ Exists = $true; Version = [int]$Matches[1]; Path = $javaExe }
+    $javaCmd = Get-Command java -ErrorAction SilentlyContinue
+    if ($javaCmd) {
+        try {
+            $majorVersion = Get-JavaMajorVersion -JavaPath $javaCmd.Source
+            if ($majorVersion) {
+                $javaDir = Split-Path -Parent $javaCmd.Source
+                if (-not ($env:Path -split ';' | Where-Object { $_ -eq $javaDir })) {
+                    $env:Path = "$javaDir;$env:Path"
                 }
+                return @{ Exists = $true; Version = [int]$majorVersion; Path = $javaCmd.Source }
             }
-            catch {}
         }
+        catch {}
     }
 
     return @{ Exists = $false; Version = 0; Path = $null }
@@ -79,9 +149,9 @@ foreach ($candidate in $mavenCandidates) {
     }
 }
 if (-not $mavenBin) {
-    $mavenBin = (Get-Command mvn -ErrorAction SilentlyContinue)?.Source
-    if ($mavenBin) {
-        $mavenBin = Split-Path -Parent $mavenBin
+    $mvnCommand = Get-Command mvn -ErrorAction SilentlyContinue
+    if ($mvnCommand) {
+        $mavenBin = Split-Path -Parent $mvnCommand.Source
     }
 }
 if ($mavenBin) {
