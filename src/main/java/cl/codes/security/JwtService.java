@@ -1,4 +1,4 @@
-﻿package cl.codes.security;
+package cl.codes.security;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;

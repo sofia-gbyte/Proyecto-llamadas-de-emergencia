@@ -1,4 +1,4 @@
-﻿package cl.codes.controller.dto;
+package cl.codes.controller.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;

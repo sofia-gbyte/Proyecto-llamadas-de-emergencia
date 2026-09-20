@@ -1,4 +1,4 @@
-﻿package cl.codes.repository;
+package cl.codes.repository;
 
 import cl.codes.model.User;
 import org.springframework.data.jpa.repository.JpaRepository;

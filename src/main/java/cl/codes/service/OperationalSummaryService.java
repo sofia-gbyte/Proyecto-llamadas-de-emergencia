@@ -1,4 +1,4 @@
-﻿package cl.codes.service;
+package cl.codes.service;
 
 import cl.codes.classifier.Classifier;
 import org.springframework.stereotype.Service;

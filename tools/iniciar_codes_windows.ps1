@@ -1,4 +1,9 @@
-﻿$ErrorActionPreference = 'Stop'
+﻿param(
+    [string]$JavaPath,
+    [string]$MavenBin
+)
+
+$ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
@@ -121,8 +126,20 @@ function Get-JavaInfo {
     return @{ Exists = $false; Version = 0; Path = $null }
 }
 
-# Java: no se instala desde aquí, solo se valida.
-$javaInfo = Get-JavaInfo
+# Java: el .bat ya resuelve la ruta; la detección interna queda como respaldo.
+if ($JavaPath -and (Test-Path $JavaPath)) {
+    $fileVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($JavaPath).ProductVersion
+    $javaVersionMatch = [regex]::Match($fileVersion, '(\d+)')
+    $javaInfo = @{
+        Exists = $javaVersionMatch.Success
+        Version = if ($javaVersionMatch.Success) { [int]$javaVersionMatch.Groups[1].Value } else { 0 }
+        Path = $JavaPath
+    }
+    $env:Path = "$(Split-Path -Parent $JavaPath);$env:Path"
+} else {
+    $javaInfo = Get-JavaInfo
+}
+
 if (-not $javaInfo.Exists) {
     Write-Host 'Java 21 no encontrado. Instala JDK 21 antes de arrancar CODES.' -ForegroundColor Red
     Read-Host 'Presiona ENTER para cerrar'
@@ -134,28 +151,32 @@ if ($javaInfo.Version -lt 21) {
     exit 1
 }
 
-# Maven: se valida y se agrega al PATH si ya existe.
+# Maven: el .bat ya resuelve la ruta; la detección interna queda como respaldo.
 $mavenCandidates = @(
     (Join-Path $HOME '.maven\apache-maven-3.9.9\bin'),
     (Join-Path $HOME '.maven\maven-3.9.15\bin'),
+    (Join-Path $HOME '.maven\maven-3.9.16\bin'),
+    (Join-Path $HOME '.maven\maven-3.9.16\bin'),
     'C:\Program Files\Apache\Maven\apache-maven-3.9.16\bin',
     'C:\Users\Basti\maven\apache-maven-3.9.9\bin'
 )
-$mavenBin = $null
-foreach ($candidate in $mavenCandidates) {
-    if ($candidate -and (Test-Path (Join-Path $candidate 'mvn.cmd'))) {
-        $mavenBin = $candidate
-        break
+$mavenBinResolved = $MavenBin
+if (-not $mavenBinResolved) {
+    foreach ($candidate in $mavenCandidates) {
+        if ($candidate -and (Test-Path (Join-Path $candidate 'mvn.cmd'))) {
+            $mavenBinResolved = $candidate
+            break
+        }
     }
 }
-if (-not $mavenBin) {
+if (-not $mavenBinResolved) {
     $mvnCommand = Get-Command mvn -ErrorAction SilentlyContinue
     if ($mvnCommand) {
-        $mavenBin = Split-Path -Parent $mvnCommand.Source
+        $mavenBinResolved = Split-Path -Parent $mvnCommand.Source
     }
 }
-if ($mavenBin) {
-    $env:Path += ";$mavenBin"
+if ($mavenBinResolved) {
+    $env:Path += ";$mavenBinResolved"
 }
 if (-not (Get-Command mvn -ErrorAction SilentlyContinue)) {
     Write-Host 'Maven no está instalado ni disponible en PATH. Instálalo y vuelve a ejecutar CODES.' -ForegroundColor Red

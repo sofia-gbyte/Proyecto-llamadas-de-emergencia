@@ -1,4 +1,4 @@
-﻿package cl.codes.controller.dto;
+package cl.codes.controller.dto;
 
 import cl.codes.model.Call;
 import com.fasterxml.jackson.databind.ObjectMapper;

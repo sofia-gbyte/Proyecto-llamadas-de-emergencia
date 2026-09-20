@@ -1,4 +1,4 @@
-﻿package cl.codes.service;
+package cl.codes.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -33,8 +33,8 @@ import java.util.*;
 @Service
 public class GeocoderService {
 
-    public record Coordenadas(Double lat, Double lng) {
-        static final Coordenadas VACIA = new Coordenadas(null, null);
+    public record Coordinates(Double lat, Double lng) {
+        static final Coordinates EMPTY = new Coordinates(null, null);
     }
 
     private record Candidato(double lat, double lng, String nombre, String tipo, String comuna) {}
@@ -56,12 +56,12 @@ public class GeocoderService {
         this.userAgent = userAgent;
     }
 
-    public Coordenadas geocodificar(String direccion) {
-        return geocodificar(direccion, null);
+    public Coordinates geocode(String address) {
+        return geocode(address, null);
     }
 
-    public Coordenadas geocodificar(String direccion, String contexto) {
-        return geocodificar(direccion, contexto, null, null);
+    public Coordinates geocode(String address, String context) {
+        return geocode(address, context, null, null);
     }
 
     /**
@@ -69,53 +69,53 @@ public class GeocoderService {
      * se usa únicamente como señal secundaria para ordenar candidatos del mapa.
      * No se guarda en la llamada ni sustituye la ubicación hablada.
      */
-    public Coordenadas geocodificar(String direccion, String contexto, Double latitudOrigen, Double longitudOrigen) {
+    public Coordinates geocode(String address, String context, Double sourceLatitude, Double sourceLongitude) {
         LinkedHashSet<String> consultas = new LinkedHashSet<>();
-        if (direccion != null && !direccion.isBlank()) consultas.add(direccion.strip());
-        if (contexto != null && !contexto.isBlank()) {
-            String ubicacion = extraerContextoUbicacion(contexto);
+        if (address != null && !address.isBlank()) consultas.add(address.strip());
+        if (context != null && !context.isBlank()) {
+            String ubicacion = extraerContextoUbicacion(context);
             if (ubicacion != null && !ubicacion.isBlank()) consultas.add(ubicacion);
-            String lugar = extraerLugar(contexto);
+            String lugar = extraerLugar(context);
             if (lugar != null && !lugar.isBlank()) consultas.add(lugar);
         }
 
         // 1. Intento rápido: Nominatim con la consulta normal.
         for (String consulta : consultas) {
-            Coordenadas c = geocodificarNominatim(consulta, null, null);
+            Coordinates c = geocodeNominatim(consulta, null, null);
             if (c.lat() != null) return c;
         }
 
         // 2. Buscar el territorio mencionado (por ejemplo Providencia) y usarlo
         //    como contexto espacial para las búsquedas aproximadas.
-        String territorio = extraerTerritorio(contexto, direccion);
-        Coordenadas centroTerritorio = territorio == null ? Coordenadas.VACIA :
-                geocodificarNominatim(territorio + ", Chile", null, null);
+        String territorio = extraerTerritorio(context, address);
+        Coordinates centroTerritorio = territorio == null ? Coordinates.EMPTY :
+            geocodeNominatim(territorio + ", Chile", null, null);
 
         // 3. Photon/OpenStreetMap: devuelve múltiples candidatos y tolera mejor
         //    pequeñas diferencias de escritura del ASR.
         for (String consulta : consultas) {
-            Coordenadas centroBusqueda = (latitudOrigen != null && longitudOrigen != null)
-                    ? new Coordenadas(latitudOrigen, longitudOrigen) : centroTerritorio;
+                Coordinates centroBusqueda = (sourceLatitude != null && sourceLongitude != null)
+                    ? new Coordinates(sourceLatitude, sourceLongitude) : centroTerritorio;
             List<Candidato> candidatos = buscarPhoton(consulta, centroBusqueda);
-            Candidato mejor = elegirMejor(candidatos, consulta, territorio, latitudOrigen, longitudOrigen);
+                Candidato mejor = elegirMejor(candidatos, consulta, territorio, sourceLatitude, sourceLongitude);
             if (mejor != null) {
-                return new Coordenadas(mejor.lat(), mejor.lng());
+                return new Coordinates(mejor.lat(), mejor.lng());
             }
         }
 
         // 4. Último intento: Nominatim con el territorio explícito.
         if (territorio != null) {
             for (String consulta : consultas) {
-                Coordenadas c = geocodificarNominatim(consulta + ", " + territorio, null, null);
+                Coordinates c = geocodeNominatim(consulta + ", " + territorio, null, null);
                 if (c.lat() != null) return c;
             }
         }
-        return Coordenadas.VACIA;
+        return Coordinates.EMPTY;
     }
 
-    private Coordenadas geocodificarNominatim(String direccion, Double lat, Double lon) {
-        Map<String, Coordenadas> cache = cargarCache();
-        String consulta = normalizarConsulta(direccion);
+    private Coordinates geocodeNominatim(String address, Double lat, Double lon) {
+        Map<String, Coordinates> cache = cargarCache();
+        String consulta = normalizarConsulta(address);
         String cacheKey = "nominatim:" + consulta + (lat == null ? "" : "@" + lat + "," + lon);
         if (cache.containsKey(cacheKey)) return cache.get(cacheKey);
         try {
@@ -126,21 +126,21 @@ public class GeocoderService {
                     .header("User-Agent", userAgent)
                     .timeout(Duration.ofSeconds(6)).GET().build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) return Coordenadas.VACIA;
+            if (resp.statusCode() != 200) return Coordinates.EMPTY;
             JsonNode arr = mapper.readTree(resp.body());
             if (arr.isArray() && !arr.isEmpty()) {
                 // En Nominatim ya vienen ordenados por relevancia.
                 JsonNode n = arr.get(0);
-                Coordenadas c = new Coordenadas(n.get("lat").asDouble(), n.get("lon").asDouble());
+                Coordinates c = new Coordinates(n.get("lat").asDouble(), n.get("lon").asDouble());
                 cache.put(cacheKey, c);
                 guardarCache(cache);
                 return c;
             }
         } catch (Exception ignored) {}
-        return Coordenadas.VACIA;
+        return Coordinates.EMPTY;
     }
 
-    private List<Candidato> buscarPhoton(String consulta, Coordenadas centro) {
+    private List<Candidato> buscarPhoton(String consulta, Coordinates centro) {
         List<Candidato> resultado = new ArrayList<>();
         try {
             StringBuilder url = new StringBuilder("https://photon.komoot.io/api/?q=")
@@ -319,14 +319,14 @@ public class GeocoderService {
         return t;
     }
 
-    private Map<String, Coordenadas> cargarCache() {
-        Map<String, Coordenadas> resultado = new HashMap<>();
+    private Map<String, Coordinates> cargarCache() {
+        Map<String, Coordinates> resultado = new HashMap<>();
         if (!Files.exists(cachePath)) return resultado;
         try {
             JsonNode raiz = mapper.readTree(Files.readString(cachePath));
             raiz.fields().forEachRemaining(entry -> {
                 JsonNode v = entry.getValue();
-                resultado.put(entry.getKey(), new Coordenadas(
+                resultado.put(entry.getKey(), new Coordinates(
                         v.has("lat") ? v.get("lat").asDouble() : null,
                         v.has("lng") ? v.get("lng").asDouble() : null));
             });
@@ -334,7 +334,7 @@ public class GeocoderService {
         return resultado;
     }
 
-    private void guardarCache(Map<String, Coordenadas> cache) {
+    private void guardarCache(Map<String, Coordinates> cache) {
         try {
             Files.createDirectories(cachePath.getParent());
             Map<String, Map<String, Double>> plano = new HashMap<>();

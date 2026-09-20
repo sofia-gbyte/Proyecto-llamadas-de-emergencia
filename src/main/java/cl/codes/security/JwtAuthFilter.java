@@ -1,4 +1,4 @@
-﻿package cl.codes.security;
+package cl.codes.security;
 
 import cl.codes.model.User;
 import cl.codes.repository.UserRepository;

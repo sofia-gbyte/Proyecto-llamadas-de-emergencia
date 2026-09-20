@@ -1,4 +1,4 @@
-﻿package cl.codes.controller;
+package cl.codes.controller;
 
 import cl.codes.controller.dto.LoginRequest;
 import cl.codes.controller.dto.LoginResponse;

@@ -1,7 +1,7 @@
-﻿package cl.codes.controller.dto;
+package cl.codes.controller.dto;
 
 import jakarta.validation.constraints.NotBlank;
 
-public record CerrarRequest(@NotBlank String comentario) {}
+public record CloseRequest(@NotBlank String comment) {}
 
 

@@ -1,4 +1,4 @@
-﻿package cl.codes.service;
+package cl.codes.service;
 
 import cl.codes.classifier.Classifier;
 import cl.codes.model.Call;
@@ -88,8 +88,8 @@ public class LiveCallService {
     }
 
     private String cleanTranscription(String value) {
-        if (valor == null || valor.isBlank()) return "";
-        String texto = valor.strip();
+        if (value == null || value.isBlank()) return "";
+        String texto = value.strip();
         try {
             com.fasterxml.jackson.databind.JsonNode nodo = mapper.readTree(texto);
             if (nodo != null && nodo.isObject() && nodo.has("text")) {

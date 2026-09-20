@@ -1,4 +1,4 @@
-﻿package cl.codes.classifier;
+package cl.codes.classifier;
 
 import java.text.Normalizer;
 import java.util.*;

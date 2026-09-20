@@ -1,6 +1,6 @@
-﻿package cl.codes.controller;
+package cl.codes.controller;
 
-import cl.codes.controller.dto.CerrarRequest;
+import cl.codes.controller.dto.CloseRequest;
 import cl.codes.controller.dto.CallResponse;
 import cl.codes.controller.dto.CreateLiveCallRequest;
 import cl.codes.service.LiveCallService;
@@ -52,8 +52,8 @@ public class CallController {
 
     @PostMapping("/llamadas/{id}/close")
     @PreAuthorize("hasAnyRole('OPERADOR', 'SUPERVISOR', 'ADMINISTRADOR')")
-    public ResponseEntity<?> close(@PathVariable Long id, @Valid @RequestBody CerrarRequest req) {
-        service.close(id, req.comentario());
+    public ResponseEntity<?> close(@PathVariable Long id, @Valid @RequestBody CloseRequest req) {
+        service.close(id, req.comment());
         return ResponseEntity.ok(Map.of("message", "Call " + id + " closed"));
     }
 

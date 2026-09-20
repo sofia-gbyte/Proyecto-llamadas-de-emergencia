@@ -1,4 +1,4 @@
-﻿package cl.codes.model;
+package cl.codes.model;
 
 import jakarta.persistence.*;
 import java.time.LocalDateTime;

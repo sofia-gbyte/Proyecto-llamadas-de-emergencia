@@ -1,4 +1,4 @@
-﻿package cl.codes.config;
+package cl.codes.config;
 
 import cl.codes.security.JwtAuthFilter;
 import org.springframework.beans.factory.annotation.Value;
