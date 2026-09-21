@@ -11,9 +11,12 @@ public record CreateUserRequest(
         String username,
 
         @NotBlank
-        @Size(min = 10, message = "La contraseña debe tener al menos 10 caracteres")
+        @Size(min = 12, message = "La contraseña debe tener al menos 12 caracteres")
+        @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^a-zA-Z\\d]).+$",
+                message = "La contraseña debe incluir mayúsculas, minúsculas, números y símbolos")
         String password,
 
+        @NotBlank
         @Pattern(regexp = "operator|supervisor|administrator", message = "El rol debe ser operator, supervisor o administrator")
         String rol
 ) {}

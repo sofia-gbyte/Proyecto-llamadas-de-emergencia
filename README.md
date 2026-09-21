@@ -46,6 +46,18 @@ Luego abre:
 
 - http://localhost:8000
 
+## Seguridad de red
+
+Por defecto, CODES escucha solo en `127.0.0.1:8000`, por lo que la API no queda
+publicada en la red. Para operar desde otros equipos de una red interna, define
+`CODES_SERVER_ADDRESS` con la IP privada concreta del equipo servidor y permite
+solo ese puerto en el firewall de Windows; no lo publiques directamente en
+Internet. El puerto se puede cambiar con `CODES_SERVER_PORT`.
+
+El ASR local usa `localhost:6006` y debe mantenerse accesible solo desde el
+equipo que ejecuta la interfaz. No abras ese puerto en el router ni en el
+firewall para Internet.
+
 ## ASR local
 
 La transcripción se realiza con `sherpa-onnx` y el flujo local se prepara con:

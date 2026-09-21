@@ -8,6 +8,7 @@ import cl.codes.model.User;
 import cl.codes.repository.UserRepository;
 import cl.codes.service.SecurityService;
 import cl.codes.security.JwtService;
+import cl.codes.security.AuthRateLimitService;
 import cl.codes.security.LoginAttemptService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.Map;
 
@@ -31,6 +33,7 @@ public class AuthController {
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final LoginAttemptService loginAttemptService;
+    private final AuthRateLimitService authRateLimitService;
     private final UserRepository userRepository;
     private final SecurityService securityService;
 
@@ -38,18 +41,23 @@ public class AuthController {
             AuthenticationManager authenticationManager,
             JwtService jwtService,
             LoginAttemptService loginAttemptService,
+            AuthRateLimitService authRateLimitService,
             UserRepository userRepository,
             SecurityService securityService
     ) {
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
         this.loginAttemptService = loginAttemptService;
+        this.authRateLimitService = authRateLimitService;
         this.userRepository = userRepository;
         this.securityService = securityService;
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest req) {
+    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest req, HttpServletRequest request) {
+        if (!authRateLimitService.allowLogin(request.getRemoteAddr())) {
+            return tooManyRequests();
+        }
         String identifier = req.username().strip();
         String user = userRepository.findByUsername(identifier)
                 .or(() -> userRepository.findByEmailIgnoreCase(identifier))
@@ -83,7 +91,10 @@ public class AuthController {
     }
 
     @org.springframework.web.bind.annotation.PostMapping("/register")
-    public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest req) {
+    public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest req, HttpServletRequest request) {
+        if (!authRateLimitService.allowRegister(request.getRemoteAddr())) {
+            return tooManyRequests();
+        }
         String user = req.username().strip();
         String email = req.correo().strip().toLowerCase();
         if (userRepository.existsByUsername(user)) {
@@ -111,6 +122,11 @@ public class AuthController {
     private ResponseEntity<?> invalidCredentials() {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(Map.of("error", "Invalid username or password"));
+    }
+
+    private ResponseEntity<?> tooManyRequests() {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(Map.of("error", "Too many requests. Try again later."));
     }
 }
 
