@@ -7,6 +7,8 @@ let mapa = null;
 let marcador = null;
 let marcadorDispositivo = null;
 let precisionDispositivo = null;
+let rutaDispositivo = null;
+let coordenadasDispositivo = null;
 let llamadaSeleccionada = null;
 let vistaActual = 'info';
 let colaActual = 'pendientes';
@@ -17,6 +19,39 @@ let cacheColas = {
 };
 let adminTabActual = 'incidentes';
 let feedEventos = [];
+const captchaTokens = { login: '', register: '' };
+
+window.codesCaptchaLogin = token => { captchaTokens.login = token; };
+window.codesCaptchaRegister = token => { captchaTokens.register = token; };
+window.codesCaptchaExpired = tipo => { captchaTokens[tipo] = ''; };
+
+async function inicializarCaptcha() {
+  try {
+    const resp = await fetch(`${API_URL}/auth/captcha-site-key`);
+    const config = await resp.json();
+    if (!config.siteKey) return;
+
+    const render = () => {
+      if (!window.turnstile) {
+        setTimeout(render, 250);
+        return;
+      }
+      window.turnstile.render('captcha-login', {
+        sitekey: config.siteKey,
+        callback: window.codesCaptchaLogin,
+        'expired-callback': () => window.codesCaptchaExpired('login')
+      });
+      window.turnstile.render('captcha-register', {
+        sitekey: config.siteKey,
+        callback: window.codesCaptchaRegister,
+        'expired-callback': () => window.codesCaptchaExpired('register')
+      });
+    };
+    render();
+  } catch (error) {
+    console.error('No se pudo cargar la verificación de seguridad.', error);
+  }
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -280,6 +315,12 @@ async function iniciarSesion(e) {
   const password =
     $('login-password').value;
 
+  if (!captchaTokens.login) {
+    error.textContent = 'Completa la verificación de seguridad.';
+    error.hidden = false;
+    return;
+  }
+
   try {
     const resp = await fetch(
       `${API_URL}/auth/login`,
@@ -290,7 +331,8 @@ async function iniciarSesion(e) {
         },
         body: JSON.stringify({
           username: nombreUsuario,
-          password
+          password,
+          captchaToken: captchaTokens.login
         })
       }
     );
@@ -352,10 +394,12 @@ async function registrarCuenta(e) {
   }
 
   const payload = {
-    nombreUsuario:
+    username:
       $('reg-usuario').value.trim(),
 
     password,
+
+    captchaToken: captchaTokens.register,
 
     nombre:
       $('reg-nombre').value.trim(),
@@ -369,6 +413,12 @@ async function registrarCuenta(e) {
     institucion:
       $('reg-institucion').value
   };
+
+  if (!captchaTokens.register) {
+    error.textContent = 'Completa la verificación de seguridad.';
+    error.hidden = false;
+    return;
+  }
 
   try {
     const resp = await fetch(
@@ -575,6 +625,10 @@ function mostrarUbicacionDispositivo() {
         posicion.coords.longitude
       ];
       const accuracy = Math.max(posicion.coords.accuracy || 100, 40);
+      coordenadasDispositivo = {
+        lat: posicion.coords.latitude,
+        lng: posicion.coords.longitude
+      };
 
       if (marcadorDispositivo) mapa.removeLayer(marcadorDispositivo);
       if (precisionDispositivo) mapa.removeLayer(precisionDispositivo);
@@ -599,6 +653,7 @@ function mostrarUbicacionDispositivo() {
 
       mapa.setView(latLng, Math.max(mapa.getZoom(), 15));
       if (estado) estado.textContent = `Ubicación aproximada · margen de ${Math.round(accuracy)} m`;
+      actualizarRutaDispositivo();
       if (boton) boton.disabled = false;
     },
     () => {
@@ -613,6 +668,73 @@ function mostrarUbicacionDispositivo() {
   );
 }
 
+function distanciaEnKm(origen, destino) {
+  const radioTierraKm = 6371;
+  const aRad = grados => grados * Math.PI / 180;
+  const diferenciaLat = aRad(destino.lat - origen.lat);
+  const diferenciaLng = aRad(destino.lng - origen.lng);
+  const latOrigen = aRad(origen.lat);
+  const latDestino = aRad(destino.lat);
+  const seno = Math.sin(diferenciaLat / 2) ** 2
+    + Math.cos(latOrigen) * Math.cos(latDestino) * Math.sin(diferenciaLng / 2) ** 2;
+
+  return 2 * radioTierraKm * Math.atan2(Math.sqrt(seno), Math.sqrt(1 - seno));
+}
+
+function actualizarRutaDispositivo() {
+  const distancia = $('distancia-incidente');
+
+  if (rutaDispositivo) {
+    mapa?.removeLayer(rutaDispositivo);
+    rutaDispositivo = null;
+  }
+
+  if (
+    !mapa ||
+    !coordenadasDispositivo ||
+    !llamadaSeleccionada ||
+    llamadaSeleccionada.latitud == null ||
+    llamadaSeleccionada.longitud == null
+  ) {
+    if (distancia) {
+      distancia.hidden = true;
+      distancia.textContent = '';
+    }
+    return;
+  }
+
+  const incidente = {
+    lat: llamadaSeleccionada.latitud,
+    lng: llamadaSeleccionada.longitud
+  };
+  const km = distanciaEnKm(coordenadasDispositivo, incidente);
+
+  rutaDispositivo = L.polyline(
+    [
+      [coordenadasDispositivo.lat, coordenadasDispositivo.lng],
+      [incidente.lat, incidente.lng]
+    ],
+    {
+      color: '#00c8b0',
+      weight: 4,
+      opacity: 0.85,
+      dashArray: '9 8'
+    }
+  ).addTo(mapa);
+
+  mapa.fitBounds(rutaDispositivo.getBounds(), {
+    padding: [40, 40],
+    maxZoom: 16
+  });
+
+  if (distancia) {
+    distancia.hidden = false;
+    distancia.textContent = km < 1
+      ? `Distancia aproximada: ${Math.round(km * 1000)} m en línea recta`
+      : `Distancia aproximada: ${km.toFixed(1)} km en línea recta`;
+  }
+}
+
 function actualizarMapa(l) {
   if (!l) {
     $('mapa-titulo').textContent =
@@ -622,6 +744,7 @@ function actualizarMapa(l) {
       'Selecciona una llamada para mostrar su ubicación.';
 
     $('btn-abrir-mapa').disabled = true;
+    actualizarRutaDispositivo();
 
     return;
   }
@@ -665,6 +788,7 @@ function actualizarMapa(l) {
     l.latitud == null ||
     l.longitud == null
   ) {
+    actualizarRutaDispositivo();
     return;
   }
 
@@ -694,6 +818,8 @@ function actualizarMapa(l) {
           `Caso #${l.id}`
         )
       );
+
+  actualizarRutaDispositivo();
 
   setTimeout(
     () => mapa.invalidateSize(),
@@ -3072,6 +3198,7 @@ document.addEventListener(
   () => {
 
     inicializarTema();
+    inicializarCaptcha();
 
     document
       .querySelectorAll(
