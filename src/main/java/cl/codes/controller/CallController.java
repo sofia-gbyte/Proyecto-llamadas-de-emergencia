@@ -40,7 +40,7 @@ public class CallController {
 
     @GetMapping("/llamadas/closed")
     public List<CallResponse> closed(@RequestParam(defaultValue = "50") int limit) {
-        return service.getClosed(Math.min(limit, 500)).stream().map(CallResponse::de).toList();
+        return service.getClosed(Math.max(1, Math.min(limit, 100))).stream().map(CallResponse::de).toList();
     }
 
     @PostMapping("/llamadas/{id}/assign")
