@@ -36,11 +36,18 @@ CODES es una aplicación Spring Boot para registrar llamadas, detectar prioridad
 ```powershell
 $env:CODES_JWT_SECRET="genera-un-secreto-largo-y-aleatorio"
 $env:CODES_ENCRYPT_KEY="genera-una-clave-base64-de-32-bytes"
+$env:CODES_TURNSTILE_SITE_KEY="clave-publica-de-Cloudflare-Turnstile"
+$env:CODES_TURNSTILE_SECRET_KEY="clave-secreta-de-Cloudflare-Turnstile"
 $env:CODES_ADMIN_USER="admin"
 $env:CODES_ADMIN_PASSWORD="una-password-segura"
 
 mvn spring-boot:run
 ```
+
+Turnstile es obligatorio para iniciar sesión y registrarse. Crea un widget en
+Cloudflare Turnstile para el dominio real y configura ambas variables antes de
+iniciar CODES. La `SITE_KEY` puede ser pública; la `SECRET_KEY` debe permanecer
+solo en el entorno del servidor y nunca subirse al repositorio.
 
 Luego abre:
 

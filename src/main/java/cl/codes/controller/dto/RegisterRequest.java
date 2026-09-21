@@ -15,7 +15,8 @@ public record RegisterRequest(
         @NotBlank @Size(max=80) String nombre,
         @NotBlank @Size(max=80) String apellido,
         @NotBlank @Email @Size(max=150) String correo,
-        @NotBlank @Pattern(regexp="bomberos|carabineros|samu", message="Institución no válida") String institucion
+        @NotBlank @Pattern(regexp="bomberos|carabineros|samu", message="Institución no válida") String institucion,
+        @NotBlank String captchaToken
 ) {}
 
 

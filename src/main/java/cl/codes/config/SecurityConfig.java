@@ -84,7 +84,7 @@ public class SecurityConfig {
             )
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // preflight CORS
-                .requestMatchers("/", "/index.html", "/styles.css", "/script.js", "/favicon.ico", "/error", "/api/auth/login", "/api/auth/register", "/api/health").permitAll()
+                .requestMatchers("/", "/index.html", "/styles.css", "/script.js", "/favicon.ico", "/error", "/api/auth/login", "/api/auth/register", "/api/auth/captcha-site-key", "/api/health").permitAll()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

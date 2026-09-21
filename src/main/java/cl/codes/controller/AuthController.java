@@ -10,6 +10,7 @@ import cl.codes.service.SecurityService;
 import cl.codes.security.JwtService;
 import cl.codes.security.AuthRateLimitService;
 import cl.codes.security.LoginAttemptService;
+import cl.codes.security.TurnstileService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -36,6 +37,7 @@ public class AuthController {
     private final AuthRateLimitService authRateLimitService;
     private final UserRepository userRepository;
     private final SecurityService securityService;
+    private final TurnstileService turnstileService;
 
     public AuthController(
             AuthenticationManager authenticationManager,
@@ -43,7 +45,8 @@ public class AuthController {
             LoginAttemptService loginAttemptService,
             AuthRateLimitService authRateLimitService,
             UserRepository userRepository,
-            SecurityService securityService
+            SecurityService securityService,
+            TurnstileService turnstileService
     ) {
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
@@ -51,12 +54,16 @@ public class AuthController {
         this.authRateLimitService = authRateLimitService;
         this.userRepository = userRepository;
         this.securityService = securityService;
+        this.turnstileService = turnstileService;
     }
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest req, HttpServletRequest request) {
         if (!authRateLimitService.allowLogin(request.getRemoteAddr())) {
             return tooManyRequests();
+        }
+        if (!turnstileService.verify(req.captchaToken(), request.getRemoteAddr())) {
+            return captchaRequired();
         }
         String identifier = req.username().strip();
         String user = userRepository.findByUsername(identifier)
@@ -95,6 +102,9 @@ public class AuthController {
         if (!authRateLimitService.allowRegister(request.getRemoteAddr())) {
             return tooManyRequests();
         }
+        if (!turnstileService.verify(req.captchaToken(), request.getRemoteAddr())) {
+            return captchaRequired();
+        }
         String user = req.username().strip();
         String email = req.correo().strip().toLowerCase();
         if (userRepository.existsByUsername(user)) {
@@ -119,6 +129,11 @@ public class AuthController {
         ));
     }
 
+    @PostMapping("/captcha-site-key")
+    public ResponseEntity<?> captchaSiteKey() {
+        return ResponseEntity.ok(Map.of("siteKey", turnstileService.getSiteKey()));
+    }
+
     private ResponseEntity<?> invalidCredentials() {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(Map.of("error", "Invalid username or password"));
@@ -127,6 +142,11 @@ public class AuthController {
     private ResponseEntity<?> tooManyRequests() {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .body(Map.of("error", "Too many requests. Try again later."));
+    }
+
+    private ResponseEntity<?> captchaRequired() {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(Map.of("error", "Captcha inválido o no configurado."));
     }
 }
 

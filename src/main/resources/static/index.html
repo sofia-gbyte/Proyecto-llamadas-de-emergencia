@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -33,6 +34,7 @@
                     <label for="login-password">Contraseña</label>
                     <input id="login-password" type="password" placeholder="••••••••" required />
                 </div>
+                <div id="captcha-login" class="captcha-widget" aria-label="Verificación de seguridad"></div>
                 <p class="auth-error" id="login-error" hidden></p>
                 <button class="btn-auth" type="submit">Ingresar a CODES</button>
                 <div class="auth-demo-hint">
@@ -78,6 +80,7 @@
                         <option value="samu">SAMU</option>
                     </select>
                 </div>
+                <div id="captcha-register" class="captcha-widget" aria-label="Verificación de seguridad"></div>
                 <p class="auth-error" id="registro-error" hidden></p>
                 <p class="auth-success" id="registro-success" hidden></p>
                 <button class="btn-auth" type="submit">Crear cuenta</button>

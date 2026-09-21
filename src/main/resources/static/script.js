@@ -17,6 +17,39 @@ let cacheColas = {
 };
 let adminTabActual = 'incidentes';
 let feedEventos = [];
+const captchaTokens = { login: '', register: '' };
+
+window.codesCaptchaLogin = token => { captchaTokens.login = token; };
+window.codesCaptchaRegister = token => { captchaTokens.register = token; };
+window.codesCaptchaExpired = tipo => { captchaTokens[tipo] = ''; };
+
+async function inicializarCaptcha() {
+  try {
+    const resp = await fetch(`${API_URL}/auth/captcha-site-key`);
+    const config = await resp.json();
+    if (!config.siteKey) return;
+
+    const render = () => {
+      if (!window.turnstile) {
+        setTimeout(render, 250);
+        return;
+      }
+      window.turnstile.render('captcha-login', {
+        sitekey: config.siteKey,
+        callback: window.codesCaptchaLogin,
+        'expired-callback': () => window.codesCaptchaExpired('login')
+      });
+      window.turnstile.render('captcha-register', {
+        sitekey: config.siteKey,
+        callback: window.codesCaptchaRegister,
+        'expired-callback': () => window.codesCaptchaExpired('register')
+      });
+    };
+    render();
+  } catch (error) {
+    console.error('No se pudo cargar la verificación de seguridad.', error);
+  }
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -280,6 +313,12 @@ async function iniciarSesion(e) {
   const password =
     $('login-password').value;
 
+  if (!captchaTokens.login) {
+    error.textContent = 'Completa la verificación de seguridad.';
+    error.hidden = false;
+    return;
+  }
+
   try {
     const resp = await fetch(
       `${API_URL}/auth/login`,
@@ -290,7 +329,8 @@ async function iniciarSesion(e) {
         },
         body: JSON.stringify({
           username: nombreUsuario,
-          password
+          password,
+          captchaToken: captchaTokens.login
         })
       }
     );
@@ -352,10 +392,12 @@ async function registrarCuenta(e) {
   }
 
   const payload = {
-    nombreUsuario:
+    username:
       $('reg-usuario').value.trim(),
 
     password,
+
+    captchaToken: captchaTokens.register,
 
     nombre:
       $('reg-nombre').value.trim(),
@@ -369,6 +411,12 @@ async function registrarCuenta(e) {
     institucion:
       $('reg-institucion').value
   };
+
+  if (!captchaTokens.register) {
+    error.textContent = 'Completa la verificación de seguridad.';
+    error.hidden = false;
+    return;
+  }
 
   try {
     const resp = await fetch(
@@ -3072,6 +3120,7 @@ document.addEventListener(
   () => {
 
     inicializarTema();
+    inicializarCaptcha();
 
     document
       .querySelectorAll(
