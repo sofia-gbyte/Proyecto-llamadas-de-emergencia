@@ -42,3 +42,11 @@ Y después probar manualmente el flujo completo: registro, activación, login, l
 ## Pendiente de producción
 
 La auditoría no considera todavía CODES listo para producción. Siguen siendo fases posteriores: HTTPS/WSS, firewall/segmentación, migración H2 a una base de datos de producción, migraciones de esquema, backups/restauración, retención de datos, protección de logs, CSP/headers y revisión legal/privacidad.
+
+### Corrección adicional de la revisión final (25-09-2026)
+- Añadido `CallRepository.findByAssignmentDateIsNotNull()`, que faltaba y provocaba el error de compilación en `CallService.java`.
+- `getInProgress()` ahora usa una lista mutable antes de ordenar, evitando `UnsupportedOperationException` con `Stream.toList()`.
+- Corregidos los tests de `CallService` para usar autenticaciones Mockito/Spring Security marcadas como autenticadas.
+- Verificación estática del frontend con `node --check`: OK.
+- Verificación de integridad del ZIP: OK.
+- Maven sigue sin estar disponible en este entorno, por lo que no se declara aquí una ejecución exitosa de `mvn clean test`.

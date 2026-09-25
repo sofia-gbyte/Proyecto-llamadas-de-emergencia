@@ -49,7 +49,7 @@ public class CallService {
 
     public List<Call> getInProgress(Authentication auth) {
         User user = currentUser(auth);
-        List<Call> calls = isAdmin(user) ? repo.findAll().stream().filter(c -> c.isAssigned() && c.getClosureDate() == null).toList() : repo.findByAssignedTrueAndClosureDateIsNullAndInstitution(user.getInstitution());
+        List<Call> calls = isAdmin(user) ? new java.util.ArrayList<>(repo.findAll().stream().filter(c -> c.isAssigned() && c.getClosureDate() == null).toList()) : new java.util.ArrayList<>(repo.findByAssignedTrueAndClosureDateIsNullAndInstitution(user.getInstitution()));
         calls.sort(Comparator.comparing(Call::getAssignmentDate, Comparator.nullsLast(Comparator.reverseOrder())));
         return calls;
     }

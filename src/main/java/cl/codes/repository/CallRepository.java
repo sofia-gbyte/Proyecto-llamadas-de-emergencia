@@ -14,5 +14,6 @@ public interface CallRepository extends JpaRepository<Call, Long> {
     long countByAssignedFalseAndInstitution(String institution);
     long countByAssignedTrueAndClosureDateIsNullAndInstitution(String institution);
     List<Call> findByAssignmentDateIsNotNullAndInstitution(String institution);
+    List<Call> findByAssignmentDateIsNotNull();
     List<Call> findByInstitutionIsNullAndCreatedByUserIsNotNull();
 }

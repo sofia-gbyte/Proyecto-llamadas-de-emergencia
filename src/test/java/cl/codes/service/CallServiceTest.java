@@ -12,6 +12,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.util.List;
 import java.util.Optional;
@@ -32,8 +33,8 @@ class CallServiceTest {
     @BeforeEach
     void setUp() {
         service = new CallService(callRepository, userRepository);
-        operatorAuth = new UsernamePasswordAuthenticationToken("ana", null);
-        otherAuth = new UsernamePasswordAuthenticationToken("beatriz", null);
+        operatorAuth = new UsernamePasswordAuthenticationToken("ana", null, List.of(new SimpleGrantedAuthority("ROLE_OPERATOR")));
+        otherAuth = new UsernamePasswordAuthenticationToken("beatriz", null, List.of(new SimpleGrantedAuthority("ROLE_SUPERVISOR")));
     }
 
     private User user(String username, String role, String institution) {
