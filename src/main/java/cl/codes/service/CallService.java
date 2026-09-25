@@ -49,6 +49,9 @@ public class CallService {
         if (call.isAssigned()) {
             throw new IllegalStateException("This call was already assigned");
         }
+        if (call.getClosureDate() != null) {
+            throw new IllegalStateException("This call is already closed");
+        }
         call.setAssigned(true);
         call.setAssignedOperator(operator.strip());
         call.setAssignmentDate(LocalDateTime.now());
@@ -60,6 +63,9 @@ public class CallService {
                 .orElseThrow(() -> new IllegalArgumentException("Call not found"));
         if (!call.isAssigned()) {
             throw new IllegalStateException("This case cannot be closed before assignment");
+        }
+        if (call.getClosureDate() != null) {
+            throw new IllegalStateException("This case is already closed");
         }
         call.setClosureDate(LocalDateTime.now());
         call.setClosureComment(comment.strip());

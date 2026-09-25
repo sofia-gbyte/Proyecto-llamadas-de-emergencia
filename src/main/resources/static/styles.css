@@ -2112,3 +2112,9 @@ body.tema-claro .banner-narracion h3 { color: #17252b; }
     min-height: 65px;
     margin: 0.4rem 0 0.8rem;
 }
+
+/* Ruta automática operador → incidente */
+#ruta-estado {
+  color: #ffd166;
+  line-height: 1.35;
+}

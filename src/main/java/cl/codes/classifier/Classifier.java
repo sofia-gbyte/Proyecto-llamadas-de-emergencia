@@ -167,29 +167,58 @@ public final class Classifier {
             Pattern.CASE_INSENSITIVE
     );
 
+    // Respaldo cuando el ASR omite la palabra "calle/avenida/..." (muy común):
+    // nombre propio (una o más palabras con mayúscula, o cualquier palabra si
+    // viene precedido de "en/por") seguido directamente de un número de casa.
+    private static final Pattern PATRON_NOMBRE_Y_NUMERO = Pattern.compile(
+            "(?i)(?:\\b(?:en|por)\\s+)?"
+                    + "([A-ZÁÉÍÓÚÑ][\\wáéíóúñ]*(?:\\s+[A-ZÁÉÍÓÚÑ0-9][\\wáéíóúñ]*){0,3})"
+                    + "\\s+(?:n[uú]mero\\s+|#\\s*)?(\\d{1,5})\\b"
+    );
+
     public static String extraerDireccion(String texto) {
         if (texto == null) return null;
         Matcher m = PATRON_DIRECCION.matcher(texto);
-        if (!m.find()) {
-            Matcher contexto = Pattern.compile(
-                    "(?i)(?:ubicad[ao]|queda|esta|está)\\s+(?:al|a la|en|por)\\s+([^,.]{3,70})(?:\\s*,\\s*(?:en\\s+)?([^,.]{3,40}))?"
-            ).matcher(texto);
-            if (contexto.find()) {
-                String lugar = contexto.group(1).trim();
-                String comuna = contexto.group(2) == null ? "" : contexto.group(2).trim();
-                return tituloCase(lugar) + (comuna.isBlank() ? "" : ", " + tituloCase(comuna));
-            }
-            return null;
-        }
-        String tipo = m.group(1).trim();
-        String nombre = m.group(2).trim();
-        String numero = m.group(3);
+        if (m.find()) {
+            String tipo = m.group(1).trim();
+            String nombre = m.group(2).trim();
+            String numero = m.group(3);
 
-        StringBuilder sb = new StringBuilder();
-        sb.append(Character.toUpperCase(tipo.charAt(0))).append(tipo.substring(1));
-        sb.append(' ').append(tituloCase(nombre));
-        if (numero != null) sb.append(" #").append(numero);
-        return sb.toString().trim();
+            StringBuilder sb = new StringBuilder();
+            sb.append(Character.toUpperCase(tipo.charAt(0))).append(tipo.substring(1));
+            sb.append(' ').append(tituloCase(nombre));
+            if (numero != null) sb.append(" #").append(numero);
+            return sb.toString().trim();
+        }
+
+        Matcher contexto = Pattern.compile(
+                "(?i)(?:ubicad[ao]|queda|esta|está)\\s+(?:al|a la|en|por)\\s+([^,.]{3,70})(?:\\s*,\\s*(?:en\\s+)?([^,.]{3,40}))?"
+        ).matcher(texto);
+        if (contexto.find()) {
+            String lugar = contexto.group(1).trim();
+            String comuna = contexto.group(2) == null ? "" : contexto.group(2).trim();
+            return tituloCase(lugar) + (comuna.isBlank() ? "" : ", " + tituloCase(comuna));
+        }
+
+        // Respaldo: sin la palabra clave de vía, pero con un nombre propio
+        // seguido de un número ("Manuel Montt 1234").
+        Matcher nombreNumero = PATRON_NOMBRE_Y_NUMERO.matcher(texto);
+        while (nombreNumero.find()) {
+            String candidato = nombreNumero.group(1).trim();
+            if (candidato.split("\\s+").length > 4) continue;
+            if (esPalabraDescartable(candidato)) continue;
+            return tituloCase(candidato) + " #" + nombreNumero.group(2);
+        }
+        return null;
+    }
+
+    private static final Set<String> PALABRAS_DESCARTABLES_DIRECCION = Set.of(
+            "hola", "ayuda", "por favor", "gracias", "chile", "santiago"
+    );
+
+    private static boolean esPalabraDescartable(String candidato) {
+        String norm = normalizar(candidato);
+        return PALABRAS_DESCARTABLES_DIRECCION.contains(norm);
     }
 
     private static String tituloCase(String texto) {

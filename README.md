@@ -93,10 +93,25 @@ El directorio `tools/asr` contiene el script de instalación y arranque del mode
 ## Corrección de calles chilenas
 
 El ASR se mantiene sin cambios. Después de transcribir, CODES corrige nombres de calles
-con coincidencia fonética y difusa contra un diccionario de OpenStreetMap. El archivo es
-opcional: si no existe, se conserva el texto original.
+con coincidencia fonética y difusa contra un diccionario de calles, y luego usa ese nombre
+corregido para geocodificar (buscar coordenadas) y mostrarlo en los paneles del operador.
+El repositorio incluye `data/calles_chile.txt` con un listado base de las avenidas y calles
+más conocidas de Santiago, para que la corrección funcione desde el primer arranque. Se
+recomienda ampliarlo con el listado completo de OpenStreetMap de la región que uses.
 
-Para generarlo en Windows:
+**Opción rápida (recomendada):** usa la Overpass API, no requiere descargar el `.pbf`
+completo de Chile ni instalar `osmium`:
+
+```powershell
+python -m pip install requests
+python tools/streets/fetch_calles_overpass.py data/calles_chile.txt
+```
+
+Por defecto descarga la Región Metropolitana. Para otra región usa `--region "Nombre"`,
+o `--pais` para todo Chile (tarda más).
+
+**Opción con el PBF completo de Chile** (más pesado, pero sirve si necesitas datos que
+Overpass no tenga o quieres trabajar sin conexión después de la descarga inicial):
 
 ```powershell
 python -m pip install osmium
@@ -105,8 +120,17 @@ python tools/streets/extract_calles_chile.py chile-latest.osm.pbf data/calles_ch
 ```
 
 El archivo PBF puede borrarse después de la extracción. La aplicación lo carga desde
-`app.calles-diccionario` al iniciar. Si el archivo no existe, el proyecto conserva la
-transcripción original sin romper el flujo.
+`app.calles-diccionario` al iniciar (revisa el log al arrancar: indica cuántos nombres
+cargó). Si el archivo no existe o queda vacío, el proyecto conserva la transcripción
+original sin romper el flujo, pero la corrección de calles queda desactivada.
+
+**Geocodificación:** además de corregir el nombre, `GeocoderService` ahora hace primero
+una búsqueda **estructurada** en Nominatim (le indica explícitamente cuál es la calle) y
+solo acepta un resultado si su puntaje de similitud contra lo transcrito supera un umbral
+mínimo; antes tomaba a ciegas el primer resultado de la búsqueda en texto libre, lo que
+podía anclar el caso en un lugar equivocado sin avisar. También respeta el límite de 1
+solicitud por segundo de Nominatim y registra en el log (`logging.level.root`) cuando una
+consulta no encuentra nada o falla, para poder diagnosticar casos "a medias".
 
 ## Estructura relevante
 

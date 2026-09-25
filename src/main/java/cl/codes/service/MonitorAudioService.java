@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.nio.file.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.concurrent.TimeUnit;
 
 import static java.nio.file.StandardWatchEventKinds.ENTRY_CREATE;
 
@@ -39,6 +40,7 @@ public class MonitorAudioService {
     private final ChileStreetCorrectionService streetCorrection;
     private final SecurityService securityService;
     private final CallRepository repo;
+    private final OperationalSummaryService operationalSummaryService;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public MonitorAudioService(
@@ -48,7 +50,8 @@ public class MonitorAudioService {
             GeocoderService geocoderService,
             ChileStreetCorrectionService streetCorrection,
             SecurityService securityService,
-            CallRepository repo
+            CallRepository repo,
+            OperationalSummaryService operationalSummaryService
     ) throws IOException {
         this.rawAudioFolder = Path.of(rawAudioDir);
         this.encryptedAudioFolder = Path.of(encryptedAudioDir);
@@ -57,6 +60,7 @@ public class MonitorAudioService {
         this.streetCorrection = streetCorrection;
         this.securityService = securityService;
         this.repo = repo;
+        this.operationalSummaryService = operationalSummaryService;
         Files.createDirectories(rawAudioFolder);
         Files.createDirectories(encryptedAudioFolder);
     }
@@ -79,8 +83,9 @@ public class MonitorAudioService {
                     Path fileName = (Path) event.context();
                     Path fullPath = rawAudioFolder.resolve(fileName);
                     if (isValidAudio(fullPath)) {
-                        Thread.sleep(2000);
-                        processAudio(fullPath);
+                        if (esperarArchivoEstable(fullPath)) {
+                            processAudio(fullPath);
+                        }
                     }
                 }
                 key.reset();
@@ -90,6 +95,32 @@ public class MonitorAudioService {
         } catch (IOException e) {
             log.error("Error observando la carpeta de audios", e);
         }
+    }
+
+    private boolean esperarArchivoEstable(Path path) {
+        long ultimoTamano = -1L;
+        int estables = 0;
+        for (int i = 0; i < 30; i++) {
+            try {
+                if (!Files.exists(path) || !Files.isRegularFile(path)) return false;
+                long tamano = Files.size(path);
+                if (tamano > 0 && tamano == ultimoTamano) {
+                    estables++;
+                    if (estables >= 2) return true;
+                } else {
+                    estables = 0;
+                }
+                ultimoTamano = tamano;
+                TimeUnit.SECONDS.sleep(1);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            } catch (IOException e) {
+                log.warn("No se pudo comprobar si el audio está listo: {}", path, e);
+                return false;
+            }
+        }
+        return false;
     }
 
     private boolean isValidAudio(Path path) {
@@ -114,6 +145,7 @@ public class MonitorAudioService {
 
             Call call = new Call();
             call.setOriginalAudio(encryptedPath.toString());
+            call.setOperationalSummary(operationalSummaryService.generate(transcription, classification));
             call.setTranscription(transcription);
             call.setPriority(classification.priority());
             call.setUrgentScore(classification.puntajes().getOrDefault("urgente", 0));

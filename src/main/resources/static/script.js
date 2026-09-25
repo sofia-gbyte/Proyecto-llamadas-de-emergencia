@@ -7,6 +7,9 @@ let mapa = null;
 let marcador = null;
 let marcadorDispositivo = null;
 let precisionDispositivo = null;
+let rutaIncidente = null;
+let ubicacionActualOperador = null;
+let solicitudRutaId = 0;
 let llamadaSeleccionada = null;
 let vistaActual = 'info';
 let colaActual = 'pendientes';
@@ -494,7 +497,7 @@ async function registrarCuenta(e) {
     }
 
     ok.textContent =
-      d.mensaje ||
+      (d.mensaje || d.message) ||
       'Cuenta creada. Un administrador debe activarla antes de iniciar sesión.';
 
     ok.hidden = false;
@@ -669,8 +672,8 @@ function mostrarUbicacionDispositivo() {
   navigator.geolocation.getCurrentPosition(
     posicion => {
       const latLng = [
-        posicion.coords.latitudee,
-        posicion.coords.longitudee
+        posicion.coords.latitude,
+        posicion.coords.longitude
       ];
       const accuracy = Math.max(posicion.coords.accuracy || 100, 40);
 
@@ -711,13 +714,106 @@ function mostrarUbicacionDispositivo() {
   );
 }
 
+async function dibujarRutaAlIncidente(l) {
+  const rutaEstado = $('ruta-estado');
+  const solicitud = ++solicitudRutaId;
+
+  if (rutaIncidente && mapa) {
+    mapa.removeLayer(rutaIncidente);
+    rutaIncidente = null;
+  }
+
+  if (!l || l.latitude == null || l.longitude == null) {
+    if (rutaEstado) rutaEstado.textContent = 'Ruta no disponible: el incidente no tiene coordenadas.';
+    return;
+  }
+
+  if (!ubicacionActualOperador) {
+    if (rutaEstado) rutaEstado.textContent = 'Obteniendo tu ubicación para calcular la ruta…';
+    await obtenerUbicacionParaRuta();
+  }
+
+  if (solicitud !== solicitudRutaId) return;
+
+  const origen = ubicacionActualOperador;
+  if (!origen) {
+    if (rutaEstado) rutaEstado.textContent = 'No se pudo obtener tu ubicación. Puedes usar “Usar mi ubicación”.';
+    return;
+  }
+
+  if (rutaEstado) rutaEstado.textContent = 'Calculando ruta hacia el incidente…';
+
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${encodeURIComponent(origen.lng)},${encodeURIComponent(origen.lat)};${encodeURIComponent(l.longitude)},${encodeURIComponent(l.latitude)}?overview=full&geometries=geojson`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (solicitud !== solicitudRutaId) return;
+
+    const route = data.routes?.[0];
+    if (!route?.geometry?.coordinates?.length) throw new Error('Sin ruta');
+
+    const latLngs = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+    rutaIncidente = L.polyline(latLngs, {
+      color: '#ffd166',
+      weight: 6,
+      opacity: 0.9,
+      lineCap: 'round',
+      lineJoin: 'round'
+    }).addTo(mapa);
+
+    const distancia = route.distance >= 1000
+      ? `${(route.distance / 1000).toFixed(1)} km`
+      : `${Math.round(route.distance)} m`;
+    const minutos = Math.max(1, Math.round(route.duration / 60));
+
+    if (rutaEstado) rutaEstado.textContent = `Ruta estimada · ${distancia} · ${minutos} min`;
+    mapa.fitBounds(rutaIncidente.getBounds(), { padding: [40, 40], maxZoom: 16 });
+  } catch (error) {
+    console.warn('No se pudo calcular la ruta al incidente:', error);
+    if (rutaEstado) rutaEstado.textContent = 'No se pudo calcular la ruta automáticamente.';
+  }
+}
+
+function obtenerUbicacionParaRuta() {
+  return new Promise(resolve => {
+    if (!navigator.geolocation) { resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        ubicacionActualOperador = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy
+        };
+        mostrarMarcadorUbicacion(ubicacionActualOperador);
+        resolve(ubicacionActualOperador);
+      },
+      () => resolve(null),
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 120000 }
+    );
+  });
+}
+
+function mostrarMarcadorUbicacion(ubicacion) {
+  if (!mapa || !ubicacion) return;
+  const latLng = [ubicacion.lat, ubicacion.lng];
+  const accuracy = Math.max(ubicacion.accuracy || 100, 40);
+  if (marcadorDispositivo) mapa.removeLayer(marcadorDispositivo);
+  if (precisionDispositivo) mapa.removeLayer(precisionDispositivo);
+  precisionDispositivo = L.circle(latLng, { radius: accuracy, color: '#4da3ff', fillColor: '#4da3ff', fillOpacity: 0.14, weight: 1.5 }).addTo(mapa);
+  marcadorDispositivo = L.circleMarker(latLng, { radius: 8, color: '#ffffff', weight: 3, fillColor: '#1683ff', fillOpacity: 1 }).addTo(mapa).bindPopup(`Tu ubicación aproximada<br>Precisión: ${Math.round(accuracy)} m`);
+}
+
 function actualizarMapa(l) {
+  solicitudRutaId++;
+  if (rutaIncidente && mapa) { mapa.removeLayer(rutaIncidente); rutaIncidente = null; }
   if (!l) {
     $('mapa-titulo').textContent =
       'Sin incidente seleccionado';
 
     $('mapa-direccion').textContent =
       'Selecciona una llamada para mostrar su ubicación.';
+    if ($('ruta-estado')) $('ruta-estado').textContent = 'Selecciona un caso para calcular una ruta.';
 
     $('btn-abrir-mapa').disabled = true;
 
@@ -792,6 +888,8 @@ function actualizarMapa(l) {
           `Caso #${l.id}`
         )
       );
+
+  dibujarRutaAlIncidente(l);
 
   setTimeout(
     () => mapa.invalidateSize(),
@@ -1736,13 +1834,13 @@ async function asignarCaso(id) {
     }
 
     mostrarAlerta(
-      d.mensaje ||
+      (d.mensaje || d.message) ||
       'Caso asignado.',
       'ok'
     );
 
     registrarEvento(
-      d.mensaje ||
+      (d.mensaje || d.message) ||
       `Caso #${id} asignado.`
     );
 
@@ -1824,7 +1922,7 @@ function abrirModalCerrar(id) {
               },
               body:
                 JSON.stringify({
-                  comentario
+                  comment: comentario
                 })
             }
           );
@@ -1843,13 +1941,13 @@ function abrirModalCerrar(id) {
           true;
 
         mostrarAlerta(
-          d.mensaje ||
+          (d.mensaje || d.message) ||
           'Caso cerrado.',
           'ok'
         );
 
         registrarEvento(
-          d.mensaje ||
+          (d.mensaje || d.message) ||
           `Caso #${id} cerrado.`
         );
 
@@ -2396,10 +2494,10 @@ function obtenerUbicacionOperador() {
         pos =>
           resolve({
             lat:
-              pos.coords.latitudee,
+              pos.coords.latitude,
 
             lng:
-              pos.coords.longitudee,
+              pos.coords.longitude,
 
             accuracy:
               pos.coords.accuracy
@@ -2999,7 +3097,7 @@ async function detenerLive(
       new Blob(
         [
           JSON.stringify({
-            transcripcion:
+            transcription:
               transcript,
 
             latitudOperador:

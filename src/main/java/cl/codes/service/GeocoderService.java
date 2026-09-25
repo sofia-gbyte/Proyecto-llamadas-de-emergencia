@@ -2,6 +2,8 @@ package cl.codes.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -21,17 +23,29 @@ import java.util.*;
  * Geocodificación tolerante para texto escrito y transcriptiones ASR.
  *
  * Estrategia:
- *  1) Nominatim/OpenStreetMap con la consulta normal.
- *  2) Si hay comuna/territorio, obtiene su centro y usa ese contexto.
- *  3) Photon (también basado en OpenStreetMap) devuelve varios candidatos
+ *  1) Búsqueda estructurada en Nominatim usando la calle detectada
+ *     (parámetro "street"), mucho más precisa que texto libre.
+ *  2) Nominatim con la consulta en texto libre, puntuando cada resultado
+ *     por similitud contra lo que dijo el operador (antes se aceptaba el
+ *     primer resultado sin comparar nada, lo que hacía que direcciones
+ *     mal transcritas terminaran ancladas en un lugar cualquiera).
+ *  3) Si hay comuna/territorio, obtiene su centro y lo usa como contexto
+ *     espacial.
+ *  4) Photon (también basado en OpenStreetMap) devuelve varios candidatos
  *     y permite aprovechar coincidencias aproximadas del nombre, algo útil
  *     cuando el ASR escribe "Manuel Mond" en vez de "Manuel Montt".
- *  4) Se puntúan los candidatos por similitud textual + coincidencia territorial.
+ *  5) Todos los candidatos (Nominatim + Photon) se puntúan juntos por
+ *     similitud textual + coincidencia territorial y se elige el mejor.
  *
  * La transcripción original nunca se modifica; solo se normaliza la consulta.
  */
 @Service
 public class GeocoderService {
+    private static final Logger log = LoggerFactory.getLogger(GeocoderService.class);
+
+    /** Nominatim pide un máximo de 1 solicitud por segundo desde un mismo origen. */
+    private static final long NOMINATIM_MIN_INTERVALO_MS = 1100;
+    private static final double UMBRAL_ACEPTACION = 0.55;
 
     public record Coordinates(Double lat, Double lng) {
         static final Coordinates EMPTY = new Coordinates(null, null);
@@ -45,6 +59,7 @@ public class GeocoderService {
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(6)).build();
     private final ObjectMapper mapper = new ObjectMapper();
+    private long ultimaLlamadaNominatim = 0L;
 
     public GeocoderService(
             @Value("${app.geocache-path}") String geocachePath,
@@ -78,66 +93,155 @@ public class GeocoderService {
             String lugar = extraerLugar(context);
             if (lugar != null && !lugar.isBlank()) consultas.add(lugar);
         }
-
-        // 1. Intento rápido: Nominatim con la consulta normal.
-        for (String consulta : consultas) {
-            Coordinates c = geocodeNominatim(consulta, null, null);
-            if (c.lat() != null) return c;
+        if (consultas.isEmpty()) {
+            log.debug("Geocodificación omitida: no hay dirección ni contexto utilizable.");
+            return Coordinates.EMPTY;
         }
 
-        // 2. Buscar el territorio mencionado (por ejemplo Providencia) y usarlo
-        //    como contexto espacial para las búsquedas aproximadas.
         String territorio = extraerTerritorio(context, address);
         Coordinates centroTerritorio = territorio == null ? Coordinates.EMPTY :
-            geocodeNominatim(territorio + ", Chile", null, null);
+                geocodeNominatimSimple(territorio + ", Chile");
+        Coordinates centroBusqueda = (sourceLatitude != null && sourceLongitude != null)
+                ? new Coordinates(sourceLatitude, sourceLongitude) : centroTerritorio;
 
-        // 3. Photon/OpenStreetMap: devuelve múltiples candidatos y tolera mejor
-        //    pequeñas diferencias de escritura del ASR.
+        // 1) Búsqueda estructurada: mucho más confiable que texto libre porque
+        //    le decimos a Nominatim explícitamente que "address" es una calle.
+        if (address != null && !address.isBlank()) {
+            String calle = limpiarNombreCalle(address);
+            if (calle != null && !calle.isBlank()) {
+                List<Candidato> estructurados = buscarNominatimEstructurado(calle, territorio);
+                Candidato mejorEstructurado = elegirMejor(estructurados, calle, territorio, sourceLatitude, sourceLongitude);
+                if (mejorEstructurado != null) {
+                    log.debug("Dirección resuelta por búsqueda estructurada: '{}' -> {}", calle, mejorEstructurado.nombre());
+                    return new Coordinates(mejorEstructurado.lat(), mejorEstructurado.lng());
+                }
+            }
+        }
+
+        // 2) Texto libre en Nominatim y Photon, puntuando TODOS los candidatos
+        //    juntos en vez de aceptar a ciegas el primer resultado.
         for (String consulta : consultas) {
-                Coordinates centroBusqueda = (sourceLatitude != null && sourceLongitude != null)
-                    ? new Coordinates(sourceLatitude, sourceLongitude) : centroTerritorio;
-            List<Candidato> candidatos = buscarPhoton(consulta, centroBusqueda);
-                Candidato mejor = elegirMejor(candidatos, consulta, territorio, sourceLatitude, sourceLongitude);
+            List<Candidato> candidatos = new ArrayList<>();
+            candidatos.addAll(buscarNominatimLibre(consulta));
+            candidatos.addAll(buscarPhoton(consulta, centroBusqueda));
+            Candidato mejor = elegirMejor(candidatos, consulta, territorio, sourceLatitude, sourceLongitude);
             if (mejor != null) {
+                log.debug("Dirección resuelta por búsqueda libre: '{}' -> {}", consulta, mejor.nombre());
                 return new Coordinates(mejor.lat(), mejor.lng());
             }
         }
 
-        // 4. Último intento: Nominatim con el territorio explícito.
+        // 3) Último intento: agregar el territorio explícito a la consulta.
         if (territorio != null) {
             for (String consulta : consultas) {
-                Coordinates c = geocodeNominatim(consulta + ", " + territorio, null, null);
-                if (c.lat() != null) return c;
+                List<Candidato> candidatos = buscarNominatimLibre(consulta + ", " + territorio);
+                Candidato mejor = elegirMejor(candidatos, consulta, territorio, sourceLatitude, sourceLongitude);
+                if (mejor != null) {
+                    log.debug("Dirección resuelta agregando territorio '{}': '{}' -> {}", territorio, consulta, mejor.nombre());
+                    return new Coordinates(mejor.lat(), mejor.lng());
+                }
             }
         }
+
+        log.warn("No se pudo geocodificar ninguna de las consultas candidatas: {}", consultas);
         return Coordinates.EMPTY;
     }
 
-    private Coordinates geocodeNominatim(String address, Double lat, Double lon) {
-        Map<String, Coordinates> cache = cargarCache();
+    /** Quita el tipo de vía ("Calle", "Avenida"...) y el número, dejando solo el nombre. */
+    private String limpiarNombreCalle(String address) {
+        String texto = address.replaceAll(
+                "(?i)^(calle|pasaje|avenida|av\\.?|sector|poblacion|villa|cerro|camino)\\s+", "");
+        texto = texto.replaceAll("(?i)\\s*#?\\s*\\d{1,5}$", "");
+        return texto.strip();
+    }
+
+    private Coordinates geocodeNominatimSimple(String address) {
+        List<Candidato> resultado = buscarNominatimLibre(address);
+        if (resultado.isEmpty()) return Coordinates.EMPTY;
+        Candidato c = resultado.get(0);
+        return new Coordinates(c.lat(), c.lng());
+    }
+
+    /** Búsqueda estructurada: le indicamos a Nominatim que "calle" es una vía, no texto libre. */
+    private List<Candidato> buscarNominatimEstructurado(String calle, String territorio) {
+        StringBuilder url = new StringBuilder("https://nominatim.openstreetmap.org/search?street=")
+                .append(URLEncoder.encode(calle, StandardCharsets.UTF_8))
+                .append("&country=").append(URLEncoder.encode(pais, StandardCharsets.UTF_8))
+                .append("&format=json&limit=5&addressdetails=1&countrycodes=cl");
+        if (territorio != null && !territorio.isBlank()) {
+            url.append("&city=").append(URLEncoder.encode(territorio, StandardCharsets.UTF_8));
+        }
+        return ejecutarNominatim(url.toString(), "estructurada(" + calle + ")");
+    }
+
+    private List<Candidato> buscarNominatimLibre(String address) {
         String consulta = normalizarConsulta(address);
-        String cacheKey = "nominatim:" + consulta + (lat == null ? "" : "@" + lat + "," + lon);
-        if (cache.containsKey(cacheKey)) return cache.get(cacheKey);
+        if (consulta.isBlank()) return List.of();
+        String url = "https://nominatim.openstreetmap.org/search?q="
+                + URLEncoder.encode(consulta + ", " + pais, StandardCharsets.UTF_8)
+                + "&format=json&limit=5&addressdetails=1&countrycodes=cl";
+        return ejecutarNominatim(url, "libre(" + consulta + ")");
+    }
+
+    private List<Candidato> ejecutarNominatim(String url, String etiquetaDebug) {
+        Map<String, List<Candidato>> cache = cargarCache();
+        List<Candidato> cacheados = cache.get(url);
+        if (cacheados != null) return cacheados;
+
+        respetarLimiteNominatim();
+        List<Candidato> resultado = new ArrayList<>();
         try {
-            String query = URLEncoder.encode(consulta + ", " + pais, StandardCharsets.UTF_8);
-            URI uri = URI.create("https://nominatim.openstreetmap.org/search?q=" + query
-                    + "&format=json&limit=5&addressdetails=1&countrycodes=cl");
+            URI uri = URI.create(url);
             HttpRequest req = HttpRequest.newBuilder(uri)
                     .header("User-Agent", userAgent)
                     .timeout(Duration.ofSeconds(6)).GET().build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) return Coordinates.EMPTY;
-            JsonNode arr = mapper.readTree(resp.body());
-            if (arr.isArray() && !arr.isEmpty()) {
-                // En Nominatim ya vienen ordenados por relevancia.
-                JsonNode n = arr.get(0);
-                Coordinates c = new Coordinates(n.get("lat").asDouble(), n.get("lon").asDouble());
-                cache.put(cacheKey, c);
-                guardarCache(cache);
-                return c;
+            if (resp.statusCode() != 200) {
+                log.warn("Nominatim respondió HTTP {} para consulta {}", resp.statusCode(), etiquetaDebug);
+                return resultado;
             }
-        } catch (Exception ignored) {}
-        return Coordinates.EMPTY;
+            JsonNode arr = mapper.readTree(resp.body());
+            if (arr.isArray()) {
+                for (JsonNode n : arr) {
+                    if (n.get("lat") == null || n.get("lon") == null) continue;
+                    JsonNode addr = n.get("address");
+                    String comuna = "";
+                    if (addr != null) {
+                        comuna = addr.path("city").asText("");
+                        if (comuna.isBlank()) comuna = addr.path("town").asText("");
+                        if (comuna.isBlank()) comuna = addr.path("suburb").asText("");
+                        if (comuna.isBlank()) comuna = addr.path("municipality").asText("");
+                        if (comuna.isBlank()) comuna = addr.path("county").asText("");
+                    }
+                    String nombre = n.path("display_name").asText("");
+                    String tipo = n.path("type").asText("");
+                    resultado.add(new Candidato(
+                            n.get("lat").asDouble(), n.get("lon").asDouble(), nombre, tipo, comuna));
+                }
+            }
+            if (resultado.isEmpty()) {
+                log.debug("Nominatim sin resultados para consulta {}", etiquetaDebug);
+            }
+            cache.put(url, resultado);
+            guardarCache(cache);
+        } catch (Exception e) {
+            log.warn("Error consultando Nominatim ({}): {}", etiquetaDebug, e.toString());
+        }
+        return resultado;
+    }
+
+    /** Nominatim exige como máximo 1 solicitud por segundo por origen; respetamos eso aquí. */
+    private synchronized void respetarLimiteNominatim() {
+        long ahora = System.currentTimeMillis();
+        long espera = NOMINATIM_MIN_INTERVALO_MS - (ahora - ultimaLlamadaNominatim);
+        if (espera > 0) {
+            try {
+                Thread.sleep(espera);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        ultimaLlamadaNominatim = System.currentTimeMillis();
     }
 
     private List<Candidato> buscarPhoton(String consulta, Coordinates centro) {
@@ -154,7 +258,10 @@ public class GeocoderService {
                     .header("User-Agent", userAgent)
                     .timeout(Duration.ofSeconds(7)).GET().build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) return resultado;
+            if (resp.statusCode() != 200) {
+                log.warn("Photon respondió HTTP {} para consulta '{}'", resp.statusCode(), consulta);
+                return resultado;
+            }
             JsonNode root = mapper.readTree(resp.body());
             JsonNode features = root.get("features");
             if (features == null || !features.isArray()) return resultado;
@@ -173,7 +280,9 @@ public class GeocoderService {
                 if (comuna.isBlank() && prop != null) comuna = prop.path("county").asText("");
                 resultado.add(new Candidato(lat, lon, nombre, tipo, comuna));
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            log.warn("Error consultando Photon para '{}': {}", consulta, e.toString());
+        }
         return resultado;
     }
 
@@ -204,8 +313,9 @@ public class GeocoderService {
                 mejor = c;
             }
         }
-        // Evita aceptar un candidato completamente ajeno al texto.
-        return mejorPuntaje >= 0.42 ? mejor : null;
+        // Evita aceptar un candidato completamente ajeno al texto: antes esto
+        // solo se aplicaba a Photon, y Nominatim se aceptaba sin puntuar.
+        return mejorPuntaje >= UMBRAL_ACEPTACION ? mejor : null;
     }
 
     private double distanciaKm(double lat1, double lon1, double lat2, double lon2) {
@@ -319,32 +429,44 @@ public class GeocoderService {
         return t;
     }
 
-    private Map<String, Coordinates> cargarCache() {
-        Map<String, Coordinates> resultado = new HashMap<>();
+    private Map<String, List<Candidato>> cargarCache() {
+        Map<String, List<Candidato>> resultado = new HashMap<>();
         if (!Files.exists(cachePath)) return resultado;
         try {
             JsonNode raiz = mapper.readTree(Files.readString(cachePath));
             raiz.fields().forEachRemaining(entry -> {
+                List<Candidato> lista = new ArrayList<>();
                 JsonNode v = entry.getValue();
-                resultado.put(entry.getKey(), new Coordinates(
-                        v.has("lat") ? v.get("lat").asDouble() : null,
-                        v.has("lng") ? v.get("lng").asDouble() : null));
+                if (v.isArray()) {
+                    for (JsonNode c : v) {
+                        lista.add(new Candidato(
+                                c.path("lat").asDouble(), c.path("lng").asDouble(),
+                                c.path("nombre").asText(""), c.path("tipo").asText(""), c.path("comuna").asText("")));
+                    }
+                } else if (v.has("lat") && v.has("lng")) {
+                    // Formato antiguo (una sola coordenada por clave): se conserva como candidato único.
+                    lista.add(new Candidato(v.get("lat").asDouble(), v.get("lng").asDouble(), "", "", ""));
+                }
+                resultado.put(entry.getKey(), lista);
             });
         } catch (IOException ignored) {}
         return resultado;
     }
 
-    private void guardarCache(Map<String, Coordinates> cache) {
+    private void guardarCache(Map<String, List<Candidato>> cache) {
         try {
             Files.createDirectories(cachePath.getParent());
-            Map<String, Map<String, Double>> plano = new HashMap<>();
-            cache.forEach((k, v) -> {
-                if (v.lat() != null && v.lng() != null)
-                    plano.put(k, Map.of("lat", v.lat(), "lng", v.lng()));
+            Map<String, List<Map<String, Object>>> plano = new HashMap<>();
+            cache.forEach((k, lista) -> {
+                List<Map<String, Object>> valores = new ArrayList<>();
+                for (Candidato c : lista) {
+                    valores.add(Map.of(
+                            "lat", c.lat(), "lng", c.lng(),
+                            "nombre", c.nombre(), "tipo", c.tipo(), "comuna", c.comuna()));
+                }
+                plano.put(k, valores);
             });
             Files.writeString(cachePath, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(plano));
         } catch (IOException ignored) {}
     }
 }
-
-

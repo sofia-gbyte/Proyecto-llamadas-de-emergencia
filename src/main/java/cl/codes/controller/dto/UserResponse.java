@@ -5,7 +5,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import cl.codes.model.User;
 
 public record UserResponse(
-        Long id, String username, String rolee, boolean active, String fullName, String email, String institution
+        Long id, String username, String role, boolean active, String fullName, String email, String institution
 ) {
     public static UserResponse de(User user) {
         String fullName = ((user.getFirstName() == null ? "" : user.getFirstName()) + " " +
