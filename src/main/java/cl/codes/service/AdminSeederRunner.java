@@ -43,12 +43,14 @@ public class AdminSeederRunner implements CommandLineRunner {
 
         var existingAdmin = repo.findByUsername(adminUsername);
         if (existingAdmin.isPresent()) {
-            User admin = existingAdmin.get();
-            admin.setPasswordHash(securityService.hashPassword(adminPassword));
-            admin.setRole("administrator");
-            admin.setActive(true);
-            repo.save(admin);
-            log.info("Administrator user '{}' credentials synchronized from environment variables.", adminUsername);
+            // No se toca nada aquí a propósito: antes esto reescribía la
+            // contraseña/rol/estado del admin en CADA arranque con el valor
+            // de CODES_ADMIN_PASSWORD, así que cualquier cambio de clave
+            // hecho desde la app quedaba "pegado" al valor del .ps1 y se
+            // revertía al reiniciar. Ahora el bootstrap solo CREA el admin
+            // la primera vez; después su cuenta se administra igual que
+            // cualquier otra (o directamente en la base de datos).
+            log.debug("Administrator user '{}' already exists; leaving it untouched.", adminUsername);
             return;
         }
 
