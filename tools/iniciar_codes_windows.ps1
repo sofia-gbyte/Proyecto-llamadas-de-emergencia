@@ -190,22 +190,61 @@ New-Item -ItemType Directory -Force -Path (Join-Path $root 'data') | Out-Null
 if (Test-Path $secretFile) {
     . $secretFile
 } else {
-    $jwt = [Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Maximum 256 }))
-    $enc = [Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Maximum 256 }))
+    function New-SecureBase64([int]$bytes = 32) {
+        $buffer = New-Object byte[] $bytes
+        [System.Security.Cryptography.RandomNumberGenerator]::Fill($buffer)
+        return [Convert]::ToBase64String($buffer)
+    }
+
+    function Get-SecureIndex([int]$max) {
+        $buffer = New-Object byte[] 4
+        [System.Security.Cryptography.RandomNumberGenerator]::Fill($buffer)
+        return [BitConverter]::ToUInt32($buffer, 0) % $max
+    }
+
+    function New-SecureAdminPassword {
+        $upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+        $lower = 'abcdefghijkmnopqrstuvwxyz'
+        $digits = '23456789'
+        $symbols = '!@#$%^&*-_=+'
+        $all = $upper + $lower + $digits + $symbols
+        $chars = @()
+        $chars += $upper[(Get-SecureIndex $upper.Length)]
+        $chars += $lower[(Get-SecureIndex $lower.Length)]
+        $chars += $digits[(Get-SecureIndex $digits.Length)]
+        $chars += $symbols[(Get-SecureIndex $symbols.Length)]
+        for ($i = $chars.Count; $i -lt 20; $i++) { $chars += $all[(Get-SecureIndex $all.Length)] }
+        for ($i = $chars.Count - 1; $i -gt 0; $i--) {
+            $j = Get-SecureIndex ($i + 1)
+            $tmp = $chars[$i]; $chars[$i] = $chars[$j]; $chars[$j] = $tmp
+        }
+        return -join $chars
+    }
+
+    $jwt = New-SecureBase64 32
+    $enc = New-SecureBase64 32
+    $adminPassword = New-SecureAdminPassword
     @"
 `$env:CODES_JWT_SECRET = '$jwt'
 `$env:CODES_ENCRYPT_KEY = '$enc'
 `$env:CODES_ADMIN_USER = 'admin'
-`$env:CODES_ADMIN_PASSWORD = 'Admin123!'
+`$env:CODES_ADMIN_PASSWORD = '$adminPassword'
 # Claves REALES de Cloudflare Turnstile (opcional). Sin ellas se usan las claves de PRUEBA.
 # `$env:CODES_TURNSTILE_SITE_KEY = 'tu-site-key'
 # `$env:CODES_TURNSTILE_SECRET_KEY = 'tu-secret-key'
 "@ | Set-Content -Encoding UTF8 $secretFile
     . $secretFile
+    Write-Host ''
+    Write-Host 'Administrador inicial creado para este entorno.' -ForegroundColor Green
+    Write-Host "Usuario: $env:CODES_ADMIN_USER" -ForegroundColor Green
+    Write-Host "Contraseña inicial: $env:CODES_ADMIN_PASSWORD" -ForegroundColor Yellow
+    Write-Host 'Guárdala y cámbiala desde CODES después del primer inicio.' -ForegroundColor Yellow
 }
 
 if (-not $env:CODES_ADMIN_USER) { $env:CODES_ADMIN_USER = 'admin' }
-if (-not $env:CODES_ADMIN_PASSWORD) { $env:CODES_ADMIN_PASSWORD = 'Admin123!' }
+if (-not $env:CODES_ADMIN_PASSWORD) {
+    throw 'CODES_ADMIN_PASSWORD no está configurada. Elimina data\.codes-secrets.ps1 y vuelve a iniciar CODES para generar una contraseña segura.'
+}
 
 # Cloudflare Turnstile (captcha del login y del registro).
 # - Claves reales: agrégalas a data\.codes-secrets.ps1 (o como variables de entorno de Windows):

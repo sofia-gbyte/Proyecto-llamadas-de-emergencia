@@ -60,6 +60,9 @@ public class Call {
     @Column(name = "source_ip", length = 45)
     private String sourceIp;
 
+    @Column(name = "institution", length = 30)
+    private String institution;
+
     @Column(name = "created_by_user", length = 50)
     private String createdByUser;
 
@@ -122,6 +125,9 @@ public class Call {
 
     public String getSourceIp() { return sourceIp; }
     public void setSourceIp(String sourceIp) { this.sourceIp = sourceIp; }
+
+    public String getInstitution() { return institution; }
+    public void setInstitution(String institution) { this.institution = institution; }
 
     public String getCreatedByUser() { return createdByUser; }
     public void setCreatedByUser(String createdByUser) { this.createdByUser = createdByUser; }

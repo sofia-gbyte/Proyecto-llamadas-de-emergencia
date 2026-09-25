@@ -3,6 +3,8 @@ package cl.codes.service;
 import cl.codes.classifier.Classifier;
 import cl.codes.model.Call;
 import cl.codes.repository.CallRepository;
+import cl.codes.repository.UserRepository;
+import cl.codes.model.User;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -22,6 +24,7 @@ public class LiveCallService {
     private static final DateTimeFormatter MARCA = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS");
 
     private final CallRepository repo;
+    private final UserRepository userRepository;
     private final GeocoderService geocoder;
     private final ChileStreetCorrectionService streetCorrection;
     private final SecurityService securityService;
@@ -31,6 +34,7 @@ public class LiveCallService {
 
     public LiveCallService(
             CallRepository repo,
+            UserRepository userRepository,
             GeocoderService geocoder,
             ChileStreetCorrectionService streetCorrection,
             SecurityService securityService,
@@ -38,6 +42,7 @@ public class LiveCallService {
             @org.springframework.beans.factory.annotation.Value("${app.audio-encriptado-dir}") String encryptedFolder
     ) throws IOException {
         this.repo = repo;
+        this.userRepository = userRepository;
         this.geocoder = geocoder;
         this.streetCorrection = streetCorrection;
         this.securityService = securityService;
@@ -51,6 +56,8 @@ public class LiveCallService {
     }
 
     public Call create(String transcription, MultipartFile audio, String user, String ip, Double operatorLatitude, Double operatorLongitude) throws Exception {
+        validateCoordinates(operatorLatitude, operatorLongitude);
+        User creator = userRepository.findByUsername(user).orElseThrow(() -> new IllegalArgumentException("User not found"));
         String texto = streetCorrection.correct(cleanTranscription(transcription));
         if (texto.isBlank()) throw new IllegalArgumentException("The transcription is empty.");
         Classifier.ResultadoClasificacion classification = Classifier.classifyCall(texto);
@@ -60,6 +67,7 @@ public class LiveCallService {
         Path encriptado = null;
         try {
             if (audio != null && !audio.isEmpty()) {
+                validateAudio(audio);
                 String nombre = sanitizeName(audio.getOriginalFilename());
                 temporal = Files.createTempFile("codes-live-", "-" + nombre);
                 audio.transferTo(temporal);
@@ -84,10 +92,27 @@ public class LiveCallService {
             call.setLongitude(coords.lng());
             call.setSourceIp(ip);
             call.setCreatedByUser(user);
+            call.setInstitution(creator.getInstitution());
             return repo.save(call);
         } finally {
             if (temporal != null) Files.deleteIfExists(temporal);
         }
+    }
+
+    private void validateCoordinates(Double lat, Double lon) {
+        if ((lat == null) != (lon == null)) throw new IllegalArgumentException("Operator latitude and longitude must be provided together");
+        if (lat != null && (lat.isNaN() || lat.isInfinite() || lat < -90 || lat > 90)) throw new IllegalArgumentException("Invalid operator latitude");
+        if (lon != null && (lon.isNaN() || lon.isInfinite() || lon < -180 || lon > 180)) throw new IllegalArgumentException("Invalid operator longitude");
+    }
+
+    private void validateAudio(MultipartFile audio) {
+        final long maxBytes = 15L * 1024 * 1024;
+        if (audio.getSize() > maxBytes) throw new IllegalArgumentException("Audio exceeds the 15 MB limit");
+        String contentType = audio.getContentType() == null ? "" : audio.getContentType().toLowerCase();
+        String name = audio.getOriginalFilename() == null ? "" : audio.getOriginalFilename().toLowerCase();
+        boolean mimeOk = contentType.equals("audio/webm") || contentType.equals("audio/ogg") || contentType.equals("audio/wav") || contentType.equals("audio/x-wav") || contentType.equals("audio/mpeg");
+        boolean extOk = name.endsWith(".webm") || name.endsWith(".ogg") || name.endsWith(".wav") || name.endsWith(".mp3");
+        if (!mimeOk || !extOk) throw new IllegalArgumentException("Unsupported audio type");
     }
 
     private String cleanTranscription(String value) {

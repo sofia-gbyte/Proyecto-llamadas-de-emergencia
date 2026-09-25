@@ -4,6 +4,7 @@ import cl.codes.controller.dto.LoginRequest;
 import cl.codes.controller.dto.LoginResponse;
 import cl.codes.controller.dto.RegisterRequest;
 import cl.codes.controller.dto.UserResponse;
+import cl.codes.controller.dto.ChangePasswordRequest;
 import cl.codes.model.User;
 import cl.codes.repository.UserRepository;
 import cl.codes.service.SecurityService;
@@ -20,6 +21,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -127,6 +129,22 @@ public class AuthController {
                 "message", "Account created successfully. An administrator must activate it before login.",
                 "user", UserResponse.de(account)
         ));
+    }
+
+    @PostMapping("/change-password")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<?> changePassword(@Valid @RequestBody ChangePasswordRequest req, Authentication auth) {
+        User user = userRepository.findByUsername(auth.getName())
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        if (!securityService.verifyPassword(req.currentPassword(), user.getPasswordHash())) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "Current password is incorrect"));
+        }
+        if (req.currentPassword().equals(req.newPassword())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "The new password must be different"));
+        }
+        user.setPasswordHash(securityService.hashPassword(req.newPassword()));
+        userRepository.save(user);
+        return ResponseEntity.ok(Map.of("message", "Password changed successfully"));
     }
 
     @org.springframework.web.bind.annotation.RequestMapping(

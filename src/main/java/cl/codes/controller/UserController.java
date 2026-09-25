@@ -14,7 +14,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/users")
-@PreAuthorize("hasRole('ADMINISTRADOR')")
+@PreAuthorize("hasRole('ADMINISTRATOR')")
 public class UserController {
 
     private final UserRepository repo;
@@ -40,6 +40,7 @@ public class UserController {
         user.setPasswordHash(securityService.hashPassword(req.password()));
         user.setRole(req.rol());
         user.setActive(true);
+        user.setInstitution(req.institution());
         return UserResponse.de(repo.save(user));
     }
 

@@ -18,7 +18,11 @@ public record CreateUserRequest(
 
         @NotBlank
         @Pattern(regexp = "operator|supervisor|administrator", message = "El rol debe ser operator, supervisor o administrator")
-        String rol
+        String rol,
+
+        @NotBlank
+        @Pattern(regexp = "bomberos|carabineros|samu", message = "Institución no válida")
+        String institution
 ) {}
 
 

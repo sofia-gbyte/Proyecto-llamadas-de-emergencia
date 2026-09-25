@@ -29,36 +29,36 @@ public class CallController {
     }
 
     @GetMapping("/llamadas/pending")
-    public List<CallResponse> pending() {
-        return service.getPending().stream().map(CallResponse::de).toList();
+    public List<CallResponse> pending(Authentication auth) {
+        return service.getPending(auth).stream().map(CallResponse::de).toList();
     }
 
     @GetMapping("/llamadas/in-progress")
-    public List<CallResponse> inProgress() {
-        return service.getInProgress().stream().map(CallResponse::de).toList();
+    public List<CallResponse> inProgress(Authentication auth) {
+        return service.getInProgress(auth).stream().map(CallResponse::de).toList();
     }
 
     @GetMapping("/llamadas/closed")
-    public List<CallResponse> closed(@RequestParam(defaultValue = "50") int limit) {
-        return service.getClosed(Math.max(1, Math.min(limit, 100))).stream().map(CallResponse::de).toList();
+    public List<CallResponse> closed(@RequestParam(defaultValue = "50") int limit, Authentication auth) {
+        return service.getClosed(Math.max(1, Math.min(limit, 100)), auth).stream().map(CallResponse::de).toList();
     }
 
     @PostMapping("/llamadas/{id}/assign")
-    @PreAuthorize("hasAnyRole('OPERADOR', 'SUPERVISOR', 'ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('OPERATOR', 'SUPERVISOR', 'ADMINISTRATOR')")
     public ResponseEntity<?> assign(@PathVariable Long id, Authentication auth) {
-        var call = service.assign(id, auth.getName());
+        var call = service.assign(id, auth);
         return ResponseEntity.ok(Map.of("message", "Call " + id + " assigned to " + call.getAssignedOperator()));
     }
 
     @PostMapping("/llamadas/{id}/close")
-    @PreAuthorize("hasAnyRole('OPERADOR', 'SUPERVISOR', 'ADMINISTRADOR')")
-    public ResponseEntity<?> close(@PathVariable Long id, @Valid @RequestBody CloseRequest req) {
-        service.close(id, req.comment());
+    @PreAuthorize("hasAnyRole('OPERATOR', 'SUPERVISOR', 'ADMINISTRATOR')")
+    public ResponseEntity<?> close(@PathVariable Long id, @Valid @RequestBody CloseRequest req, Authentication auth) {
+        service.close(id, req.comment(), auth);
         return ResponseEntity.ok(Map.of("message", "Call " + id + " closed"));
     }
 
     @PostMapping(value = "/llamadas/live", consumes = "multipart/form-data")
-    @PreAuthorize("hasAnyRole('OPERADOR', 'SUPERVISOR', 'ADMINISTRADOR')")
+    @PreAuthorize("hasAnyRole('OPERATOR', 'SUPERVISOR', 'ADMINISTRATOR')")
     public ResponseEntity<CallResponse> createLive(
             @Valid @RequestPart("datos") CreateLiveCallRequest datos,
             @RequestPart(value = "audio", required = false) MultipartFile audio,
@@ -71,8 +71,8 @@ public class CallController {
     }
 
     @GetMapping("/metrics")
-    public CallService.Metrics metrics() {
-        return service.metrics();
+    public CallService.Metrics metrics(Authentication auth) {
+        return service.metrics(auth);
     }
 
     @GetMapping("/health")

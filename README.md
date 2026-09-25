@@ -25,7 +25,9 @@ El proyecto está construido con **Spring Boot** y dispone de una interfaz web s
 - Autenticación mediante **JWT** y contraseñas protegidas con **BCrypt**.
 - Protección de inicio de sesión y registro mediante **Cloudflare Turnstile**.
 - Control de intentos de autenticación y limitación de solicitudes.
-- Gestión de usuarios por rol y activación administrativa de cuentas registradas.
+- Gestión de usuarios por rol, institución y activación administrativa de cuentas registradas.
+- Aislamiento de llamadas y métricas por institución para operadores y supervisores; el administrador puede supervisar todas las instituciones.
+- Cambio de contraseña autenticado desde la aplicación.
 - Interfaz web basada en HTML, CSS y JavaScript, con **Leaflet** para el mapa.
 
 ## Tecnologías
@@ -51,7 +53,7 @@ Para ejecutar CODES desde el código fuente necesitas:
 - Windows si quieres utilizar los scripts `.bat` y `.ps1` incluidos para el arranque y el ASR local.
 - Python, solo si vas a generar o ampliar el diccionario de calles mediante las herramientas de `tools/streets`.
 
-El ASR utiliza un modelo que se descarga por separado y **no forma parte del ZIP liviano**.
+El ASR utiliza un modelo que se descarga por separado y **no forma parte del ZIP liviano**. Las llamadas en vivo limitan el archivo de audio recibido a 15 MB y validan tipo MIME y extensión.
 
 ## Inicio rápido en Windows
 
@@ -126,13 +128,9 @@ Este archivo contiene las claves persistentes utilizadas por el entorno local. *
 
 El script genera automáticamente claves para JWT y cifrado si todavía no existen.
 
-También establece inicialmente un usuario administrador. Si se utilizan los valores predeterminados del script, la contraseña inicial es:
+También establece inicialmente un usuario administrador. En una instalación nueva, el script genera una contraseña aleatoria segura y la guarda en `data\.codes-secrets.ps1`. La muestra una sola vez en la consola durante la creación inicial.
 
-```text
-Admin123!
-```
-
-**Cámbiala antes de cualquier uso fuera de un entorno de desarrollo o demostración.**
+**Cámbiala desde CODES después del primer inicio y protege el archivo de secretos.**
 
 ### Cloudflare Turnstile
 
@@ -198,7 +196,7 @@ CODES_ADMIN_USER
 CODES_ADMIN_PASSWORD
 ```
 
-El proceso de bootstrap crea el administrador **solo si todavía no existe**; no sobrescribe su contraseña en cada arranque.
+El proceso de bootstrap crea el administrador **solo si todavía no existe**; no sobrescribe su contraseña en cada arranque. El script de Windows genera una contraseña inicial aleatoria y la guarda en `data\.codes-secrets.ps1` para ese entorno.
 
 ## Llamadas en vivo y ASR
 
@@ -426,7 +424,7 @@ POST /api/llamadas/live
 GET  /api/metrics
 ```
 
-Las operaciones protegidas requieren autenticación y, según la operación, un rol autorizado.
+Las operaciones protegidas requieren autenticación y, según la operación, un rol autorizado. Los roles internos son `operator`, `supervisor` y `administrator`. Las operaciones sobre llamadas también comprueban la institución del usuario; un operador solo puede cerrar una llamada que tenga asignada, mientras que supervisor y administrador tienen permisos ampliados dentro del alcance permitido.
 
 ## Configuración principal
 
@@ -473,11 +471,20 @@ Para ejecutar las pruebas:
 mvn test
 ```
 
+## Seguridad y aislamiento por institución
+
+Cada llamada guarda la institución del usuario que la crea. Las listas de llamadas, métricas, asignaciones y cierres se filtran por institución para usuarios no administradores. Los administradores pueden supervisar todas las instituciones.
+
+Las llamadas existentes creadas antes de esta separación pueden ser actualizadas automáticamente al iniciar la aplicación cuando su `createdByUser` permite determinar la institución. Las llamadas antiguas sin institución identificable quedan visibles únicamente para administradores hasta que sean revisadas.
+
 ## Consideraciones antes de producción
 
 Este proyecto contiene información potencialmente sensible relacionada con llamadas e incidentes. Antes de utilizarlo en un entorno real se deberían revisar, como mínimo:
 
 - gestión y rotación de secretos;
+- cambio de la contraseña inicial generada por el instalador;
+- migraciones controladas de base de datos en lugar de depender de `ddl-auto=update`;
+- ejecución de la batería de tests automatizados antes de cada despliegue;
 - contraseñas iniciales;
 - HTTPS;
 - protección del WebSocket del ASR;

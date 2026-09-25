@@ -286,11 +286,16 @@ function ocultarPantallaAuth() {
   }
 }
 
+
+function etiquetaRol(rol) {
+  return ({ administrator: 'Administrador', supervisor: 'Supervisor', operator: 'Operador' }[rol] || rol || 'Operador');
+}
+
 function actualizarUsuarioUI() {
-  const rol = sesion?.role || 'operador';
+  const rol = sesion?.role || 'operator';
 
   if ($('rol-tag')) {
-    $('rol-tag').textContent = rol;
+    $('rol-tag').textContent = etiquetaRol(rol);
   }
 
   if ($('usuario-nombre')) {
@@ -317,7 +322,7 @@ function actualizarUsuarioUI() {
     $('modo-badge').textContent = 'Servidor';
   }
 
-  const esAdmin = rol === 'administrador';
+  const esAdmin = rol === 'administrator';
 
   if ($('admin-selector')) {
     $('admin-selector').classList.toggle(
@@ -524,6 +529,27 @@ async function registrarCuenta(e) {
   }
 }
 
+
+async function cambiarClave() {
+  if (!sesion) return;
+  const actual = window.prompt('Contraseña actual:');
+  if (actual === null) return;
+  const nueva = window.prompt('Nueva contraseña (mínimo 12 caracteres, mayúscula, minúscula, número y símbolo):');
+  if (nueva === null) return;
+  const confirmacion = window.prompt('Repite la nueva contraseña:');
+  if (confirmacion === null) return;
+  if (nueva !== confirmacion) { mostrarAlerta('Las contraseñas nuevas no coinciden.', 'error'); return; }
+  try {
+    const r = await apiFetch('/api/auth/change-password', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword: actual, newPassword: nueva })
+    });
+    const d = await leerRespuesta(r);
+    if (!r.ok) throw new Error(d.error || 'No se pudo cambiar la contraseña');
+    mostrarAlerta('Contraseña cambiada correctamente.', 'ok');
+  } catch (e) { if (e.message !== 'No autenticado') mostrarAlerta(e.message, 'error'); }
+}
+
 function cerrarSesion() {
   if (!sesion) return;
 
@@ -580,7 +606,7 @@ async function entrarConsola() {
 
   await actualizarMetricas();
 
-  if (sesion?.role === 'administrador') {
+  if (sesion?.role === 'administrator') {
     await cargarUsuarios();
   }
 }
@@ -2042,7 +2068,7 @@ function actualizarTabs() {
 async function cargarUsuarios() {
   if (
     sesion?.role !==
-    'administrador'
+    'administrator'
   ) {
     return;
   }
@@ -2129,7 +2155,7 @@ function renderizarUsuarios(usuarios) {
 
               <span class="rol-tag">
                 ${escapeHtml(
-                  u.role
+                  etiquetaRol(u.role)
                 )}
               </span>
 
@@ -2331,7 +2357,7 @@ function actualizarTodo() {
 
   if (
     sesion.role !==
-    'administrador'
+    'administrator'
   ) {
     cambiarAdminTab(
       'incidentes'
@@ -3500,7 +3526,7 @@ setInterval(
 
     if (
       sesion.role ===
-        'administrador' &&
+        'administrator' &&
       adminTabActual ===
         'usuarios'
     ) {
@@ -3510,3 +3536,4 @@ setInterval(
   },
   REFRESCO_MS
 );
+document.getElementById('btn-cambiar-clave')?.addEventListener('click', cambiarClave);

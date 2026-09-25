@@ -32,7 +32,7 @@ import java.util.List;
  */
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity // habilita @PreAuthorize("hasRole('ADMINISTRADOR')") en los controladores
+@EnableMethodSecurity // habilita @PreAuthorize("hasRole('ADMINISTRATOR')") en los controladores
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;

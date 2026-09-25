@@ -11,7 +11,7 @@ import java.util.Map;
 public record CallResponse(
         Long id, String createdAt, String transcription, String operationalSummary, String priority,
         Map<String, Integer> scores, List<String> highlightedWords, String address, Double latitude, Double longitude,
-        boolean assigned, String assignedOperator, String assignmentDate, String closureDate, String closureComment
+        boolean assigned, String assignedOperator, String assignmentDate, String closureDate, String closureComment, String institution
 ) {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -45,7 +45,8 @@ public record CallResponse(
                 call.getAssignedOperator(),
                 call.getAssignmentDate() != null ? call.getAssignmentDate().toString() : null,
                 call.getClosureDate() != null ? call.getClosureDate().toString() : null,
-                call.getClosureComment()
+                call.getClosureComment(),
+                call.getInstitution()
         );
     }
 }
