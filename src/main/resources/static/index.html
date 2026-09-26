@@ -39,13 +39,13 @@
                 <button class="btn-auth" type="submit">Ingresar a CODES</button>
                 <button class="auth-link" id="btn-olvido-password" type="button">¿Olvidaste tu contraseña?</button>
                 <div class="auth-demo-hint">
-                    <div class="demo-label">🔐 Acceso seguro</div>
+                    <div class="demo-label">Acceso seguro</div>
                     <div class="row">La cuenta debe estar activa para ingresar. Si te registras, un administrador deberá activarla.</div>
                 </div>
             </form>
 
             <form class="auth-form auth-recovery" id="form-recuperar" hidden>
-                <div class="auth-recovery-icon">↻</div>
+                <div class="auth-recovery-icon">Recuperación</div>
                 <h2>Recuperar contraseña</h2>
                 <p class="auth-recovery-copy">Ingresa el correo asociado a tu cuenta. Si existe una cuenta activa, te enviaremos un enlace seguro para crear una nueva contraseña.</p>
                 <div class="campo">
@@ -59,7 +59,7 @@
             </form>
 
             <form class="auth-form auth-recovery" id="form-reset" hidden>
-                <div class="auth-recovery-icon">✓</div>
+                <div class="auth-recovery-icon">Nueva contraseña</div>
                 <h2>Nueva contraseña</h2>
                 <p class="auth-recovery-copy">Elige una contraseña nueva. Debe tener al menos 12 caracteres e incluir mayúsculas, minúsculas, números y un símbolo.</p>
                 <div class="campo">
@@ -118,7 +118,7 @@
                 <p class="auth-success" id="registro-success" hidden></p>
                 <button class="btn-auth" type="submit">Crear cuenta</button>
                 <p style="color: #3d4d66; font-size:0.6rem; text-align:center; margin-top:0.5rem;">
-                    ⏳ Las cuentas se crean en estado <strong>pendiente</strong>.
+                    Las cuentas se crean en estado <strong>pendiente</strong>.
                     Un administrador debe activarlas.
                 </p>
             </form>
@@ -143,7 +143,7 @@
         </div>
 
         <div class="header-derecha">
-            <button class="btn-accion primario btn-live" id="btn-llamada-en-vivo" type="button">🎙 Llamada en vivo</button>
+            <button class="btn-accion primario btn-live" id="btn-llamada-en-vivo" type="button">Llamada en vivo</button>
 
             <div class="sistema-estado">
                 <span class="indicador online" id="indicador-estado"></span>
@@ -172,9 +172,9 @@
                         <span class="btn-vista activo" aria-label="Vista administrativa general">Supervisión general</span>
                     </div>
                     <div class="dropdown-divisor"></div>
-                    <button class="dropdown-item" id="btn-cambiar-clave" type="button">🔐 Cambiar clave</button>
-                    <button class="dropdown-item" id="btn-tema" type="button" aria-label="Cambiar a tema claro">☼ Claro</button>
-                    <button class="dropdown-item salir" id="btn-salir" type="button">⏻ Cerrar sesión</button>
+                    <button class="dropdown-item" id="btn-cambiar-clave" type="button">Cambiar clave</button>
+                    <button class="dropdown-item" id="btn-tema" type="button" aria-label="Cambiar a tema claro">Claro</button>
+                    <button class="dropdown-item salir" id="btn-salir" type="button">Cerrar sesión</button>
                 </div>
             </div>
         </div>
@@ -187,7 +187,6 @@
             <div class="riel-seccion">
                 <div class="riel-titulo">OPERACIÓN</div>
                 <button class="admin-tab activo" data-admin-tab="incidentes" type="button">
-                    <span class="riel-icono">📋</span>
                     <span>Incidentes</span>
                 </button>
             </div>
@@ -196,7 +195,6 @@
                 <div class="riel-titulo">ADMINISTRACIÓN</div>
                 <div class="admin-tabs" id="admin-tabs">
                     <button class="admin-tab" data-admin-tab="usuarios" type="button">
-                        <span class="riel-icono">👥</span>
                         <span>Usuarios</span>
                     </button>
                 </div>
@@ -207,28 +205,24 @@
             <div class="metricas" id="metricas" aria-label="Resumen operativo">
                 <div class="riel-titulo">RESUMEN</div>
                 <div class="metrica-tarjeta">
-                    <span class="icono">📋</span>
                     <div class="info">
                         <span class="valor" id="m-pendientes">–</span>
                         <span class="label">Sin asignar</span>
                     </div>
                 </div>
                 <div class="metrica-tarjeta">
-                    <span class="icono">🚗</span>
                     <div class="info">
                         <span class="valor" id="m-en-curso">–</span>
                         <span class="label">En curso</span>
                     </div>
                 </div>
                 <div class="metrica-tarjeta urgente">
-                    <span class="icono">🚨</span>
                     <div class="info">
                         <span class="valor" id="m-urgentes">–</span>
                         <span class="label">Urgentes</span>
                     </div>
                 </div>
                 <div class="metrica-tarjeta">
-                    <span class="icono">⏱</span>
                     <div class="info">
                         <span class="valor" id="m-tiempo">–</span>
                         <span class="label">Respuesta</span>
@@ -279,7 +273,7 @@
             <!-- GESTIÓN DE USUARIOS (ADMIN) -->
             <div class="gestion-usuarios" id="gestion-usuarios">
                 <div class="header">
-                    <h2>👥 Gestión de Usuarios</h2>
+                    <h2>Gestión de Usuarios</h2>
                     <span class="total" id="usuarios-total">Total: 0 usuarios</span>
                 </div>
                 <div id="lista-usuarios">
@@ -303,11 +297,11 @@
     
 <div class="modal" id="modal-live" hidden>
   <div class="modal-caja modal-live-caja">
-    <button class="modal-cerrar" id="live-cerrar" aria-label="Cerrar">×</button>
+    <button class="modal-cerrar" id="live-cerrar" aria-label="Cerrar">Cerrar</button>
     <div class="live-cabecera">
       <div>
         <span class="live-kicker">CODES · ASR LOCAL</span>
-        <h2>🎙 Llamada en vivo</h2>
+        <h2>Llamada en vivo</h2>
       </div>
       <span class="live-status" id="live-status">Listo</span>
     </div>
@@ -318,8 +312,8 @@
       <span id="live-asr">ASR: desconectado</span>
     </div>
     <div class="live-acciones">
-      <button class="btn-accion primario" id="live-iniciar" type="button">🎙 Iniciar micrófono</button>
-      <button class="btn-accion peligro" id="live-detener" type="button" disabled>■ Detener y guardar</button>
+    <button class="btn-accion primario" id="live-iniciar" type="button">Iniciar micrófono</button>
+    <button class="btn-accion peligro" id="live-detener" type="button" disabled>Detener y guardar</button>
     </div>
     <p class="live-nota" id="live-nota">Necesitas tener el servidor ASR en <code>ws://localhost:6006</code>.</p>
   </div>
@@ -327,7 +321,7 @@
 
 <div class="modal" id="modal" hidden>
   <div class="modal-caja">
-    <button class="modal-cerrar" id="modal-cerrar" aria-label="Cerrar">×</button>
+    <button class="modal-cerrar" id="modal-cerrar" aria-label="Cerrar">Cerrar</button>
     <h2 id="modal-titulo">Cerrar caso</h2>
     <div id="modal-cuerpo"></div>
   </div>

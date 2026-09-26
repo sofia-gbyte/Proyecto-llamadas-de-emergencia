@@ -10,7 +10,8 @@ import java.util.Map;
 
 public record CallResponse(
         Long id, String createdAt, String transcription, String operationalSummary, String priority,
-        Map<String, Integer> scores, List<String> highlightedWords, String address, Double latitude, Double longitude,
+        Map<String, Integer> scores, List<String> highlightedWords, List<String> classificationReasons,
+        List<String> suggestedInstitutions, String address, Double latitude, Double longitude,
         boolean assigned, String assignedOperator, String assignmentDate, String closureDate, String closureComment, String institution
 ) {
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -25,6 +26,9 @@ public record CallResponse(
             words = List.of();
         }
 
+        List<String> reasons = readList(call.getClassificationReasons());
+        List<String> institutions = readList(call.getSuggestedInstitutions());
+
         return new CallResponse(
                 call.getId(),
                 call.getCreatedAt() != null ? call.getCreatedAt().toString() : null,
@@ -38,6 +42,8 @@ public record CallResponse(
                         "verde", call.getGreenScore()
                 ),
                 words,
+                reasons,
+                institutions,
                 call.getDetectedAddress(),
                 call.getLatitude(),
                 call.getLongitude(),
@@ -48,6 +54,15 @@ public record CallResponse(
                 call.getClosureComment(),
                 call.getInstitution()
         );
+    }
+
+    private static List<String> readList(String json) {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            return MAPPER.readValue(json, List.class);
+        } catch (Exception e) {
+            return List.of();
+        }
     }
 }
 

@@ -72,7 +72,7 @@ La forma más sencilla de iniciar CODES es:
 CODES.bat
 ```
 
-El menú permite iniciar la aplicación, ejecutar la limpieza del proyecto o salir.
+El menú permite iniciar CODES con ASR, ejecutar la limpieza, crear un respaldo local o salir.
 
 Durante el inicio, el script comprueba Java y Maven, prepara las claves locales necesarias y ejecuta Spring Boot. Cuando corresponde, también intenta preparar/iniciar el ASR local.
 
@@ -507,10 +507,10 @@ GET  /api/admin/status
 POST /api/admin/selftest
 ```
 
-La documentación detallada de auditoría, cambios y preparación para producción local está en:
+La documentación operativa, de seguridad, respaldo y preparación para producción local está en:
 
 ```text
-AUDITORIA_Y_CAMBIOS.md
+OPERACION_LOCAL.md
 ```
 
 ---
@@ -620,7 +620,7 @@ CODES/
 │   └── streets/
 ├── CODES.bat
 ├── pom.xml
-├── AUDITORIA_Y_CAMBIOS.md
+├── OPERACION_LOCAL.md
 ├── README.md
 └── .gitignore
 ```
@@ -729,10 +729,10 @@ Entre ellas:
 
 Además, el backend dispone de `POST /api/auth/logout`, pero el cierre de sesión debe utilizar ese endpoint para invalidar el JWT inmediatamente. El comportamiento visual del frontend no debe confundirse con la invalidación del token en servidor.
 
-Para el detalle de lo implementado y de lo que queda pendiente, consultar:
+Para el detalle operativo y de lo que queda pendiente, consultar:
 
 ```text
-AUDITORIA_Y_CAMBIOS.md
+OPERACION_LOCAL.md
 ```
 
 ---

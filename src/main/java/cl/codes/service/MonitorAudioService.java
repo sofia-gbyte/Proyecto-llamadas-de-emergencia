@@ -153,6 +153,8 @@ public class MonitorAudioService {
             call.setMediumScore(classification.puntajes().getOrDefault("media", 0));
             call.setGreenScore(classification.puntajes().getOrDefault("verde", 0));
             call.setHighlightedWords(mapper.writeValueAsString(classification.highlightedWords()));
+            call.setClassificationReasons(mapper.writeValueAsString(classification.motivos()));
+            call.setSuggestedInstitutions(mapper.writeValueAsString(classification.institucionesSugeridas()));
             call.setDetectedAddress(classification.direccion());
             call.setLatitude(coords.lat());
             call.setLongitude(coords.lng());

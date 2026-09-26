@@ -1,5 +1,6 @@
 # Build and generated output
 /target/
+/dist/
 .github/
 .vscode/
 logs/

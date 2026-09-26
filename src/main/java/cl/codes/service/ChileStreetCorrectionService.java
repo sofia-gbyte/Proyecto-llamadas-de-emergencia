@@ -15,6 +15,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.NavigableMap;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -24,13 +26,20 @@ import java.util.regex.Pattern;
 public class ChileStreetCorrectionService {
     private static final Logger log = LoggerFactory.getLogger(ChileStreetCorrectionService.class);
     private static final Pattern ADDRESS = Pattern.compile(
-            "(?i)(\\b(?:calle|pasaje|avenida|av\\.?|sector|poblacion|villa|cerro|camino)\\s+)"
+            "(?i)(\\b(?:calle|pasaje|avenida|av\\.?|sector|poblacion|villa|cerro|camino|ruta|carretera|caletera|autopista|callejon)\\s+)"
                     + "([^,.]{3,55}?)(?=\\s+(?:(?:n[uú]mero|numero|#)\\s*)?\\d{1,5}\\b|[,.]|\\s+y\\s+|\\s+esquina\\b|\\s+altura\\b|$)");
     private static final double MIN_SCORE = 0.75;
 
     private final Path dictionaryPath;
     private final List<Street> streets = new ArrayList<>();
     private final Map<String, String> cache = new ConcurrentHashMap<>();
+
+    // Índice por largo de la forma "compacta" (sin espacios): permite descartar,
+    // sin calcular la distancia de edición, cualquier calle cuyo largo ya hace
+    // matemáticamente imposible alcanzar MIN_SCORE. Esto es lo que mantiene la
+    // corrección rápida aunque el diccionario crezca de cientos a miles de
+    // nombres (por ejemplo tras correr fetch_calles_overpass.py con --pais).
+    private NavigableMap<Integer, List<Street>> byCompactLength = new TreeMap<>();
 
     public ChileStreetCorrectionService(
             @Value("${app.calles-diccionario:./data/calles_chile.txt}") String dictionaryPath
@@ -51,6 +60,11 @@ public class ChileStreetCorrectionService {
                     .map(name -> new Street(name, phonetic(name), compact(name)))
                     .sorted(Comparator.comparing(Street::name))
                     .forEach(streets::add);
+            NavigableMap<Integer, List<Street>> index = new TreeMap<>();
+            for (Street street : streets) {
+                index.computeIfAbsent(street.compact().length(), k -> new ArrayList<>()).add(street);
+            }
+            byCompactLength = index;
             log.info("Diccionario de calles chilenas cargado: {} nombres", streets.size());
         } catch (IOException e) {
             log.warn("No se pudo leer el diccionario de calles {}: {}", dictionaryPath, e.getMessage());
@@ -59,8 +73,6 @@ public class ChileStreetCorrectionService {
 
     public String correct(String transcription) {
         if (transcription == null || transcription.isBlank() || streets.isEmpty()) return transcription;
-        String clean = transcription.replaceAll("[.,;]", " ").replaceAll("\\s+", " ").trim();
-        if (clean.length() > 140) return transcription;
 
         Matcher matcher = ADDRESS.matcher(transcription);
         StringBuffer result = new StringBuffer();
@@ -105,7 +117,13 @@ public class ChileStreetCorrectionService {
         String candidateCompact = compact(candidate);
         Street best = null;
         double bestScore = 0;
-        for (Street street : streets) {
+        for (Street street : candidatesFor(candidateCompact.length())) {
+            // Antes de calcular la distancia de edición (costosa) se descarta
+            // cualquier calle cuyo largo ya hace imposible superar MIN_SCORE.
+            if (!lengthCanQualify(candidateCompact.length(), street.compact().length())
+                    && !lengthCanQualify(candidatePhonetic.length(), street.phonetic().length())) {
+                continue;
+            }
             double score = Math.max(
                     similarity(candidateCompact, street.compact()),
                     similarity(candidatePhonetic, street.phonetic())
@@ -118,6 +136,31 @@ public class ChileStreetCorrectionService {
         String corrected = best != null && bestScore >= MIN_SCORE ? best.name() : "";
         cache.put(key, corrected);
         return corrected.isEmpty() ? null : corrected;
+    }
+
+    /**
+     * Calles cuyo largo "compacto" hace matemáticamente posible alcanzar
+     * MIN_SCORE frente al candidato, más un margen para cubrir la diferencia
+     * entre la forma compacta (sin espacios) y la fonética (con espacios).
+     */
+    private List<Street> candidatesFor(int candidateCompactLength) {
+        if (byCompactLength.isEmpty()) return List.of();
+        int margin = 8; // cubre diferencias de espacios entre nombres de varias palabras, con holgura extra
+        int min = Math.max(0, (int) Math.floor(candidateCompactLength * MIN_SCORE) - margin);
+        int max = (int) Math.ceil(candidateCompactLength / MIN_SCORE) + margin;
+        List<Street> result = new ArrayList<>();
+        for (List<Street> bucket : byCompactLength.subMap(min, true, max, true).values()) {
+            result.addAll(bucket);
+        }
+        return result;
+    }
+
+    /** true si, solo por diferencia de largo, todavía es matemáticamente posible alcanzar MIN_SCORE. */
+    private boolean lengthCanQualify(int lenA, int lenB) {
+        if (lenA == 0 || lenB == 0) return false;
+        int max = Math.max(lenA, lenB);
+        int diff = Math.abs(lenA - lenB);
+        return diff <= Math.ceil((1 - MIN_SCORE) * max);
     }
 
     private String phonetic(String value) {

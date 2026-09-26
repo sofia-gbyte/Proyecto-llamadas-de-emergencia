@@ -1,9 +1,10 @@
-﻿param(
+param(
     [string]$JavaPath,
     [string]$MavenBin
 )
 
 $ErrorActionPreference = 'Stop'
+$MavenBin = if ($MavenBin) { $MavenBin.Trim().Trim('"') } else { $null }
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
@@ -94,7 +95,18 @@ function Get-JavaInfo {
         'C:\Program Files\Amazon Corretto\bin\java.exe'
     )
 
-    foreach ($javaExe in $explicitCandidates | Where-Object { $_ -and (Test-Path $_) }) {
+    $dynamicCandidates = @()
+    foreach ($javaRoot in @($env:ProgramFiles, $env:LOCALAPPDATA)) {
+        foreach ($vendorRoot in @('Microsoft', 'Java', 'Eclipse Adoptium')) {
+            $rootPath = Join-Path $javaRoot $vendorRoot
+            if (Test-Path $rootPath) {
+                $dynamicCandidates += Get-ChildItem $rootPath -Directory -Filter 'jdk-21*' -ErrorAction SilentlyContinue |
+                    ForEach-Object { Join-Path $_.FullName 'bin\java.exe' }
+            }
+        }
+    }
+
+    foreach ($javaExe in @($explicitCandidates + $dynamicCandidates) | Where-Object { $_ -and (Test-Path $_) }) {
         try {
             $majorVersion = Get-JavaMajorVersion -JavaPath $javaExe
             if ($majorVersion) {
@@ -126,6 +138,56 @@ function Get-JavaInfo {
     return @{ Exists = $false; Version = 0; Path = $null }
 }
 
+function Install-MavenIfMissing {
+    $version = '3.9.9'
+    $installRoot = Join-Path $HOME ".maven\apache-maven-$version"
+    $binDir = Join-Path $installRoot 'bin'
+    $mvnCmd = Join-Path $binDir 'mvn.cmd'
+    if (Test-Path $mvnCmd) { return $binDir }
+
+    $archive = Join-Path $HOME ".maven\apache-maven-$version-bin.zip"
+    $url = "https://archive.apache.org/dist/maven/maven-3/$version/binaries/apache-maven-$version-bin.zip"
+    try {
+        New-Item -ItemType Directory -Force -Path (Join-Path $HOME '.maven') | Out-Null
+        Write-Host "Maven no encontrado. Descargando Maven $version..." -ForegroundColor Yellow
+        $ProgressPreference = 'SilentlyContinue'
+        Invoke-WebRequest -Uri $url -OutFile $archive -TimeoutSec 180
+        if (-not (Test-Path $archive) -or (Get-Item $archive).Length -lt 5MB) {
+            throw 'La descarga de Maven está incompleta.'
+        }
+        Expand-Archive -Path $archive -DestinationPath (Join-Path $HOME '.maven') -Force
+        Remove-Item $archive -Force -ErrorAction SilentlyContinue
+        if (-not (Test-Path $mvnCmd)) { throw "No se encontró mvn.cmd después de extraer Maven en $installRoot." }
+        Write-Host "Maven instalado en $installRoot" -ForegroundColor Green
+        return $binDir
+    }
+    catch {
+        if (Test-Path $archive) { Remove-Item $archive -Force -ErrorAction SilentlyContinue }
+        Write-Host "No se pudo instalar Maven automáticamente: $($_.Exception.Message)" -ForegroundColor Red
+        return $null
+    }
+}
+
+function Install-Java21IfMissing {
+    try {
+        $winget = Get-Command winget.exe -ErrorAction Stop
+        Write-Host 'Java 21 no encontrado. Instalando Microsoft OpenJDK 21...' -ForegroundColor Yellow
+        & $winget.Source install --id Microsoft.OpenJDK.21 --exact --scope user --silent --accept-package-agreements --accept-source-agreements
+        if ($LASTEXITCODE -ne 0) { throw "winget terminó con código $LASTEXITCODE." }
+
+        $javaInfoAfterInstall = Get-JavaInfo
+        if (-not $javaInfoAfterInstall.Exists -or $javaInfoAfterInstall.Version -lt 21) {
+            throw 'Java fue instalado, pero todavía no se encontró un JDK 21 en esta sesión.'
+        }
+        Write-Host "Java $($javaInfoAfterInstall.Version) instalado correctamente." -ForegroundColor Green
+        return $javaInfoAfterInstall
+    }
+    catch {
+        Write-Host "No se pudo instalar Java automáticamente: $($_.Exception.Message)" -ForegroundColor Red
+        return $null
+    }
+}
+
 # Java: el .bat ya resuelve la ruta; la detección interna queda como respaldo.
 if ($JavaPath -and (Test-Path $JavaPath)) {
     $fileVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($JavaPath).ProductVersion
@@ -141,12 +203,14 @@ if ($JavaPath -and (Test-Path $JavaPath)) {
 }
 
 if (-not $javaInfo.Exists) {
-    Write-Host 'Java 21 no encontrado. Instala JDK 21 antes de arrancar CODES.' -ForegroundColor Red
-    Read-Host 'Presiona ENTER para cerrar'
-    exit 1
+    $javaInfo = Install-Java21IfMissing
 }
 if ($javaInfo.Version -lt 21) {
-    Write-Host "Se encontró Java $($javaInfo.Version), pero CODES requiere Java 21 o superior." -ForegroundColor Red
+    Write-Host "Se encontró Java $($javaInfo.Version), pero CODES requiere Java 21 o superior. Instalando JDK 21..." -ForegroundColor Yellow
+    $javaInfo = Install-Java21IfMissing
+}
+if (-not $javaInfo -or -not $javaInfo.Exists -or $javaInfo.Version -lt 21) {
+    Write-Host 'Java 21 no está disponible. Revisa winget o instala un JDK 21 manualmente.' -ForegroundColor Red
     Read-Host 'Presiona ENTER para cerrar'
     exit 1
 }
@@ -160,7 +224,7 @@ $mavenCandidates = @(
     'C:\Program Files\Apache\Maven\apache-maven-3.9.16\bin',
     'C:\Users\Basti\maven\apache-maven-3.9.9\bin'
 )
-$mavenBinResolved = $MavenBin
+$mavenBinResolved = if ($MavenBin -and (Test-Path (Join-Path $MavenBin 'mvn.cmd'))) { $MavenBin } else { $null }
 if (-not $mavenBinResolved) {
     foreach ($candidate in $mavenCandidates) {
         if ($candidate -and (Test-Path (Join-Path $candidate 'mvn.cmd'))) {
@@ -175,11 +239,14 @@ if (-not $mavenBinResolved) {
         $mavenBinResolved = Split-Path -Parent $mvnCommand.Source
     }
 }
+if (-not $mavenBinResolved) {
+    $mavenBinResolved = Install-MavenIfMissing
+}
 if ($mavenBinResolved) {
-    $env:Path += ";$mavenBinResolved"
+    $env:Path = "$mavenBinResolved;$env:Path"
 }
 if (-not (Get-Command mvn -ErrorAction SilentlyContinue)) {
-    Write-Host 'Maven no está instalado ni disponible en PATH. Instálalo y vuelve a ejecutar CODES.' -ForegroundColor Red
+    Write-Host 'Maven no está instalado ni disponible en PATH. Revisa la conexión a Internet o instala Maven manualmente.' -ForegroundColor Red
     Read-Host 'Presiona ENTER para cerrar'
     exit 1
 }
@@ -245,6 +312,9 @@ if (-not $env:CODES_ADMIN_USER) { $env:CODES_ADMIN_USER = 'admin' }
 if (-not $env:CODES_ADMIN_PASSWORD) {
     throw 'CODES_ADMIN_PASSWORD no está configurada. Elimina data\.codes-secrets.ps1 y vuelve a iniciar CODES para generar una contraseña segura.'
 }
+if ([string]::IsNullOrWhiteSpace($env:CODES_JWT_SECRET)) {
+    throw 'CODES_JWT_SECRET no quedó cargada desde data\.codes-secrets.ps1. Revisa ese archivo antes de iniciar CODES.'
+}
 
 # Cloudflare Turnstile (captcha del login y del registro).
 # - Claves reales: agrégalas a data\.codes-secrets.ps1 (o como variables de entorno de Windows):
@@ -274,68 +344,136 @@ Write-Host 'Spring Boot: http://localhost:8000' -ForegroundColor Green
 Write-Host 'ASR:         ws://localhost:6006' -ForegroundColor Green
 Write-Host ''
 
-# ASR: solo se instala si faltan los modelos; si ya está ejecutándose, no se reinicia.
-$asrScript = Join-Path $root 'tools\asr\start_asr_windows.ps1'
-$asrInstallScript = Join-Path $root 'tools\asr\install_windows.ps1'
-$asrProcess = $null
-if (Test-Path $asrScript) {
-    if (Test-PortOpen -HostName '127.0.0.1' -Port 6006) {
-        Write-Host 'ASR ya está ejecutándose en localhost:6006; no se reinicia.' -ForegroundColor Yellow
+if (Test-PortOpen -HostName '127.0.0.1' -Port 8000) {
+    Write-Host 'AVISO: el puerto 8000 ya está en uso (¿otra instancia de CODES sigue corriendo?).' -ForegroundColor Yellow
+    Write-Host 'Puedes abrir http://localhost:8000 directamente, o cerrar ese proceso antes de continuar.' -ForegroundColor Yellow
+    Write-Host ''
+}
+
+# Verificacion real del backend: no basta con que el puerto 8000 este abierto.
+# Consultamos /api/health, que es publico, antes de abrir el navegador.
+Write-Host 'Iniciando Spring Boot y verificando /api/health...' -ForegroundColor Cyan
+Write-Host 'Los errores de arranque se guardaran en logs\spring-boot.log' -ForegroundColor DarkGray
+New-Item -ItemType Directory -Force -Path (Join-Path $root 'logs') | Out-Null
+$springLog = Join-Path $root 'logs\spring-boot.log'
+
+function Test-SpringHealth {
+    try {
+        $response = Invoke-WebRequest -Uri 'http://127.0.0.1:8000/api/health' -UseBasicParsing -TimeoutSec 3
+        if ($response.StatusCode -eq 200) {
+            try { return (($response.Content | ConvertFrom-Json).status -eq 'ok') } catch { return $true }
+        }
+    } catch {}
+    return $false
+}
+
+# Si ya hay una instancia sana, no lanzamos otra.
+if (Test-SpringHealth) {
+    Write-Host 'Servidor CODES ya estaba activo y responde correctamente.' -ForegroundColor Green
+    Start-Process 'http://localhost:8000'
+    $springProcess = $null
+} else {
+    if (Test-Path $springLog) { Remove-Item $springLog -Force -ErrorAction SilentlyContinue }
+    $mvnCmd = Join-Path $mavenBinResolved 'mvn.cmd'
+    if (-not (Test-Path $mvnCmd)) {
+        Write-Host "No se encontro Maven en: $mvnCmd" -ForegroundColor Red
+        exit 1
     }
-    else {
-        $modelName = 'sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11'
-        $modelDir = Join-Path $root "tools\asr\models\$modelName"
-        $requiredFiles = @(
-            (Join-Path $modelDir 'encoder.int8.onnx'),
-            (Join-Path $modelDir 'decoder.int8.onnx'),
-            (Join-Path $modelDir 'joiner.int8.onnx'),
-            (Join-Path $modelDir 'tokens.txt')
-        )
-        $missing = @($requiredFiles | Where-Object { -not (Test-Path $_) })
-        if ($missing.Count -gt 0) {
-            Write-Host 'Faltan archivos del modelo ASR. Instalando solo lo necesario...' -ForegroundColor Yellow
-            if (Test-Path $asrInstallScript) {
-                & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $asrInstallScript
+
+    Write-Host 'Levantando Spring Boot en segundo plano...' -ForegroundColor Cyan
+    $springArgs = @('/d','/c', ('call "{0}" spring-boot:run > "{1}" 2>&1' -f $mvnCmd, $springLog))
+    $springProcess = Start-Process -FilePath 'cmd.exe' -ArgumentList $springArgs -WorkingDirectory $root -PassThru -WindowStyle Hidden
+
+    $serverOk = $false
+    for ($i = 0; $i -lt 120; $i++) {
+        Start-Sleep -Seconds 1
+        if (Test-SpringHealth) { $serverOk = $true; break }
+        if ($springProcess.HasExited) { break }
+        if (($i + 1) % 10 -eq 0) { Write-Host "Esperando servidor... $($i+1)s" -ForegroundColor DarkGray }
+    }
+
+    if (-not $serverOk) {
+        Write-Host ''
+        Write-Host 'ERROR: Spring Boot NO pudo iniciar o /api/health no responde.' -ForegroundColor Red
+        Write-Host "Revisa el archivo: $springLog" -ForegroundColor Yellow
+        if ($springProcess -and -not $springProcess.HasExited) {
+            try { taskkill.exe /PID $springProcess.Id /T /F | Out-Null } catch {}
+        }
+        if (Test-Path $springLog) {
+            Write-Host '--- Ultimas lineas de spring-boot.log ---' -ForegroundColor Yellow
+            Get-Content $springLog -Tail 30
+            Write-Host '--- Fin del log ---' -ForegroundColor Yellow
+        }
+        exit 1
+    }
+
+    Write-Host 'Servidor CODES: OK' -ForegroundColor Green
+    Start-Process 'http://localhost:8000'
+}
+
+# ASR: se verifica después de que Spring Boot esté sano.
+# La falla del ASR NO debe impedir que CODES abra.
+$asrScript = Join-Path $root 'tools\asr\start_asr_windows.ps1'
+
+Write-Host ''
+Write-Host 'Verificando ASR en localhost:6006...' -ForegroundColor Cyan
+
+if (Test-PortOpen -HostName '127.0.0.1' -Port 6006) {
+    Write-Host 'ASR: OK (localhost:6006)' -ForegroundColor Green
+}
+elseif (Test-Path $asrScript) {
+    try {
+        $asrLog = Join-Path $root 'logs\asr.log'
+        New-Item -ItemType Directory -Force -Path (Join-Path $root 'logs') | Out-Null
+
+        Write-Host 'Iniciando ASR en segundo plano...' -ForegroundColor Cyan
+        $asrProcess = Start-Process -FilePath 'powershell.exe' `
+            -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$asrScript) `
+            -WorkingDirectory $root `
+            -RedirectStandardOutput $asrLog `
+            -RedirectStandardError $asrLog `
+            -PassThru `
+            -WindowStyle Hidden
+
+        $asrOk = $false
+        for ($i = 0; $i -lt 20; $i++) {
+            Start-Sleep -Seconds 1
+            if (Test-PortOpen -HostName '127.0.0.1' -Port 6006) {
+                $asrOk = $true
+                break
             }
-            $missing = @($requiredFiles | Where-Object { -not (Test-Path $_) })
-            if ($missing.Count -gt 0) {
-                throw "No se pudo instalar el modelo ASR requerido. Archivos faltantes: $($missing -join ', ')"
-            }
+            if ($asrProcess.HasExited) { break }
         }
 
-        Write-Host 'Arrancando ASR local...' -ForegroundColor Yellow
-        $asrProcess = Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$asrScript) -PassThru -WindowStyle Minimized
-        for ($i = 0; $i -lt 30; $i++) {
-            if (Test-PortOpen -HostName '127.0.0.1' -Port 6006) { break }
-            Start-Sleep -Seconds 1
+        if ($asrOk) {
+            Write-Host 'ASR: OK (localhost:6006)' -ForegroundColor Green
+        } else {
+            Write-Host 'ASR: no respondió. CODES continuará activo.' -ForegroundColor Yellow
+            Write-Host 'Revisa logs\asr.log.' -ForegroundColor Yellow
         }
+    }
+    catch {
+        Write-Host "ASR: no se pudo iniciar: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host 'CODES continuará activo.' -ForegroundColor Yellow
     }
 }
-Write-Host 'Al detener Spring Boot, CODES detiene su proceso ASR.' -ForegroundColor Yellow
-Write-Host ''
+else {
+    Write-Host 'ASR: script de inicio no encontrado. CODES continuará activo.' -ForegroundColor Yellow
+}
 
-# Abre el navegador cuando el servidor web ya esté escuchando.
-Start-Job -ScriptBlock {
-    for ($i = 0; $i -lt 60; $i++) {
-        try {
-            $c = New-Object Net.Sockets.TcpClient
-            $c.Connect('127.0.0.1', 8000)
-            $c.Close()
-            Start-Process 'http://localhost:8000'
-            break
-        } catch {}
-        Start-Sleep -Seconds 1
-    }
-} | Out-Null
+Write-Host ' Servidor: http://localhost:8000/api/health' -ForegroundColor Green
+if (Test-SpringHealth) { Write-Host ' Servidor: OK' -ForegroundColor Green } else { Write-Host ' Servidor: ERROR' -ForegroundColor Red }
+if (Test-PortOpen -HostName '127.0.0.1' -Port 6006) { Write-Host ' ASR: OK (6006)' -ForegroundColor Green } else { Write-Host ' ASR: SIN CONEXION (6006)' -ForegroundColor Yellow }
+Write-Host '=============================================' -ForegroundColor Cyan
+Write-Host 'Cierra esta ventana para detener CODES.' -ForegroundColor DarkGray
 
 try {
-    mvn spring-boot:run
+    while (Test-SpringHealth) {
+        Start-Sleep -Seconds 2
+        if ($springProcess -and $springProcess.HasExited) { break }
+    }
 }
 finally {
-    if ($asrProcess -and -not $asrProcess.HasExited) {
-        try { taskkill.exe /PID $asrProcess.Id /T /F | Out-Null } catch {}
-    }
-    Write-Host ''
-    Write-Host 'CODES detenido.' -ForegroundColor Yellow
+    if ($asrProcess -and -not $asrProcess.HasExited) { try { taskkill.exe /PID $asrProcess.Id /T /F | Out-Null } catch {} }
+    if ($springProcess -and -not $springProcess.HasExited) { try { taskkill.exe /PID $springProcess.Id /T /F | Out-Null } catch {} }
 }
-

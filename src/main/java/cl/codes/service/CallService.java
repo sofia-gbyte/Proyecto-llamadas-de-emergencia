@@ -36,33 +36,53 @@ public class CallService {
 
     private void ensureSameInstitution(User user, Call call) {
         if (isAdmin(user)) return;
-        if (call.getInstitution() == null || user.getInstitution() == null || !call.getInstitution().equalsIgnoreCase(user.getInstitution())) {
+        if (!isVisibleToInstitution(user, call)) {
             throw new IllegalArgumentException("Call not found");
         }
     }
 
+    private boolean isVisibleToInstitution(User user, Call call) {
+        if (user.getInstitution() == null || user.getInstitution().isBlank()) return false;
+        if (call.getInstitution() != null && call.getInstitution().equalsIgnoreCase(user.getInstitution())) return true;
+        String suggested = call.getSuggestedInstitutions();
+        return suggested != null && suggested.toLowerCase().contains('"' + user.getInstitution().toLowerCase() + '"');
+    }
+
     public List<Call> getPending(Authentication auth) {
         User user = currentUser(auth);
-        List<Call> calls = isAdmin(user) ? new java.util.ArrayList<>(repo.findAll().stream().filter(c -> !c.isAssigned() && c.getClosureDate() == null).toList()) : new java.util.ArrayList<>(repo.findByAssignedFalseAndInstitution(user.getInstitution()));
+        List<Call> calls = isAdmin(user) ? new java.util.ArrayList<>(repo.findAll().stream().filter(c -> !c.isAssigned() && c.getClosureDate() == null).toList()) : mergeVisible(
+            repo.findByAssignedFalseAndInstitution(user.getInstitution()),
+            repo.findPendingVisibleToInstitution(user.getInstitution()));
         return sorted(calls);
     }
 
     public List<Call> getInProgress(Authentication auth) {
         User user = currentUser(auth);
-        List<Call> calls = isAdmin(user) ? new java.util.ArrayList<>(repo.findAll().stream().filter(c -> c.isAssigned() && c.getClosureDate() == null).toList()) : new java.util.ArrayList<>(repo.findByAssignedTrueAndClosureDateIsNullAndInstitution(user.getInstitution()));
+        List<Call> calls = isAdmin(user) ? new java.util.ArrayList<>(repo.findAll().stream().filter(c -> c.isAssigned() && c.getClosureDate() == null).toList()) : mergeVisible(
+            repo.findByAssignedTrueAndClosureDateIsNullAndInstitution(user.getInstitution()),
+            repo.findInProgressVisibleToInstitution(user.getInstitution()));
         calls.sort(Comparator.comparing(Call::getAssignmentDate, Comparator.nullsLast(Comparator.reverseOrder())));
         return calls;
     }
 
     public List<Call> getClosed(int limit, Authentication auth) {
         User user = currentUser(auth);
-        List<Call> calls = isAdmin(user) ? repo.findAll().stream().filter(c -> c.getClosureDate() != null).sorted(Comparator.comparing(Call::getClosureDate, Comparator.nullsLast(Comparator.reverseOrder()))).toList() : repo.findByClosureDateIsNotNullAndInstitutionOrderByClosureDateDesc(user.getInstitution());
+        List<Call> calls = isAdmin(user) ? repo.findAll().stream().filter(c -> c.getClosureDate() != null).sorted(Comparator.comparing(Call::getClosureDate, Comparator.nullsLast(Comparator.reverseOrder()))).toList() : mergeVisible(
+            repo.findByClosureDateIsNotNullAndInstitutionOrderByClosureDateDesc(user.getInstitution()),
+            repo.findClosedVisibleToInstitution(user.getInstitution()));
         return calls.size() > limit ? calls.subList(0, limit) : calls;
     }
 
     private List<Call> sorted(List<Call> calls) {
         calls.sort(Comparator.<Call, Integer>comparing(call -> PRIORITY_ORDER.getOrDefault(call.getPriority(), 4)).thenComparing(Call::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())));
         return calls;
+    }
+
+    private List<Call> mergeVisible(List<Call> own, List<Call> suggested) {
+        java.util.LinkedHashMap<Long, Call> merged = new java.util.LinkedHashMap<>();
+        for (Call call : own) merged.put(call.getId(), call);
+        for (Call call : suggested) merged.putIfAbsent(call.getId(), call);
+        return new java.util.ArrayList<>(merged.values());
     }
 
     public Call assign(Long id, Authentication auth) {
@@ -104,11 +124,11 @@ public class CallService {
             inProgress = repo.findAll().stream().filter(c -> c.isAssigned() && c.getClosureDate() == null).count();
             withAssignment = repo.findByAssignmentDateIsNotNull();
         } else {
-            total = repo.countByInstitution(institution);
-            activeUrgentCalls = repo.countByPriorityAndClosureDateIsNullAndInstitution("URGENTE", institution);
-            pending = repo.countByAssignedFalseAndInstitution(institution);
-            inProgress = repo.countByAssignedTrueAndClosureDateIsNullAndInstitution(institution);
-            withAssignment = repo.findByAssignmentDateIsNotNullAndInstitution(institution);
+            total = repo.countVisibleToInstitution(institution);
+            activeUrgentCalls = repo.countPriorityVisibleToInstitution("URGENTE", institution);
+            pending = repo.countPendingVisibleToInstitution(institution);
+            inProgress = repo.countInProgressVisibleToInstitution(institution);
+            withAssignment = repo.findAssignedVisibleToInstitution(institution);
         }
         var averageOptional = withAssignment.stream().filter(call -> call.getCreatedAt() != null && call.getAssignmentDate() != null).mapToLong(call -> Duration.between(call.getCreatedAt(), call.getAssignmentDate()).getSeconds()).average();
         Double averageResponse = averageOptional.isPresent() ? Math.round(averageOptional.getAsDouble() * 10.0) / 10.0 : null;

@@ -160,7 +160,7 @@ public final class Classifier {
     // -----------------------------------------------------------------
 
     private static final Pattern PATRON_DIRECCION = Pattern.compile(
-            "(calle|pasaje|avenida|av\\.?|sector|poblacion|villa|cerro|camino)" +
+            "(calle|pasaje|avenida|av\\.?|sector|poblacion|villa|cerro|camino|ruta|carretera|caletera|autopista|callejon)" +
             "\\s+([a-zñáéíóú0-9\\s]{3,40}?)" +
             "(?:\\s+(?:numero|n[uú]mero|#)?\\s*(\\d{1,5}))?" +
             "(?=[,.]| y | esquina | altura |$)",
@@ -242,7 +242,9 @@ public final class Classifier {
             List<String> highlightedWords,
             List<String> todasPalabras,
             String direccion,
-            String textoOriginal
+            String textoOriginal,
+            List<String> motivos,
+            List<String> institucionesSugeridas
     ) {}
 
     // -----------------------------------------------------------------
@@ -253,7 +255,8 @@ public final class Classifier {
         if (texto == null || texto.isBlank()) {
             Map<String, Integer> vacio = new LinkedHashMap<>();
             for (String cat : PALABRAS_CLAVE.keySet()) vacio.put(cat, 0);
-            return new ResultadoClasificacion("VERDE", vacio, List.of(), List.of(), null, texto == null ? "" : texto);
+                return new ResultadoClasificacion("VERDE", vacio, List.of(), List.of(), null,
+                    texto == null ? "" : texto, List.of(), List.of());
         }
 
         String textoNorm = normalizar(texto);
@@ -303,6 +306,10 @@ public final class Classifier {
         for (Encontrada e : encontradas) todas.add(etiqueta(e.palabra()));
 
         String direccion = extraerDireccion(texto);
+        LinkedHashSet<String> motivos = new LinkedHashSet<>();
+        for (Encontrada e : encontradas) {
+            motivos.add(categoriaLegible(e.categoria()) + ": " + etiqueta(e.palabra()));
+        }
 
         return new ResultadoClasificacion(
                 priority,
@@ -310,8 +317,46 @@ public final class Classifier {
                 new ArrayList<>(top),
                 new ArrayList<>(todas),
                 direccion,
-                texto
+                texto,
+                new ArrayList<>(motivos),
+                institucionesSugeridas(textoNorm)
         );
+    }
+
+    private static String categoriaLegible(String categoria) {
+        return switch (categoria) {
+            case "urgente" -> "Riesgo vital o crítico";
+            case "roja" -> "Emergencia prioritaria";
+            case "media" -> "Incidente operativo";
+            default -> "Solicitud no crítica";
+        };
+    }
+
+    private static List<String> institucionesSugeridas(String textoNorm) {
+        LinkedHashSet<String> instituciones = new LinkedHashSet<>();
+        boolean policial = contieneAlgunaNoNegada(textoNorm,
+                "dispar", "arma", "balacera", "tiroteo", "robo", "asalto", "asalt",
+                "pele", "agres", "violencia", "vif", "secuestro", "rehen", "encerrona",
+                "portonazo", "amenaza", "sujeto sospechoso", "vehiculo robado");
+        boolean medico = contieneAlgunaNoNegada(textoNorm,
+            "no respira", "no reacciona", "convulsion", "paro", "infarto", "herido", "herida",
+                "lesionado", "inconsciente", "sangr", "atropell", "accidente", "choque",
+                "sobredosis", "intoxic", "quemadura", "caida", "se ahoga", "atragant");
+        boolean bomberos = contieneAlgunaNoNegada(textoNorm,
+                "incendi", "fuego", "humo", "explosion", "explosivo", "fuga de gas",
+                "derrumbe", "colapso", "atrapado", "rescate", "alud", "tsunami");
+
+        if (policial) instituciones.add("carabineros");
+        if (medico) instituciones.add("samu");
+        if (bomberos) instituciones.add("bomberos");
+        return List.copyOf(instituciones);
+    }
+
+    private static boolean contieneAlgunaNoNegada(String texto, String... frases) {
+        for (String frase : frases) {
+            if (texto.contains(frase) && !estaNegada(texto, frase)) return true;
+        }
+        return false;
     }
 
     // -----------------------------------------------------------------

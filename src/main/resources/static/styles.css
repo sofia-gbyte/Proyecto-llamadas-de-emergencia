@@ -1845,7 +1845,7 @@ body { min-height: 100dvh; }
 .modal[hidden] { display: none !important; }
 .modal-caja { position: relative; width: min(520px, 100%); background: #14233c; border: 1px solid #2a3f60; border-radius: 16px; padding: 1.4rem; box-shadow: 0 30px 70px rgba(0,0,0,.65); }
 .modal-caja h2 { font-size: 1rem; margin-bottom: 1rem; }
-.modal-cerrar { position: absolute; top: .65rem; right: .7rem; width: 32px; height: 32px; border: 0; border-radius: 50%; background: #1c2c48; color: #92a7cf; font-size: 1.2rem; cursor: pointer; }
+.modal-cerrar { position: absolute; top: .65rem; right: .7rem; min-width: 32px; height: 32px; padding: 0 .55rem; border: 0; border-radius: 6px; background: #1c2c48; color: #92a7cf; font-size: .72rem; cursor: pointer; }
 .modal-cerrar:hover { color: #fff; background: #35507a; }
 .modal textarea { width: 100%; min-height: 120px; resize: vertical; background: #0f1c30; color: #e8eefb; border: 1px solid #2a3f60; border-radius: 10px; padding: .75rem; font: inherit; margin-top: .35rem; }
 .modal .campo label { display: block; font-size: .7rem; color: #92a7cf; }

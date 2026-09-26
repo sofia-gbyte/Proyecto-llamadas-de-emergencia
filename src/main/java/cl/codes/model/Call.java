@@ -4,7 +4,14 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "calls")
+@Table(name = "calls", indexes = {
+        // Las colas del operador (Sin asignar / En curso / Cerradas) siempre
+        // filtran por institución primero; este índice compuesto evita un
+        // escaneo completo de la tabla en cada consulta de la consola.
+        @Index(name = "idx_calls_institution_assigned", columnList = "institution, assigned"),
+        @Index(name = "idx_calls_institution_closure", columnList = "institution, closure_date"),
+        @Index(name = "idx_calls_created_by_user", columnList = "created_by_user")
+})
 public class Call {
 
     @Id
@@ -35,6 +42,14 @@ public class Call {
     @Lob
     @Column(name = "highlighted_words")
     private String highlightedWords;
+
+    @Lob
+    @Column(name = "classification_reasons")
+    private String classificationReasons;
+
+    @Lob
+    @Column(name = "suggested_institutions")
+    private String suggestedInstitutions;
 
     @Column(name = "detected_address", length = 200)
     private String detectedAddress;
@@ -98,6 +113,12 @@ public class Call {
 
     public String getHighlightedWords() { return highlightedWords; }
     public void setHighlightedWords(String highlightedWords) { this.highlightedWords = highlightedWords; }
+
+    public String getClassificationReasons() { return classificationReasons; }
+    public void setClassificationReasons(String classificationReasons) { this.classificationReasons = classificationReasons; }
+
+    public String getSuggestedInstitutions() { return suggestedInstitutions; }
+    public void setSuggestedInstitutions(String suggestedInstitutions) { this.suggestedInstitutions = suggestedInstitutions; }
 
     public String getDetectedAddress() { return detectedAddress; }
     public void setDetectedAddress(String detectedAddress) { this.detectedAddress = detectedAddress; }

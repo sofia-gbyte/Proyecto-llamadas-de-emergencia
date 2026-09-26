@@ -49,7 +49,15 @@ public class SecurityService {
             throw new IllegalStateException(
                 "The CODES_ENCRYPT_KEY environment variable is missing. Generate it once with SecurityService.generateKey() and export it before starting the service.");
         }
-        byte[] bytes = Base64.getDecoder().decode(keyBase64);
+        final byte[] bytes;
+        try {
+            bytes = Base64.getDecoder().decode(keyBase64);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("La clave de cifrado de CODES no es válida.", e);
+        }
+        if (bytes.length != 32) {
+            throw new IllegalStateException("La clave de cifrado de CODES debe tener 32 bytes en Base64.");
+        }
         return new SecretKeySpec(bytes, "AES");
     }
 

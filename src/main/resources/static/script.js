@@ -18,6 +18,8 @@ let cacheColas = {
   'en-curso': [],
   cerradas: []
 };
+let colasInicializadas = false;
+const urgenciasNotificadas = new Set();
 let adminTabActual = 'incidentes';
 let feedEventos = [];
 const captchaTokens = { login: '', register: '' };
@@ -97,7 +99,7 @@ function aplicarTema(tema) {
   const boton = $('btn-tema');
   if (!boton) return;
 
-  boton.textContent = temaClaro ? '☾ Oscuro' : '☼ Claro';
+  boton.textContent = temaClaro ? 'Oscuro' : 'Claro';
   boton.setAttribute(
     'aria-label',
     temaClaro ? 'Cambiar a tema oscuro' : 'Cambiar a tema claro'
@@ -175,6 +177,32 @@ function registrarEvento(mensaje, clase = '') {
   feedEventos = feedEventos.slice(0, 80);
 
   renderizarFeed();
+}
+
+function notificarNuevasUrgencias(llamadas) {
+  const urgentes = llamadas.filter(llamada =>
+    llamada && llamada.priority === 'URGENTE' && llamada.id != null
+  );
+
+  if (!colasInicializadas) {
+    urgentes.forEach(llamada => urgenciasNotificadas.add(llamada.id));
+    return;
+  }
+
+  urgentes
+    .filter(llamada => !urgenciasNotificadas.has(llamada.id))
+    .forEach(llamada => {
+      urgenciasNotificadas.add(llamada.id);
+      const direccion = llamada.address || 'ubicación por determinar';
+      const mensaje = `Nueva alerta urgente: caso #${llamada.id}, ${direccion}`;
+      mostrarAlerta(mensaje, 'error');
+      registrarEvento(mensaje, 'urgente');
+
+      if (navigator.vibrate) navigator.vibrate([180, 100, 180]);
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        new Notification('CODES: alerta urgente', { body: mensaje, tag: `codes-${llamada.id}` });
+      }
+    });
 }
 
 function renderizarFeed() {
@@ -605,7 +633,7 @@ async function cambiarClave() {
   if (confirmacion === null) return;
   if (nueva !== confirmacion) { mostrarAlerta('Las contraseñas nuevas no coinciden.', 'error'); return; }
   try {
-    const r = await apiFetch('/api/auth/change-password', {
+    const r = await apiFetch('/auth/change-password', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ currentPassword: actual, newPassword: nueva })
     });
@@ -615,11 +643,22 @@ async function cambiarClave() {
   } catch (e) { if (e.message !== 'No autenticado') mostrarAlerta(e.message, 'error'); }
 }
 
-function cerrarSesion() {
+async function cerrarSesion() {
   if (!sesion) return;
+
+  const token = sesion.token;
 
   if (live.startedAt) {
     detenerLive(false);
+  }
+
+  try {
+    await fetch(`${API_URL}/auth/logout`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  } catch (e) {
+    console.warn('No se pudo invalidar la sesión en el servidor.', e);
   }
 
   const usuario =
@@ -1041,13 +1080,13 @@ async function cargarCola() {
   try {
     const rutas = {
       pendientes:
-        '/api/llamadas/pending',
+        '/llamadas/pending',
 
       'en-curso':
-        '/api/llamadas/in-progress',
+        '/llamadas/in-progress',
 
       cerradas:
-        '/api/llamadas/closed?limit=100'
+        '/llamadas/closed?limit=100'
     };
 
     const [
@@ -1062,9 +1101,7 @@ async function cargarCola() {
               await apiFetch(r);
 
             if (!resp.ok) {
-              throw new Error(
-                'No se pudo cargar la cola'
-              );
+              throw new Error(`HTTP ${resp.status}`);
             }
 
             return [
@@ -1080,6 +1117,13 @@ async function cargarCola() {
     ) {
       cacheColas[k] = v;
     }
+
+    notificarNuevasUrgencias([
+      ...cacheColas.pendientes,
+      ...cacheColas['en-curso'],
+      ...cacheColas.cerradas
+    ]);
+    colasInicializadas = true;
 
     actualizarContadores();
 
@@ -1118,8 +1162,12 @@ async function cargarCola() {
       $('indicador-estado').className =
         'indicador';
 
-      $('estado-texto').textContent =
-        'Sin conexión';
+        $('estado-texto').textContent =
+          e.message === 'HTTP 403'
+            ? 'Sin permisos'
+            : e.message === 'HTTP 500'
+              ? 'Error del servidor'
+              : 'Sin conexión';
     }
   }
 }
@@ -1178,6 +1226,14 @@ function normalizarPalabrasDestacadas(valor) {
   }
 
   return [];
+}
+
+function etiquetaInstitucion(valor) {
+  return {
+    carabineros: 'Carabineros',
+    samu: 'SAMU',
+    bomberos: 'Bomberos'
+  }[String(valor).toLowerCase()] || String(valor);
 }
 
 
@@ -1383,12 +1439,12 @@ function renderizarLista() {
 
       const etiquetaPrioridad =
         prioridad === 'URGENTE'
-          ? '🔴 Urgente'
+          ? 'Urgente'
           : prioridad === 'ROJA'
-            ? '🔴 Roja'
+            ? 'Roja'
             : prioridad === 'MEDIA'
-              ? '🟡 Media'
-              : '🟢 Verde';
+              ? 'Media'
+                : 'Verde';
 
       return `
         <div
@@ -1431,7 +1487,7 @@ function renderizarLista() {
           </div>
 
           <div class="llamada-categoria">
-            🎙️ Llamada en vivo
+            Llamada en vivo
           </div>
 
           <div
@@ -1681,12 +1737,22 @@ function renderizarDetalle(l) {
   const ubicacionEstado =
     l.latitude != null &&
     l.longitude != null
-      ? '🟢 Ubicación disponible'
-      : '🟡 Ubicación por determinar';
+      ? 'Ubicación disponible'
+      : 'Ubicación por determinar';
 
   const palabras =
     normalizarPalabrasDestacadas(
       l.highlightedWords
+    );
+
+  const razones =
+    normalizarPalabrasDestacadas(
+      l.classificationReasons
+    );
+
+  const instituciones =
+    normalizarPalabrasDestacadas(
+      l.suggestedInstitutions
     );
 
   const direccion =
@@ -1766,7 +1832,7 @@ function renderizarDetalle(l) {
       <section class="detalle-resumen">
 
         <div class="detalle-seccion-titulo">
-          🧠 Resumen operativo
+          Resumen operativo
         </div>
 
         <p>
@@ -1780,7 +1846,7 @@ function renderizarDetalle(l) {
       <details class="detalle-transcripcion-bloque">
 
         <summary>
-          🎙️ Ver transcripción completa
+          Ver transcripción completa
         </summary>
 
         <div class="detalle-transcripcion">
@@ -1813,6 +1879,28 @@ function renderizarDetalle(l) {
 
       </div>
 
+      <div class="detalle-meta">
+        <strong>Respuesta sugerida:</strong>
+        ${
+          instituciones.length
+            ? instituciones
+                .map(i => `<span class="palabra">${escapeHtml(etiquetaInstitucion(i))}</span>`)
+                .join(' ')
+            : '<span class="palabra">Sin institución sugerida automáticamente</span>'
+        }
+      </div>
+
+      <div class="detalle-meta">
+        <strong>Explicación de prioridad:</strong>
+        ${
+          razones.length
+            ? razones
+                .map(r => `<span class="palabra">${escapeHtml(r)}</span>`)
+                .join(' ')
+            : '<span class="palabra">Sin motivos registrados</span>'
+        }
+      </div>
+
       ${
         l.closureComment
           ? `
@@ -1835,7 +1923,7 @@ function renderizarDetalle(l) {
                 class="btn-accion primario"
                 id="accion-asignar"
               >
-                ✓ Tomar caso
+                Tomar caso
               </button>
             `
             : ''
@@ -1848,7 +1936,7 @@ function renderizarDetalle(l) {
                 class="btn-accion primario"
                 id="accion-cerrar"
               >
-                ✓ Cerrar caso
+                Cerrar caso
               </button>
             `
             : ''
@@ -3220,22 +3308,37 @@ async function detenerLive(
       live.chunks.length
     ) {
 
+      const audioType =
+        (live.chunks.find(c => c && c.type)?.type || 'audio/webm')
+          .split(';', 1)[0]
+          .toLowerCase();
+
+      const extension =
+        audioType === 'audio/ogg' ? 'ogg' :
+        audioType === 'audio/wav' || audioType === 'audio/x-wav' ? 'wav' :
+        audioType === 'audio/mpeg' ? 'mp3' :
+        audioType === 'audio/mp4' ? 'm4a' :
+        audioType === 'audio/aac' ? 'aac' :
+        'webm';
+
       const blob =
         new Blob(
           live.chunks,
-          {
-            type:
-              live.chunks[0]
-                ?.type ||
-              'audio/webm'
-          }
+          { type: audioType }
         );
 
-      form.append(
-        'audio',
-        blob,
-        `llamada-${Date.now()}.webm`
-      );
+      if (blob.size > 0) {
+        form.append(
+          'audio',
+          blob,
+          `llamada-${Date.now()}.${extension}`
+        );
+      }
+    }
+
+    const audioAdjunto = form.get('audio');
+    if (audioAdjunto instanceof Blob && audioAdjunto.size > 50 * 1024 * 1024) {
+      throw new Error('La grabación supera los 50 MB. Detén la llamada y vuelve a intentarlo.');
     }
 
     const r =

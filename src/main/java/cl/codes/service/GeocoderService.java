@@ -2,6 +2,7 @@ package cl.codes.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -60,6 +61,20 @@ public class GeocoderService {
             .connectTimeout(Duration.ofSeconds(6)).build();
     private final ObjectMapper mapper = new ObjectMapper();
     private long ultimaLlamadaNominatim = 0L;
+
+    // La caché de geocodificación se mantiene en memoria y se carga una sola
+    // vez al iniciar. Antes se releía y reescribía el archivo COMPLETO en
+    // cada consulta de geocodificación (varias por llamada procesada); con
+    // miles de direcciones cacheadas eso se vuelve un costo de disco que
+    // crece con el tiempo. Ahora las lecturas son instantáneas (memoria) y
+    // solo se escribe a disco cuando aparece una dirección nueva.
+    private final Map<String, List<Candidato>> geocacheMemoria = new java.util.concurrent.ConcurrentHashMap<>();
+
+    @PostConstruct
+    void cargarCacheInicial() {
+        geocacheMemoria.putAll(cargarCache());
+        log.info("Caché de geocodificación cargada en memoria: {} entradas", geocacheMemoria.size());
+    }
 
     public GeocoderService(
             @Value("${app.geocache-path}") String geocachePath,
@@ -184,8 +199,7 @@ public class GeocoderService {
     }
 
     private List<Candidato> ejecutarNominatim(String url, String etiquetaDebug) {
-        Map<String, List<Candidato>> cache = cargarCache();
-        List<Candidato> cacheados = cache.get(url);
+        List<Candidato> cacheados = geocacheMemoria.get(url);
         if (cacheados != null) return cacheados;
 
         respetarLimiteNominatim();
@@ -222,8 +236,8 @@ public class GeocoderService {
             if (resultado.isEmpty()) {
                 log.debug("Nominatim sin resultados para consulta {}", etiquetaDebug);
             }
-            cache.put(url, resultado);
-            guardarCache(cache);
+            geocacheMemoria.put(url, resultado);
+            guardarCache(geocacheMemoria);
         } catch (Exception e) {
             log.warn("Error consultando Nominatim ({}): {}", etiquetaDebug, e.toString());
         }
