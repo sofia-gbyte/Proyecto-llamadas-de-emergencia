@@ -34,6 +34,13 @@ public class User {
 
     private boolean active = true;
 
+    // Cualquier JWT emitido ANTES de esta marca deja de aceptarse, aunque no
+    // haya expirado todavía. Se actualiza al cerrar sesión, al cambiar la
+    // contraseña (propia o por recuperación) o cuando un administrador
+    // fuerza el cierre de sesiones de otro usuario. null = sin restricción.
+    @Column(name = "sessions_valid_from")
+    private LocalDateTime sessionsValidFrom;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 
@@ -63,6 +70,9 @@ public class User {
 
     public boolean isActive() { return active; }
     public void setActive(boolean active) { this.active = active; }
+
+    public LocalDateTime getSessionsValidFrom() { return sessionsValidFrom; }
+    public void setSessionsValidFrom(LocalDateTime sessionsValidFrom) { this.sessionsValidFrom = sessionsValidFrom; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

@@ -37,10 +37,43 @@
                 <div id="captcha-login" class="captcha-widget" aria-label="Verificación de seguridad"></div>
                 <p class="auth-error" id="login-error" hidden></p>
                 <button class="btn-auth" type="submit">Ingresar a CODES</button>
+                <button class="auth-link" id="btn-olvido-password" type="button">¿Olvidaste tu contraseña?</button>
                 <div class="auth-demo-hint">
                     <div class="demo-label">🔐 Acceso seguro</div>
                     <div class="row">La cuenta debe estar activa para ingresar. Si te registras, un administrador deberá activarla.</div>
                 </div>
+            </form>
+
+            <form class="auth-form auth-recovery" id="form-recuperar" hidden>
+                <div class="auth-recovery-icon">↻</div>
+                <h2>Recuperar contraseña</h2>
+                <p class="auth-recovery-copy">Ingresa el correo asociado a tu cuenta. Si existe una cuenta activa, te enviaremos un enlace seguro para crear una nueva contraseña.</p>
+                <div class="campo">
+                    <label for="recovery-email">Correo</label>
+                    <input id="recovery-email" type="email" placeholder="ana@codes.cl" required autocomplete="email" />
+                </div>
+                <p class="auth-error" id="recovery-error" hidden></p>
+                <p class="auth-success" id="recovery-success" hidden></p>
+                <button class="btn-auth" type="submit">Enviar enlace de recuperación</button>
+                <button class="auth-link" id="btn-volver-login" type="button">← Volver a iniciar sesión</button>
+            </form>
+
+            <form class="auth-form auth-recovery" id="form-reset" hidden>
+                <div class="auth-recovery-icon">✓</div>
+                <h2>Nueva contraseña</h2>
+                <p class="auth-recovery-copy">Elige una contraseña nueva. Debe tener al menos 12 caracteres e incluir mayúsculas, minúsculas, números y un símbolo.</p>
+                <div class="campo">
+                    <label for="reset-password">Nueva contraseña</label>
+                    <input id="reset-password" type="password" minlength="12" required autocomplete="new-password" />
+                </div>
+                <div class="campo">
+                    <label for="reset-password-confirm">Confirmar contraseña</label>
+                    <input id="reset-password-confirm" type="password" minlength="12" required autocomplete="new-password" />
+                </div>
+                <p class="auth-error" id="reset-error" hidden></p>
+                <p class="auth-success" id="reset-success" hidden></p>
+                <button class="btn-auth" type="submit">Restablecer contraseña</button>
+                <button class="auth-link" id="btn-reset-login" type="button">← Volver a iniciar sesión</button>
             </form>
 
             <form class="auth-form" id="form-registro" hidden>
@@ -109,71 +142,101 @@
             <span class="marca-sub">Centro de Operaciones y Despacho de Emergencias</span>
         </div>
 
-        <div class="metricas" id="metricas">
-            <div class="metrica-tarjeta">
-                <span class="icono">📋</span>
-                <div class="info">
-                    <span class="valor" id="m-pendientes">–</span>
-                    <span class="label">Sin asignar</span>
-                </div>
-            </div>
-            <div class="metrica-tarjeta">
-                <span class="icono">🚗</span>
-                <div class="info">
-                    <span class="valor" id="m-en-curso">–</span>
-                    <span class="label">En curso</span>
-                </div>
-            </div>
-            <div class="metrica-tarjeta urgente">
-                <span class="icono">🚨</span>
-                <div class="info">
-                    <span class="valor" id="m-urgentes">–</span>
-                    <span class="label">Urgentes</span>
-                </div>
-            </div>
-            <div class="metrica-tarjeta">
-                <span class="icono">⏱</span>
-                <div class="info">
-                    <span class="valor" id="m-tiempo">–</span>
-                    <span class="label">Respuesta</span>
-                </div>
-            </div>
-        </div>
-
         <div class="header-derecha">
+            <button class="btn-accion primario btn-live" id="btn-llamada-en-vivo" type="button">🎙 Llamada en vivo</button>
+
             <div class="sistema-estado">
                 <span class="indicador online" id="indicador-estado"></span>
                 <span id="estado-texto">Operativo</span>
                 <span class="modo-badge" id="modo-badge">Demo</span>
-                <span class="ultima-actualizacion" id="ultima-actualizacion">· --:--:--</span>
+                <span class="ultima-actualizacion" id="ultima-actualizacion" hidden>· --:--:--</span>
             </div>
 
-            <div class="admin-selector" id="admin-selector">
-                <span class="label">Modo:</span>
-                <span class="btn-vista activo" aria-label="Vista administrativa general">Supervisión general</span>
-            </div>
+            <div class="menu-usuario" id="menu-usuario">
+                <button class="chip-usuario" id="btn-menu-usuario" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="dropdown-usuario">
+                    <span class="avatar" id="avatar-usuario">U</span>
+                    <span class="chip-texto">
+                        <span class="chip-nombre" id="usuario-nombre">usuario</span>
+                        <span class="rol-tag" id="rol-tag">Operador</span>
+                    </span>
+                    <span class="chevron" aria-hidden="true">▾</span>
+                </button>
 
-            <div class="info-usuario">
-                <span class="reloj" id="reloj">--:--:--</span>
-                <span class="rol-tag" id="rol-tag">Operador</span>
-                <span class="usuario-estado" id="usuario-estado"></span>
-                <span id="usuario-nombre" style="color:#8b9bb5; font-size:0.75rem;">usuario</span>
-                <button class="btn-accion primario btn-live" id="btn-llamada-en-vivo" type="button">🎙 Llamada en vivo</button>
-                <button class="btn-tema" id="btn-cambiar-clave" type="button" title="Cambiar contraseña">🔐 Clave</button>
-                <button class="btn-tema" id="btn-tema" type="button" aria-label="Cambiar a tema claro" title="Cambiar tema">☼ Claro</button>
-                <button class="btn-salir" id="btn-salir">Salir</button>
+                <div class="dropdown-usuario" id="dropdown-usuario" hidden>
+                    <div class="dropdown-cabecera">
+                        <span class="usuario-estado" id="usuario-estado"></span>
+                        <span class="reloj" id="reloj">--:--:--</span>
+                    </div>
+                    <div class="admin-selector" id="admin-selector">
+                        <span class="label">Modo:</span>
+                        <span class="btn-vista activo" aria-label="Vista administrativa general">Supervisión general</span>
+                    </div>
+                    <div class="dropdown-divisor"></div>
+                    <button class="dropdown-item" id="btn-cambiar-clave" type="button">🔐 Cambiar clave</button>
+                    <button class="dropdown-item" id="btn-tema" type="button" aria-label="Cambiar a tema claro">☼ Claro</button>
+                    <button class="dropdown-item salir" id="btn-salir" type="button">⏻ Cerrar sesión</button>
+                </div>
             </div>
         </div>
     </header>
 
-    <!-- ===== ADMIN TABS ===== -->
-    <div class="admin-tabs" id="admin-tabs">
-        <button class="admin-tab activo" data-admin-tab="incidentes">📋 Incidentes</button>
-        <button class="admin-tab" data-admin-tab="usuarios">👥 Usuarios</button>
-    </div>
-
     <!-- ===== MAIN ===== -->
     <main class="consola">
+        <!-- ===== RIEL LATERAL ===== -->
+        <aside class="riel-lateral" id="riel-lateral" aria-label="Navegación y métricas">
+            <div class="riel-seccion">
+                <div class="riel-titulo">OPERACIÓN</div>
+                <button class="admin-tab activo" data-admin-tab="incidentes" type="button">
+                    <span class="riel-icono">📋</span>
+                    <span>Incidentes</span>
+                </button>
+            </div>
+
+            <div class="riel-seccion riel-admin" id="riel-admin">
+                <div class="riel-titulo">ADMINISTRACIÓN</div>
+                <div class="admin-tabs" id="admin-tabs">
+                    <button class="admin-tab" data-admin-tab="usuarios" type="button">
+                        <span class="riel-icono">👥</span>
+                        <span>Usuarios</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="riel-separador"></div>
+
+            <div class="metricas" id="metricas" aria-label="Resumen operativo">
+                <div class="riel-titulo">RESUMEN</div>
+                <div class="metrica-tarjeta">
+                    <span class="icono">📋</span>
+                    <div class="info">
+                        <span class="valor" id="m-pendientes">–</span>
+                        <span class="label">Sin asignar</span>
+                    </div>
+                </div>
+                <div class="metrica-tarjeta">
+                    <span class="icono">🚗</span>
+                    <div class="info">
+                        <span class="valor" id="m-en-curso">–</span>
+                        <span class="label">En curso</span>
+                    </div>
+                </div>
+                <div class="metrica-tarjeta urgente">
+                    <span class="icono">🚨</span>
+                    <div class="info">
+                        <span class="valor" id="m-urgentes">–</span>
+                        <span class="label">Urgentes</span>
+                    </div>
+                </div>
+                <div class="metrica-tarjeta">
+                    <span class="icono">⏱</span>
+                    <div class="info">
+                        <span class="valor" id="m-tiempo">–</span>
+                        <span class="label">Respuesta</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
         <!-- PANEL COLUMNA IZQUIERDA -->
         <section class="panel-cola" id="panel-cola">
             <nav class="tabs" role="tablist">

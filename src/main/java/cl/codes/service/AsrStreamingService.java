@@ -134,6 +134,11 @@ public class AsrStreamingService {
         return null;
     }
 
+    /** Expuesto para el autochequeo/estado de administrador: true si el WebSocket responde ahora mismo. */
+    public boolean estaDisponible() {
+        return puertoOcupado(6006);
+    }
+
     private boolean puertoOcupado(int puerto) {
         try (Socket s = new Socket()) {
             s.connect(new InetSocketAddress("127.0.0.1", puerto), 250);

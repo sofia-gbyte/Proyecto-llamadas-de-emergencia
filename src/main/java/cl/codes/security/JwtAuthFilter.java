@@ -58,7 +58,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 String username = claims.getSubject();
                 Optional<User> user = userRepository.findByUsername(username);
 
-                if (user.isPresent() && user.get().isActive()) {
+                if (user.isPresent() && user.get().isActive() && sesionSigueValida(user.get(), claims)) {
                     String role = user.get().getRole();
                     List<GrantedAuthority> authorities =
                             List.of(new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()));
@@ -69,6 +69,19 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             }
         }
         chain.doFilter(request, response);
+    }
+
+    /**
+     * Un JWT emitido antes de {@code sessionsValidFrom} quedó invalidado
+     * (logout, cambio de contraseña, o un administrador cerrando sesiones).
+     * Si el usuario no tiene esa marca, no hay restricción adicional.
+     */
+    private boolean sesionSigueValida(User user, Claims claims) {
+        if (user.getSessionsValidFrom() == null) return true;
+        java.util.Date emitido = claims.getIssuedAt();
+        if (emitido == null) return true;
+        java.time.LocalDateTime emitidoEn = java.time.LocalDateTime.ofInstant(emitido.toInstant(), java.time.ZoneId.systemDefault());
+        return !emitidoEn.isBefore(user.getSessionsValidFrom());
     }
 }
 

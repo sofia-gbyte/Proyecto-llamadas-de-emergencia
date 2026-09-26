@@ -3,6 +3,7 @@ package cl.codes.controller;
 import cl.codes.controller.dto.CloseRequest;
 import cl.codes.controller.dto.CallResponse;
 import cl.codes.controller.dto.CreateLiveCallRequest;
+import cl.codes.service.AuditLogService;
 import cl.codes.service.LiveCallService;
 import cl.codes.service.CallService;
 import jakarta.validation.Valid;
@@ -22,10 +23,12 @@ public class CallController {
 
     private final CallService service;
     private final LiveCallService enVivoService;
+    private final AuditLogService auditLogService;
 
-    public CallController(CallService service, LiveCallService enVivoService) {
+    public CallController(CallService service, LiveCallService enVivoService, AuditLogService auditLogService) {
         this.service = service;
         this.enVivoService = enVivoService;
+        this.auditLogService = auditLogService;
     }
 
     @GetMapping("/llamadas/pending")
@@ -45,15 +48,17 @@ public class CallController {
 
     @PostMapping("/llamadas/{id}/assign")
     @PreAuthorize("hasAnyRole('OPERATOR', 'SUPERVISOR', 'ADMINISTRATOR')")
-    public ResponseEntity<?> assign(@PathVariable Long id, Authentication auth) {
+    public ResponseEntity<?> assign(@PathVariable Long id, Authentication auth, HttpServletRequest request) {
         var call = service.assign(id, auth);
+        auditLogService.registrar(auth.getName(), "assign-call", "call", String.valueOf(id), request.getRemoteAddr(), "success");
         return ResponseEntity.ok(Map.of("message", "Call " + id + " assigned to " + call.getAssignedOperator()));
     }
 
     @PostMapping("/llamadas/{id}/close")
     @PreAuthorize("hasAnyRole('OPERATOR', 'SUPERVISOR', 'ADMINISTRATOR')")
-    public ResponseEntity<?> close(@PathVariable Long id, @Valid @RequestBody CloseRequest req, Authentication auth) {
+    public ResponseEntity<?> close(@PathVariable Long id, @Valid @RequestBody CloseRequest req, Authentication auth, HttpServletRequest request) {
         service.close(id, req.comment(), auth);
+        auditLogService.registrar(auth.getName(), "close-call", "call", String.valueOf(id), request.getRemoteAddr(), "success");
         return ResponseEntity.ok(Map.of("message", "Call " + id + " closed"));
     }
 
@@ -67,6 +72,7 @@ public class CallController {
     ) throws Exception {
         String ip = request.getRemoteAddr();
         var call = enVivoService.create(datos.transcription(), audio, auth.getName(), ip, datos.latitudOperador(), datos.longitudOperador());
+        auditLogService.registrar(auth.getName(), "create-call", "call", String.valueOf(call.getId()), ip, "success");
         return ResponseEntity.ok(CallResponse.de(call));
     }
 
@@ -80,5 +86,3 @@ public class CallController {
         return Map.of("status", "ok");
     }
 }
-
-

@@ -44,6 +44,12 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
+        <!-- Envío de correo para recuperación de contraseña -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
         <!-- Autenticación y control de acceso por rol -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

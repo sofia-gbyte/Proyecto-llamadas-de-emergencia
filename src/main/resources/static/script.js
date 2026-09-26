@@ -303,6 +303,12 @@ function actualizarUsuarioUI() {
       sesion?.username || 'usuario';
   }
 
+  if ($('avatar-usuario')) {
+    const nombreAvatar = sesion?.username || 'U';
+    $('avatar-usuario').textContent =
+      nombreAvatar.trim().charAt(0).toUpperCase() || 'U';
+  }
+
   if ($('usuario-estado')) {
     $('usuario-estado').textContent =
       sesion ? '● conectado' : '';
@@ -336,6 +342,65 @@ function actualizarUsuarioUI() {
       'visible',
       esAdmin
     );
+  }
+}
+
+function mostrarAuthVista(vista) {
+  const vistas = ['login', 'registro', 'recuperar', 'reset'];
+  vistas.forEach(v => {
+    const form = $(`form-${v}`);
+    if (form) form.hidden = v !== vista;
+  });
+  document.querySelectorAll('.auth-tab').forEach(t => t.classList.toggle('activo', t.dataset.tab === vista));
+  const tabs = $('auth-tabs');
+  if (tabs) tabs.hidden = vista === 'recuperar' || vista === 'reset';
+}
+
+async function solicitarRecuperacion(e) {
+  e.preventDefault();
+  const error = $('recovery-error');
+  const success = $('recovery-success');
+  error.hidden = true; success.hidden = true;
+  try {
+    const resp = await fetch(`${API_URL}/auth/forgot-password`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ email: $('recovery-email').value.trim() })
+    });
+    const d = await leerRespuesta(resp);
+    if (!resp.ok) throw new Error(d.error || 'No se pudo procesar la solicitud.');
+    success.textContent = d.message;
+    success.hidden = false;
+  } catch (err) {
+    error.textContent = err.message || 'No se pudo procesar la solicitud.';
+    error.hidden = false;
+  }
+}
+
+async function restablecerPassword(e) {
+  e.preventDefault();
+  const error = $('reset-error');
+  const success = $('reset-success');
+  error.hidden = true; success.hidden = true;
+  const password = $('reset-password').value;
+  const confirm = $('reset-password-confirm').value;
+  if (password !== confirm) { error.textContent = 'Las contraseñas no coinciden.'; error.hidden = false; return; }
+  const token = new URLSearchParams(location.search).get('resetToken');
+  if (!token) { error.textContent = 'El enlace de recuperación no es válido.'; error.hidden = false; return; }
+  try {
+    const resp = await fetch(`${API_URL}/auth/reset-password`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ token, newPassword: password })
+    });
+    const d = await leerRespuesta(resp);
+    if (!resp.ok) throw new Error(d.error || 'No se pudo restablecer la contraseña.');
+    success.textContent = d.message;
+    success.hidden = false;
+    history.replaceState({}, '', location.pathname);
+    $('reset-password').value = ''; $('reset-password-confirm').value = '';
+    setTimeout(() => mostrarAuthVista('login'), 1800);
+  } catch (err) {
+    error.textContent = err.message || 'No se pudo restablecer la contraseña.';
+    error.hidden = false;
   }
 }
 
@@ -3318,13 +3383,7 @@ document.addEventListener(
                     )
                 );
 
-              $('form-login').hidden =
-                tab.dataset.tab !==
-                'login';
-
-              $('form-registro').hidden =
-                tab.dataset.tab !==
-                'registro';
+              mostrarAuthVista(tab.dataset.tab);
 
               $('login-error').hidden =
                 true;
@@ -3353,6 +3412,14 @@ document.addEventListener(
         'submit',
         registrarCuenta
       );
+
+    $('btn-olvido-password')?.addEventListener('click', () => mostrarAuthVista('recuperar'));
+    $('btn-volver-login')?.addEventListener('click', () => mostrarAuthVista('login'));
+    $('form-recuperar')?.addEventListener('submit', solicitarRecuperacion);
+    $('form-reset')?.addEventListener('submit', restablecerPassword);
+    $('btn-reset-login')?.addEventListener('click', () => { history.replaceState({}, '', location.pathname); mostrarAuthVista('login'); });
+    if (new URLSearchParams(location.search).has('resetToken')) mostrarAuthVista('reset');
+
 
     $('btn-salir')
       ?.addEventListener(
@@ -3537,3 +3604,45 @@ setInterval(
   REFRESCO_MS
 );
 document.getElementById('btn-cambiar-clave')?.addEventListener('click', cambiarClave);
+
+/* ===== MENÚ DE USUARIO (desplegable en la esquina superior derecha) ===== */
+(function inicializarMenuUsuario() {
+  const contenedor = document.getElementById('menu-usuario');
+  const boton = document.getElementById('btn-menu-usuario');
+  const panel = document.getElementById('dropdown-usuario');
+  if (!contenedor || !boton || !panel) return;
+
+  function cerrarMenu() {
+    panel.hidden = true;
+    boton.setAttribute('aria-expanded', 'false');
+  }
+
+  function abrirMenu() {
+    panel.hidden = false;
+    boton.setAttribute('aria-expanded', 'true');
+  }
+
+  boton.addEventListener('click', (evento) => {
+    evento.stopPropagation();
+    if (panel.hidden) {
+      abrirMenu();
+    } else {
+      cerrarMenu();
+    }
+  });
+
+  document.addEventListener('click', (evento) => {
+    if (!panel.hidden && !contenedor.contains(evento.target)) {
+      cerrarMenu();
+    }
+  });
+
+  document.addEventListener('keydown', (evento) => {
+    if (evento.key === 'Escape') cerrarMenu();
+  });
+
+  // Cerrar el menú al usar cualquier acción dentro de él.
+  panel.querySelectorAll('button').forEach((btn) => {
+    btn.addEventListener('click', () => cerrarMenu());
+  });
+})();

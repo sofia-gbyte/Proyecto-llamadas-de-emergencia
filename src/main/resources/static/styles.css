@@ -2121,3 +2121,783 @@ body.tema-claro .banner-narracion h3 { color: #16253f; }
   color: #ffd166;
   line-height: 1.35;
 }
+
+/* =====================================================================
+   REDISEÑO VISUAL V2 — estructura de header, pestañas, tarjetas, botones
+   Este bloque se aplica al final a propósito: reordena y repolish los
+   mismos elementos/IDs/clases que usa script.js, sin tocar el HTML/JS.
+   ===================================================================== */
+
+/* ----- Header en dos filas: marca+acciones arriba, métricas abajo ----- */
+.barra-estado {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+        "marca derecha"
+        "metricas metricas";
+    align-items: center;
+    row-gap: .95rem;
+    column-gap: 1.6rem;
+    padding: 1rem 2.2rem .85rem;
+}
+.marca { grid-area: marca; }
+.metricas { grid-area: metricas; justify-content: flex-start; }
+.header-derecha {
+    grid-area: derecha;
+    justify-self: end;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.sistema-estado { gap: .55rem; }
+.admin-selector { padding-left: 1.4rem; position: relative; }
+.admin-selector::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 50%;
+    transform: translateY(-50%);
+    width: 1px; height: 20px;
+    background: #2a3f60;
+}
+.info-usuario {
+    position: relative;
+    padding-left: 1.4rem;
+    gap: .85rem;
+}
+.info-usuario::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 50%;
+    transform: translateY(-50%);
+    width: 1px; height: 22px;
+    background: #2a3f60;
+}
+
+/* ----- Tarjetas de métricas con badge de ícono ----- */
+.metrica-tarjeta {
+    background: #14233c;
+    border: 1px solid #1e3455;
+    border-radius: 14px;
+    padding: .6rem 1.4rem .6rem .7rem;
+    gap: 1rem;
+    min-width: 128px;
+    box-shadow: 0 10px 22px -16px rgba(0,0,0,.7);
+    transition: border-color .2s ease, transform .2s ease;
+}
+.metrica-tarjeta:hover {
+    border-color: #35507a;
+    transform: translateY(-2px);
+}
+.metrica-tarjeta .icono {
+    width: 38px;
+    height: 38px;
+    font-size: 1.05rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 11px;
+    background: #1c2c48;
+    flex-shrink: 0;
+}
+.metrica-tarjeta.urgente {
+    border-color: #6b2828;
+    background: #1a1a2e;
+}
+.metrica-tarjeta.urgente .icono {
+    background: #4c1d1d;
+}
+.metrica-tarjeta .label {
+    letter-spacing: .06em;
+}
+
+/* ----- Pestañas: pista con fondo + indicador activo tipo píldora ----- */
+.tabs, .admin-tabs {
+    background: #0a1526;
+    padding: .45rem .6rem;
+    gap: .35rem;
+    border-bottom: 1px solid #1b2c46;
+}
+.tab, .admin-tab, .detalle-menu-btn {
+    border-radius: 9px;
+    border-bottom: 2px solid transparent;
+}
+.tab:hover, .admin-tab:hover, .detalle-menu-btn:hover {
+    background: #16233d;
+}
+.tab.activo, .admin-tab.activo, .detalle-menu-btn.activo {
+    background: #1c2c48;
+    border-bottom-color: #00c8b0;
+    box-shadow: inset 0 0 0 1px #26385a;
+}
+.detalle-menu { padding: .45rem .6rem; gap: .35rem; background: #0a1526; }
+
+/* ----- Tarjetas de llamada: más aire + acento de prioridad ----- */
+.llamada-item {
+    border-radius: 14px;
+    box-shadow: 0 10px 22px -18px rgba(0,0,0,.75);
+    border-left: 3px solid #2a3f60;
+}
+.llamada-item:has(.llamada-urgencia.alta) { border-left-color: #f87171; }
+.llamada-item:has(.llamada-urgencia.media) { border-left-color: #fbbf24; }
+.llamada-item:has(.llamada-urgencia.baja) { border-left-color: #34d399; }
+.llamada-item.seleccionada { border-left-color: #00c8b0; }
+
+.usuario-card, .asignacion-card {
+    border-radius: 14px;
+    box-shadow: 0 10px 22px -18px rgba(0,0,0,.7);
+}
+
+/* ----- Botones de la cabecera: mismo alto, mismo radio, más aire ----- */
+.btn-tema, .btn-salir, #btn-cambiar-clave {
+    border-radius: 10px;
+    padding: .45rem .9rem;
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+}
+.btn-salir {
+    border-radius: 10px;
+    border: 1px solid #4c1d1d;
+}
+.btn-accion {
+    border-radius: 10px;
+    padding: .55rem 1.3rem;
+}
+.btn-accion.primario {
+    box-shadow: 0 10px 20px -12px rgba(0,200,176,.55);
+}
+
+/* ----- Estados vacíos: menos "aviso de error", más ilustrativo ----- */
+.estado-vacio {
+    font-style: normal;
+    font-size: .82rem;
+    color: #6d87b3;
+    padding: 3.2rem 1.5rem;
+    line-height: 1.6;
+}
+.estado-vacio::before {
+    content: '◌';
+    display: block;
+    font-size: 1.6rem;
+    margin-bottom: .5rem;
+    color: #35507a;
+}
+
+/* ----- Modo claro: mismos ajustes estructurales ----- */
+body.tema-claro .admin-selector::before,
+body.tema-claro .info-usuario::before { background: #ccd9ec; }
+body.tema-claro .tabs, body.tema-claro .admin-tabs, body.tema-claro .detalle-menu { background: #dde6f5; }
+body.tema-claro .tab.activo, body.tema-claro .admin-tab.activo, body.tema-claro .detalle-menu-btn.activo {
+    background: #eaf1fb;
+    box-shadow: inset 0 0 0 1px #c3d3ee;
+}
+body.tema-claro .metrica-tarjeta .icono { background: #dde6f5; }
+body.tema-claro .metrica-tarjeta.urgente { background: #fbeaea; border-color: #f3c8c8; }
+body.tema-claro .metrica-tarjeta.urgente .icono { background: #f6d7d7; }
+body.tema-claro .estado-vacio::before { color: #a9c2ef; }
+
+/* ----- Responsive: header apilado limpio en pantallas chicas ----- */
+@media (max-width: 900px) {
+    .barra-estado {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "marca"
+            "metricas"
+            "derecha";
+        row-gap: .7rem;
+    }
+    .header-derecha { justify-self: stretch; flex-wrap: wrap; }
+}
+@media (max-width: 650px) {
+    .barra-estado { display: grid; }
+    .admin-selector, .info-usuario { padding-left: 0; }
+    .admin-selector::before, .info-usuario::before { display: none; }
+}
+
+/* =====================================================================
+   REDISEÑO VISUAL V3 — usuario en la esquina superior derecha, menú
+   desplegable para acciones de cuenta, cabecera sin duplicados.
+   ===================================================================== */
+
+.header-derecha {
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+}
+
+/* ----- Estado del sistema: una sola píldora, sin reloj duplicado ----- */
+.sistema-estado {
+    padding: .45rem 1rem;
+    border-radius: 999px;
+    background: #0f1c30;
+    border: 1px solid #1e3455;
+    gap: .5rem;
+    font-size: .72rem;
+}
+.sistema-estado .modo-badge {
+    background: transparent;
+    border-left: 1px solid #26385a;
+    padding: 0 0 0 .55rem;
+    margin-left: .1rem;
+    color: #6d87b3;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+/* ----- Chip de usuario ----- */
+.menu-usuario { position: relative; }
+.chip-usuario {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    background: #14233c;
+    border: 1px solid #1e3455;
+    border-radius: 999px;
+    padding: .3rem .9rem .3rem .3rem;
+    cursor: pointer;
+    font-family: 'IBM Plex Sans', sans-serif;
+    transition: border-color .2s ease, background .2s ease;
+}
+.chip-usuario:hover,
+.chip-usuario[aria-expanded="true"] {
+    border-color: #35507a;
+    background: #1a2c47;
+}
+.chip-usuario .avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #00c8b0, #1683ff);
+    color: #06111f;
+    font-weight: 700;
+    font-size: .8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.chip-usuario .chip-texto {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    line-height: 1.3;
+}
+.chip-usuario .chip-nombre {
+    font-size: .78rem;
+    font-weight: 600;
+    color: #e8eefb;
+}
+.chip-usuario .rol-tag {
+    font-size: .6rem;
+    font-weight: 500;
+    color: #92a7cf;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    background: none;
+    padding: 0;
+    border-radius: 0;
+}
+.chip-usuario .chevron {
+    color: #6d87b3;
+    font-size: .6rem;
+    transition: transform .2s ease;
+    margin-left: .1rem;
+}
+.chip-usuario[aria-expanded="true"] .chevron {
+    transform: rotate(180deg);
+}
+
+/* ----- Panel desplegable ----- */
+.dropdown-usuario {
+    position: absolute;
+    top: calc(100% + .65rem);
+    right: 0;
+    width: 250px;
+    background: #14233c;
+    border: 1px solid #26385a;
+    border-radius: 14px;
+    box-shadow: 0 20px 44px -14px rgba(0,0,0,.6);
+    padding: .7rem;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+}
+.dropdown-usuario[hidden] {
+    display: none;
+}
+.dropdown-cabecera {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: .2rem .4rem .55rem;
+    font-size: .72rem;
+}
+.dropdown-cabecera .usuario-estado {
+    color: #34d399;
+    font-weight: 500;
+    background: none;
+    padding: 0;
+    text-transform: none;
+    font-size: .72rem;
+}
+.dropdown-cabecera .reloj {
+    font-family: 'IBM Plex Mono', monospace;
+    color: #6d87b3;
+    font-size: .72rem;
+}
+#dropdown-usuario .admin-selector {
+    display: none;
+    padding: 0 .4rem .55rem;
+}
+#dropdown-usuario .admin-selector.visible { display: block; }
+#dropdown-usuario .admin-selector .label {
+    display: block;
+    font-size: .58rem;
+    color: #6d87b3;
+    margin-bottom: .3rem;
+}
+#dropdown-usuario .admin-selector .btn-vista {
+    display: inline-block;
+}
+.dropdown-divisor {
+    height: 1px;
+    background: #26385a;
+    margin: .15rem .2rem .3rem;
+}
+#dropdown-usuario .dropdown-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    background: transparent;
+    border: none;
+    color: #cbd8f2;
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: .78rem;
+    padding: .6rem .65rem;
+    border-radius: 9px;
+    cursor: pointer;
+    text-align: left;
+    transition: background .15s ease;
+}
+#dropdown-usuario .dropdown-item:hover { background: #1c2c48; }
+#dropdown-usuario .dropdown-item.salir { color: #f87171; }
+#dropdown-usuario .dropdown-item.salir:hover { background: #4c1d1d; }
+
+/* ----- Modo claro ----- */
+body.tema-claro .sistema-estado { background: #eaf1fb; border-color: #ccd9ec; }
+body.tema-claro .sistema-estado .modo-badge { border-left-color: #ccd9ec; color: #5b6f95; }
+body.tema-claro .chip-usuario { background: #f4f7fc; border-color: #ccd9ec; }
+body.tema-claro .chip-usuario:hover,
+body.tema-claro .chip-usuario[aria-expanded="true"] { background: #eaf1fb; border-color: #a9c2ef; }
+body.tema-claro .chip-usuario .chip-nombre { color: #16253f; }
+body.tema-claro .chip-usuario .rol-tag { color: #5b6f95; }
+body.tema-claro .dropdown-usuario { background: #f4f7fc; border-color: #ccd9ec; }
+body.tema-claro .dropdown-cabecera .reloj,
+body.tema-claro #dropdown-usuario .admin-selector .label { color: #5b6f95; }
+body.tema-claro .dropdown-divisor { background: #ccd9ec; }
+body.tema-claro #dropdown-usuario .dropdown-item { color: #16253f; }
+body.tema-claro #dropdown-usuario .dropdown-item:hover { background: #dde6f5; }
+body.tema-claro #dropdown-usuario .dropdown-item.salir:hover { background: #fbeaea; }
+
+@media (max-width: 650px) {
+    .header-derecha { flex-wrap: wrap; row-gap: .6rem; }
+    .dropdown-usuario { right: auto; left: 0; width: min(270px, 84vw); }
+}
+
+
+/* =========================================================
+   REESTRUCTURACIÓN: RIEL LATERAL DE OPERACIÓN / ADMIN
+   ========================================================= */
+.riel-lateral {
+    width: 205px;
+    min-width: 205px;
+    flex: 0 0 205px;
+    display: flex;
+    flex-direction: column;
+    gap: .65rem;
+    padding: .85rem .7rem;
+    overflow-y: auto;
+    background: #091120;
+    border-right: 1px solid #1b2c46;
+}
+
+.riel-seccion {
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+}
+
+.riel-titulo {
+    padding: .2rem .55rem .35rem;
+    color: #5f789f;
+    font-size: .58rem;
+    font-weight: 700;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+}
+
+.riel-admin {
+    margin-top: .15rem;
+}
+
+.riel-lateral .admin-tabs {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+    padding: 0;
+    background: transparent;
+    border: 0;
+}
+
+.riel-lateral .admin-tab {
+    width: 100%;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+    padding: .65rem .7rem;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    background: transparent;
+    color: #7d94b9;
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: .7rem;
+    font-weight: 600;
+    text-align: left;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.riel-lateral .admin-tab:hover {
+    color: #dce7f7;
+    background: #14233c;
+}
+
+.riel-lateral .admin-tab.activo {
+    color: #eef5ff;
+    background: #1c2c48;
+    border-color: #26385a;
+    border-bottom-color: #00c8b0;
+    box-shadow: none;
+}
+
+.riel-icono {
+    width: 1.1rem;
+    flex: 0 0 1.1rem;
+    text-align: center;
+    font-size: .9rem;
+}
+
+.riel-separador {
+    height: 1px;
+    margin: .15rem .35rem .1rem;
+    background: #1b2c46;
+}
+
+.riel-lateral .metricas {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: .45rem;
+    flex: 0 0 auto;
+}
+
+.riel-lateral .metrica-tarjeta {
+    width: 100%;
+    min-width: 0;
+    min-height: 52px;
+    box-sizing: border-box;
+    padding: .55rem .65rem;
+    gap: .65rem;
+    border-radius: 9px;
+    background: #0f1c30;
+    border: 1px solid #1e3455;
+}
+
+.riel-lateral .metrica-tarjeta .icono {
+    width: 1.25rem;
+    flex: 0 0 1.25rem;
+    font-size: 1rem;
+    text-align: center;
+}
+
+.riel-lateral .metrica-tarjeta .info {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.riel-lateral .metrica-tarjeta .valor {
+    font-size: 1.05rem;
+    line-height: 1.05;
+}
+
+.riel-lateral .metrica-tarjeta .label {
+    margin-top: .15rem;
+    font-size: .58rem;
+    white-space: nowrap;
+}
+
+.riel-lateral + .panel-cola {
+    width: 440px;
+    min-width: 340px;
+}
+
+body.tema-claro .riel-lateral {
+    background: #dbe6f7;
+    border-color: #ccd9ec;
+}
+
+body.tema-claro .riel-titulo {
+    color: #647a9c;
+}
+
+body.tema-claro .riel-separador {
+    background: #ccd9ec;
+}
+
+body.tema-claro .riel-lateral .admin-tab {
+    color: #5b6f95;
+}
+
+body.tema-claro .riel-lateral .admin-tab:hover {
+    color: #16253f;
+    background: #cdd9eb;
+}
+
+body.tema-claro .riel-lateral .admin-tab.activo {
+    color: #16253f;
+    background: #f4f7fc;
+    border-color: #ccd9ec;
+    border-bottom-color: #00a995;
+}
+
+body.tema-claro .riel-lateral .metrica-tarjeta {
+    background: #eef3fa;
+    border-color: #ccd9ec;
+}
+
+/* En usuarios, el riel permanece y el contenido administrativo ocupa todo el resto. */
+body:has(#gestion-usuarios.visible) .riel-lateral .admin-tab[data-admin-tab="incidentes"] {
+    background: transparent;
+    border-color: transparent;
+    color: #7d94b9;
+}
+
+body:has(#gestion-usuarios.visible) .riel-lateral .admin-tab[data-admin-tab="usuarios"] {
+    color: #eef5ff;
+    background: #1c2c48;
+    border-color: #26385a;
+    border-bottom-color: #00c8b0;
+}
+
+@media (max-width: 900px) {
+    .riel-lateral {
+        width: 175px;
+        min-width: 175px;
+        flex-basis: 175px;
+        padding: .65rem .5rem;
+    }
+
+    .riel-lateral + .panel-cola {
+        width: 320px;
+        min-width: 250px;
+    }
+}
+
+@media (max-width: 650px) {
+    .consola {
+        flex-direction: column;
+    }
+
+    .riel-lateral {
+        width: 100%;
+        min-width: 0;
+        flex: 0 0 auto;
+        max-height: 31vh;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: minmax(130px, .8fr) minmax(0, 1.2fr);
+        grid-template-rows: auto auto;
+        gap: .35rem .65rem;
+        padding: .55rem;
+        border-right: 0;
+        border-bottom: 1px solid #1b2c46;
+    }
+
+    .riel-seccion {
+        min-width: 0;
+    }
+
+    .riel-admin {
+        margin-top: 0;
+    }
+
+    .riel-separador {
+        display: none;
+    }
+
+    .riel-lateral .metricas {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: .35rem;
+    }
+
+    .riel-lateral .metricas .riel-titulo {
+        display: none;
+    }
+
+    .riel-lateral .metrica-tarjeta {
+        min-height: 44px;
+        padding: .35rem .4rem;
+        gap: .35rem;
+    }
+
+    .riel-lateral .metrica-tarjeta .icono {
+        font-size: .8rem;
+        width: auto;
+        flex-basis: auto;
+    }
+
+    .riel-lateral .metrica-tarjeta .valor {
+        font-size: .85rem;
+    }
+
+    .riel-lateral .metrica-tarjeta .label {
+        font-size: .5rem;
+    }
+
+    .riel-lateral .admin-tabs {
+        flex-direction: row;
+    }
+
+    .riel-lateral .admin-tab {
+        min-height: 34px;
+        padding: .45rem .55rem;
+        font-size: .62rem;
+    }
+
+    .riel-lateral + .panel-cola {
+        width: 100%;
+        min-width: 0;
+        height: 40vh;
+    }
+
+    body.tema-claro .riel-lateral {
+        border-bottom-color: #ccd9ec;
+    }
+}
+
+/* ===== TEMA CLARO CODES · NIEBLA TEAL =====
+   No es blanco puro: conserva la identidad azul/teal del sistema. */
+body.tema-claro {
+    background: #dbe9e7;
+    color: #17353b;
+}
+body.tema-claro ::-webkit-scrollbar-track { background: #c9dcda; }
+body.tema-claro ::-webkit-scrollbar-thumb { background: #83aaa7; }
+body.tema-claro .pantalla-auth {
+    background: radial-gradient(circle at 20% 10%, rgba(0,200,176,.16), transparent 35%),
+                radial-gradient(circle at 90% 90%, rgba(37,99,111,.14), transparent 38%),
+                #d7e7e4;
+}
+body.tema-claro .auth-caja {
+    background: #edf5f3;
+    border-color: #b8d0cc;
+    box-shadow: 0 30px 70px rgba(32,72,76,.18);
+}
+body.tema-claro .auth-caja h1 { color: #17353b; }
+body.tema-claro .auth-caja .sub,
+body.tema-claro .auth-form .campo label,
+body.tema-claro .auth-creditos { color: #58777a; }
+body.tema-claro .auth-caja .modo-badge { background: #d8e9e5; color: #9a6a08; }
+body.tema-claro .auth-tabs { background: #d3e3e0; }
+body.tema-claro .auth-tab { color: #527276; }
+body.tema-claro .auth-tab:hover { color: #17353b; }
+body.tema-claro .auth-tab.activo { background: #00b8a3; color: #083b39; }
+body.tema-claro .auth-form .campo input,
+body.tema-claro .auth-form .campo select {
+    background: #e4efed;
+    color: #17353b;
+    border-color: #b5cdca;
+}
+body.tema-claro .auth-form .campo input:focus,
+body.tema-claro .auth-form .campo select:focus { border-color: #00a994; box-shadow: 0 0 0 3px rgba(0,169,148,.12); }
+body.tema-claro .auth-form .campo input::placeholder { color: #789596; }
+body.tema-claro .auth-form .campo select option { background: #e4efed; color: #17353b; }
+body.tema-claro .auth-demo-hint { background: #dceae7; border-color: #a9c7c2; }
+body.tema-claro .auth-demo-hint .demo-label { color: #4d7477; }
+body.tema-claro .auth-demo-hint .row { color: #466568; }
+body.tema-claro .auth-link {
+    color: #087d73;
+}
+body.tema-claro .auth-link:hover { color: #005c55; }
+body.tema-claro .auth-recovery-copy { color: #557477; }
+body.tema-claro .auth-recovery-icon { background: #d2e9e4; color: #008f81; }
+
+body.tema-claro .barra-estado,
+body.tema-claro .panel-cola,
+body.tema-claro .panel-detalle,
+body.tema-claro .admin-panel,
+body.tema-claro .admin-sidebar,
+body.tema-claro .modal-caja {
+    background: #e8f1ef;
+    border-color: #bdd2cf;
+    color: #17353b;
+}
+body.tema-claro .metricas { background: transparent; }
+body.tema-claro .metrica-tarjeta,
+body.tema-claro .llamada-item,
+body.tema-claro .usuario-card,
+body.tema-claro .asignacion-card,
+body.tema-claro .historial-container,
+body.tema-claro .detalle-desc {
+    background: #edf5f3;
+    border-color: #c2d7d3;
+}
+body.tema-claro .llamada-item:hover { background: #e0eeeb; }
+body.tema-claro .llamada-item.seleccionada { background: #d5e9e5; }
+body.tema-claro .detalle-grid .label,
+body.tema-claro .operador-info,
+body.tema-claro .estado-vacio { color: #58777a; }
+body.tema-claro .btn-tema { background: #d2e5e1; color: #087d73; border-color: #a8c7c2; }
+body.tema-claro .btn-tema:hover { background: #c5ddd9; }
+body.tema-claro .tabs { background: #d3e3e0; }
+body.tema-claro .tabs button { color: #527276; }
+body.tema-claro .tabs button.activo { color: #075f59; background: #c5dfdb; }
+body.tema-claro .feed-header,
+body.tema-claro .feed-item { border-color: #c2d7d3; }
+body.tema-claro .feed-item .mensaje { color: #58777a; }
+
+.auth-link {
+    display: block;
+    width: 100%;
+    margin-top: .7rem;
+    border: 0;
+    background: transparent;
+    color: #55d7c7;
+    font: 600 .72rem 'IBM Plex Sans', sans-serif;
+    cursor: pointer;
+    padding: .25rem;
+}
+.auth-link:hover { color: #86eee3; text-decoration: underline; }
+.auth-recovery { text-align: left; }
+.auth-recovery-icon {
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    margin: 0 auto .8rem;
+    border-radius: 13px;
+    background: #123c42;
+    color: #00c8b0;
+    font-size: 1.3rem;
+    font-weight: 700;
+}
+.auth-recovery h2 { text-align: center; font-size: 1.2rem; color: inherit; margin-bottom: .45rem; }
+.auth-recovery-copy { text-align: center; color: #92a7cf; font-size: .72rem; line-height: 1.5; margin-bottom: 1rem; }
