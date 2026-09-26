@@ -1,34 +1,34 @@
-# CODES
+# CODES — Sistema de llamadas de emergencia
 
-**CODES (Centro de Operaciones y Despacho de Emergencias)** es una aplicación web para gestionar llamadas de emergencia, registrar incidentes, clasificarlos por prioridad y apoyar su ubicación geográfica desde una consola operativa.
+CODES es una aplicación web para apoyar la recepción, registro y gestión de llamadas de emergencia. El sistema permite trabajar con llamadas en vivo, transcripción local mediante ASR, clasificación inicial, geocodificación y seguimiento de los casos desde una interfaz web.
 
-El proyecto está construido con **Spring Boot** y dispone de una interfaz web servida por la propia aplicación. Incluye autenticación, gestión de usuarios, clasificación de llamadas, geocodificación, transcripción de llamadas en vivo mediante ASR local y almacenamiento local de la información.
+El proyecto está orientado a uso local o dentro de una red interna controlada. **No está pensado para exponerse directamente a Internet.**
 
-> **Estado:** proyecto en desarrollo. Las configuraciones y medidas de seguridad descritas aquí deben revisarse antes de utilizar CODES en un entorno real.
+> Esta documentación describe el estado actual del código incluido en este repositorio. Las funciones que dependen de infraestructura externa —por ejemplo, correo, claves de Cloudflare, servicios de geocodificación o un reverse proxy HTTPS— deben configurarse y probarse en el entorno donde se vaya a utilizar.
+
+---
 
 ## Funcionalidades principales
 
-- Panel operativo para visualizar llamadas:
-  - **Sin asignar**
-  - **En curso**
-  - **Cerradas**
-- Métricas operativas, incluyendo llamadas totales, urgentes activas, pendientes, en curso y tiempo medio hasta la asignación.
-- Asignación y cierre de incidentes por usuarios autorizados.
-- Llamadas en vivo mediante captura de micrófono desde el navegador.
-- Transcripción mediante **sherpa-onnx** ejecutado localmente.
-- Clasificación heurística de la transcripción según el contenido de la llamada.
-- Extracción y corrección aproximada de direcciones.
-- Geocodificación de ubicaciones para mostrar el incidente en el mapa.
-- Corrección de nombres de calles mediante un diccionario basado en datos de OpenStreetMap.
-- Almacenamiento de la información en **H2** en modo archivo.
-- Cifrado de los audios almacenados mediante **AES-256-GCM**.
-- Autenticación mediante **JWT** y contraseñas protegidas con **BCrypt**.
-- Protección de inicio de sesión y registro mediante **Cloudflare Turnstile**.
-- Control de intentos de autenticación y limitación de solicitudes.
-- Gestión de usuarios por rol, institución y activación administrativa de cuentas registradas.
-- Aislamiento de llamadas y métricas por institución para operadores y supervisores; el administrador puede supervisar todas las instituciones.
-- Cambio de contraseña autenticado desde la aplicación.
-- Interfaz web basada en HTML, CSS y JavaScript, con **Leaflet** para el mapa.
+- Gestión de llamadas pendientes, en curso y cerradas.
+- Registro manual y recepción de llamadas en vivo.
+- Transcripción local mediante **sherpa-onnx**.
+- Extracción y corrección de direcciones a partir de la transcripción.
+- Geocodificación de direcciones.
+- Clasificación inicial de llamadas mediante lógica heurística.
+- Mapa basado en **Leaflet**.
+- Usuarios con roles `operator`, `supervisor` y `administrator`.
+- Activación administrativa de cuentas registradas.
+- Aislamiento de llamadas y métricas por institución para usuarios no administradores.
+- Cambio y recuperación de contraseña.
+- Invalidación de sesiones JWT al cerrar sesión, cambiar contraseña, desactivar una cuenta o forzar el cierre de sesiones.
+- Limitación de intentos de autenticación y solicitudes de recuperación/registro.
+- Registro de eventos de auditoría en `logs/auditoria.log`.
+- Autochequeo interno de base de datos, disco, ASR y caché de geocodificación.
+- Cifrado AES-256-GCM para los audios almacenados.
+- Base de datos H2 en archivo, sin necesidad de instalar un servidor de base de datos adicional.
+
+---
 
 ## Tecnologías
 
@@ -36,7 +36,7 @@ El proyecto está construido con **Spring Boot** y dispone de una interfaz web s
 - **Spring Boot 3.3.4**
 - Spring Web
 - Spring Security
-- Spring Data JPA
+- Spring Data JPA / Hibernate
 - H2 Database
 - JSON Web Token (JJWT)
 - Leaflet
@@ -44,40 +44,45 @@ El proyecto está construido con **Spring Boot** y dispone de una interfaz web s
 - sherpa-onnx
 - Python, para las herramientas auxiliares de calles
 
+---
+
 ## Requisitos
 
-Para ejecutar CODES desde el código fuente necesitas:
+Para ejecutar CODES desde el código fuente:
 
 - JDK **21 o superior**
 - Maven
-- Windows si quieres utilizar los scripts `.bat` y `.ps1` incluidos para el arranque y el ASR local.
-- Python, solo si vas a generar o ampliar el diccionario de calles mediante las herramientas de `tools/streets`.
+- Windows si se quieren utilizar los scripts `.bat` y `.ps1` incluidos.
+- Python, solo para las herramientas relacionadas con el diccionario de calles.
+- Acceso a Internet si se necesitan descargar el modelo ASR, utilizar Turnstile o consultar servicios externos de geocodificación/Overpass.
 
-El ASR utiliza un modelo que se descarga por separado y **no forma parte del ZIP liviano**. Las llamadas en vivo limitan el archivo de audio recibido a 15 MB y validan tipo MIME y extensión.
+El modelo de ASR no forma parte del ZIP liviano. Los scripts de `tools/asr` pueden instalarlo cuando sea necesario.
 
-## Inicio rápido en Windows
+Las llamadas en vivo limitan los archivos de audio a **15 MB por archivo** y **16 MB por petición**.
 
-La forma más sencilla es utilizar:
+---
+
+# Inicio rápido
+
+## Windows
+
+La forma más sencilla de iniciar CODES es:
 
 ```text
 CODES.bat
 ```
 
-El menú permite:
+El menú permite iniciar la aplicación, ejecutar la limpieza del proyecto o salir.
 
-1. Iniciar CODES.
-2. Limpiar archivos pesados o regenerables.
-3. Salir.
+Durante el inicio, el script comprueba Java y Maven, prepara las claves locales necesarias y ejecuta Spring Boot. Cuando corresponde, también intenta preparar/iniciar el ASR local.
 
-Al iniciar, el script comprueba Java y Maven, prepara las claves locales necesarias, inicia el servidor Spring Boot y, cuando corresponde, inicia también el servicio ASR local.
-
-La aplicación queda disponible normalmente en:
+Por defecto, la aplicación queda disponible en:
 
 ```text
 http://localhost:8000
 ```
 
-El servicio ASR local utiliza:
+El ASR local utiliza:
 
 ```text
 ws://localhost:6006
@@ -85,13 +90,25 @@ ws://localhost:6006
 
 ### Inicio manual
 
-También puedes iniciar Spring Boot directamente:
+Para ejecutar únicamente Spring Boot:
 
 ```powershell
 mvn spring-boot:run
 ```
 
-Si vas a utilizar llamadas en vivo y el ASR no está ejecutándose, puedes iniciarlo manualmente:
+Para compilar:
+
+```powershell
+mvn clean package
+```
+
+Para ejecutar las pruebas:
+
+```powershell
+mvn test
+```
+
+Si se necesita el ASR y todavía no está instalado:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
@@ -99,13 +116,15 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\tools\asr\start_asr_windows.ps1
 ```
 
-El script de arranque de CODES intenta iniciar el ASR automáticamente cuando los archivos del modelo no están presentes.
+El servicio ASR es local al equipo que ejecuta CODES. No se debe publicar directamente en la red.
 
-## Configuración de secretos
+---
 
-CODES utiliza variables de entorno para las claves criptográficas y las credenciales iniciales.
+# Primer arranque y secretos
 
-Variables principales:
+CODES necesita secretos para firmar los JWT y cifrar los audios.
+
+Las variables principales son:
 
 ```powershell
 $env:CODES_JWT_SECRET="secreto-largo-y-aleatorio"
@@ -116,91 +135,194 @@ $env:CODES_TURNSTILE_SITE_KEY="site-key-de-cloudflare"
 $env:CODES_TURNSTILE_SECRET_KEY="secret-key-de-cloudflare"
 ```
 
-### Claves generadas por `CODES.bat`
+La clave JWT y la clave de cifrado de audios son independientes. **No deben reutilizarse entre sí.**
 
-Cuando se ejecuta mediante el script de Windows, CODES crea o reutiliza:
+## Uso de `CODES.bat`
+
+Cuando se inicia mediante los scripts de Windows, CODES puede crear o reutilizar:
 
 ```text
 data\.codes-secrets.ps1
 ```
 
-Este archivo contiene las claves persistentes utilizadas por el entorno local. **No debe subirse al repositorio ni compartirse.**
+Ese archivo contiene secretos persistentes del entorno local.
 
-El script genera automáticamente claves para JWT y cifrado si todavía no existen.
+- No debe subirse al repositorio.
+- No debe compartirse.
+- Debe incluirse en los mecanismos de respaldo seguros que correspondan.
+- La pérdida de `CODES_ENCRYPT_KEY` puede impedir recuperar los audios cifrados.
 
-También establece inicialmente un usuario administrador. En una instalación nueva, el script genera una contraseña aleatoria segura y la guarda en `data\.codes-secrets.ps1`. La muestra una sola vez en la consola durante la creación inicial.
+En una instalación nueva, el script genera una contraseña inicial aleatoria para el administrador y la muestra durante el primer arranque. Después de entrar al sistema conviene cambiarla.
 
-**Cámbiala desde CODES después del primer inicio y protege el archivo de secretos.**
+El bootstrap del administrador se ejecuta únicamente cuando todavía no existe ningún usuario. CODES no reemplaza la contraseña del administrador en cada arranque.
 
-### Cloudflare Turnstile
+---
 
-El login y el registro requieren una validación Turnstile.
+# Cloudflare Turnstile
 
-Si no se proporcionan claves reales, `tools/iniciar_codes_windows.ps1` utiliza las claves oficiales de prueba de Cloudflare. Estas claves están destinadas únicamente a desarrollo/demo y no deben utilizarse como configuración de producción.
+El login y el registro utilizan Cloudflare Turnstile.
 
-Para utilizar Turnstile real, configura:
+Para una instalación real se deben configurar:
 
 ```powershell
 $env:CODES_TURNSTILE_SITE_KEY="..."
 $env:CODES_TURNSTILE_SECRET_KEY="..."
 ```
 
-La `SITE_KEY` puede estar presente en el cliente; la `SECRET_KEY` debe permanecer únicamente en el servidor.
+La `SITE_KEY` puede utilizarse en el cliente. La `SECRET_KEY` debe permanecer únicamente en el servidor.
 
-El widget necesita acceso a Internet para cargar los recursos de Cloudflare.
+Los scripts de Windows pueden utilizar claves oficiales de prueba cuando no se proporcionan claves propias. Esas claves son para desarrollo/demo y no deben considerarse una configuración de producción.
 
-## Red y acceso
+Turnstile necesita acceso a Internet desde el navegador y desde el backend según el flujo de validación.
 
-Por defecto, Spring Boot escucha únicamente en:
+---
+
+# Red y acceso desde otros equipos
+
+Por defecto, Spring Boot escucha solamente en:
 
 ```text
 127.0.0.1:8000
 ```
 
-Esto significa que la aplicación no queda expuesta a otros equipos de la red de forma predeterminada.
+Por lo tanto, CODES no queda disponible para otros equipos de la red automáticamente.
 
-Si necesitas utilizar CODES desde otros equipos de una red interna, puedes configurar:
+Para utilizarlo desde una LAN se puede definir:
 
 ```powershell
 $env:CODES_SERVER_ADDRESS="IP_PRIVADA_DEL_SERVIDOR"
 $env:CODES_SERVER_PORT="8000"
 ```
 
-y configurar el firewall para permitir únicamente el acceso necesario.
+y configurar el firewall para permitir únicamente el tráfico necesario.
 
-**No se recomienda exponer directamente CODES a Internet.**
-
-El servicio ASR utiliza:
+También hay que ajustar:
 
 ```text
-localhost:6006
+app.cors-allowed-origins
 ```
 
-Debe permanecer accesible únicamente desde el equipo que ejecuta CODES. El script de configuración actual no está pensado para publicar ese puerto en una red externa.
+para incluir exclusivamente los orígenes reales que utilizarán los equipos de la sala. **No se debe utilizar `*`.**
 
-## Autenticación y usuarios
-
-CODES utiliza una API sin estado (**stateless**):
-
-- Las peticiones autenticadas utilizan JWT.
-- Las contraseñas se almacenan mediante BCrypt.
-- Las cuentas registradas como operador se crean inicialmente inactivas.
-- Un administrador debe activar una cuenta antes de que pueda iniciar sesión.
-- Existen controles de acceso por rol para determinadas operaciones.
-- El inicio de sesión incorpora limitación de solicitudes y control de intentos fallidos.
-
-El primer administrador puede crearse mediante:
+Ejemplo:
 
 ```text
-CODES_ADMIN_USER
-CODES_ADMIN_PASSWORD
+app.cors-allowed-origins=http://192.168.1.10:8000,http://192.168.1.11:8000
 ```
 
-El proceso de bootstrap crea el administrador **solo si todavía no existe**; no sobrescribe su contraseña en cada arranque. El script de Windows genera una contraseña inicial aleatoria y la guarda en `data\.codes-secrets.ps1` para ese entorno.
+## HTTP y HTTPS
 
-## Llamadas en vivo y ASR
+La configuración actual no implementa HTTPS directamente.
 
-CODES utiliza **sherpa-onnx** para realizar la transcripción local.
+Para una LAN pequeña y realmente controlada puede utilizarse HTTP si el tráfico hacia el servidor está restringido y no existe exposición directa a Internet. Si CODES sale de esa red, o si la red no puede considerarse confiable, debe colocarse un reverse proxy con HTTPS delante de la aplicación.
+
+El puerto del ASR:
+
+```text
+6006
+```
+
+debe mantenerse local. Actualmente el flujo utiliza:
+
+```text
+ws://localhost:6006
+```
+
+y no está preparado para publicar el WebSocket del ASR a otros equipos.
+
+---
+
+# Autenticación y usuarios
+
+La API utiliza autenticación mediante JWT.
+
+Las contraseñas se almacenan mediante BCrypt y las cuentas registradas como operadores quedan inicialmente inactivas. Un administrador debe activarlas antes de que puedan iniciar sesión.
+
+Roles disponibles:
+
+| Rol | Alcance general |
+|---|---|
+| `operator` | Operación de llamadas de su institución y llamadas que tenga asignadas |
+| `supervisor` | Supervisión y operación ampliada dentro de su institución |
+| `administrator` | Administración de usuarios y supervisión global |
+
+El alcance real de cada operación se valida también en el backend; no depende solamente de ocultar botones en la interfaz.
+
+Las llamadas se asocian a la institución del usuario que las crea. Los usuarios que no son administradores reciben las listas y métricas filtradas por su institución.
+
+---
+
+# Sesiones y contraseñas
+
+Las sesiones utilizan JWT con una duración configurada actualmente en:
+
+```text
+480 minutos
+```
+
+equivalentes a 8 horas.
+
+El backend permite:
+
+```text
+POST /api/auth/logout
+POST /api/auth/change-password
+PATCH /api/users/{id}/close-sessions
+```
+
+Cambiar una contraseña, cerrar sesión desde el endpoint, desactivar una cuenta o forzar el cierre de sesiones invalida los JWT emitidos anteriormente mediante la marca de tiempo de sesiones del usuario.
+
+La recuperación de contraseña utiliza tokens temporales y puede enviar instrucciones por correo cuando SMTP está configurado.
+
+---
+
+# Registro y recuperación de contraseña
+
+Registro:
+
+```text
+POST /api/auth/register
+```
+
+Una cuenta nueva queda inactiva hasta que un administrador la habilita.
+
+Login:
+
+```text
+POST /api/auth/login
+```
+
+Recuperación:
+
+```text
+POST /api/auth/forgot-password
+POST /api/auth/reset-password
+```
+
+Cambio de contraseña autenticado:
+
+```text
+POST /api/auth/change-password
+```
+
+Para habilitar recuperación por correo hay que configurar SMTP:
+
+```powershell
+$env:CODES_SMTP_HOST="smtp.example.com"
+$env:CODES_SMTP_PORT="587"
+$env:CODES_SMTP_USERNAME="usuario"
+$env:CODES_SMTP_PASSWORD="password"
+$env:CODES_MAIL_FROM="codes@example.com"
+$env:CODES_PUBLIC_BASE_URL="http://servidor:8000"
+```
+
+Sin SMTP configurado, la solicitud de recuperación no puede enviar el correo. En ese caso, la administración de cuentas debe realizarse mediante las funciones administrativas disponibles.
+
+---
+
+# Llamadas en vivo y ASR
+
+El modo de llamada en vivo utiliza un servicio local basado en **sherpa-onnx**.
 
 Flujo general:
 
@@ -213,11 +335,11 @@ sherpa-onnx
         ↓
 Transcripción
         ↓
-Clasificación / extracción de dirección
+Extracción/corrección de dirección
         ↓
 Geocodificación
         ↓
-Registro del incidente
+Registro de la llamada
 ```
 
 El modelo configurado actualmente es:
@@ -226,46 +348,57 @@ El modelo configurado actualmente es:
 sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11
 ```
 
-El modelo no se incluye en el ZIP liviano porque ocupa un volumen considerable y puede descargarse nuevamente mediante los scripts de instalación.
+El modelo no se incluye en el ZIP liviano.
 
-El servicio ASR local utiliza:
+El ASR se ejecuta localmente y el endpoint WebSocket actual es:
 
 ```text
 ws://localhost:6006
 ```
 
-Para el modo de llamada en vivo, el navegador debe acceder a CODES desde `http://localhost:8000`.
+El backend también dispone de procesamiento para audios completos almacenados, cuyos límites son:
 
-> Para un despliegue real, el canal WebSocket y la infraestructura del ASR deberían protegerse y supervisarse de acuerdo con los requisitos de seguridad del entorno.
+```text
+15 MB  máximo por archivo
+16 MB  máximo por petición
+```
 
-## Clasificación de llamadas
+La clasificación automática es heurística y debe considerarse una ayuda para el operador, no un mecanismo autónomo de despacho o decisión.
 
-La clasificación se realiza mediante lógica heurística implementada en el proyecto. No debe interpretarse como un sistema médico, policial o de despacho autónomo.
+---
 
-La clasificación sirve como apoyo al operador y el caso debe ser revisado según los procedimientos del entorno donde se utilice.
+# Direcciones y geocodificación
 
-## Direcciones y geocodificación
+Después de obtener la transcripción, CODES intenta identificar una dirección y corregir posibles errores producidos por el ASR.
 
-Después de obtener la transcripción, CODES intenta extraer una dirección y corregir posibles errores del ASR.
-
-Para la corrección de calles se utiliza:
+El diccionario local de calles se encuentra en:
 
 ```text
 data/calles_chile.txt
 ```
 
-El proyecto incluye un diccionario base y herramientas para ampliarlo utilizando datos de OpenStreetMap.
+Si el diccionario no está disponible, CODES puede conservar la transcripción sin aplicar esa corrección.
 
-### Generar/ampliar el diccionario con Overpass
+La geocodificación se realiza mediante `GeocoderService`. El sistema aplica comprobaciones de similitud antes de aceptar un resultado.
 
-La opción más sencilla es:
+La ubicación del operador, cuando está disponible, puede utilizarse como señal secundaria para resolver candidatos. No se toma automáticamente como la ubicación del incidente.
+
+Las consultas a servicios externos deben respetar los límites y condiciones de uso del proveedor correspondiente.
+
+---
+
+# Diccionario de calles
+
+## Overpass / OpenStreetMap
+
+Para generar o ampliar el diccionario:
 
 ```powershell
 python -m pip install requests
 python tools/streets/fetch_calles_overpass.py data/calles_chile.txt
 ```
 
-Por defecto, el script trabaja con la Región Metropolitana.
+Por defecto, la herramienta trabaja con la Región Metropolitana.
 
 Para otra región:
 
@@ -273,46 +406,39 @@ Para otra región:
 python tools/streets/fetch_calles_overpass.py data/calles_chile.txt --region "Nombre de la región"
 ```
 
-También existe una opción para trabajar con todo Chile mediante los parámetros disponibles en el propio script.
+## Desde un PBF
 
-### Utilizar un archivo PBF de OpenStreetMap
-
-Si necesitas trabajar con un extracto PBF:
+Si se dispone de un extracto de OpenStreetMap:
 
 ```powershell
 python -m pip install osmium
-
-Invoke-WebRequest `
-  https://download.geofabrik.de/south-america/chile-latest.osm.pbf `
-  -OutFile chile-latest.osm.pbf
-
-python tools/streets/extract_calles_chile.py `
-  chile-latest.osm.pbf `
-  data/calles_chile.txt
 ```
 
-El PBF puede eliminarse después de generar el diccionario si ya no se necesita.
+Luego se puede descargar, por ejemplo, el PBF de Chile desde Geofabrik y procesarlo con:
 
-### Geocodificación
+```powershell
+python tools/streets/extract_calles_chile.py chile-latest.osm.pbf data/calles_chile.txt
+```
 
-CODES utiliza servicios externos de geocodificación configurados en `GeocoderService` y aplica comprobaciones de similitud antes de aceptar un resultado.
+El archivo PBF es un insumo de trabajo y puede eliminarse después de generar el diccionario si ya no se necesita.
 
-La ubicación del operador, cuando está disponible, puede utilizarse como una señal secundaria para resolver candidatos, pero no se considera automáticamente como la ubicación del incidente.
+---
 
-Las consultas de geocodificación deben respetar las condiciones y límites de uso del proveedor correspondiente.
+# Datos y almacenamiento
 
-## Datos y almacenamiento
-
-La aplicación utiliza una base de datos H2 en archivo:
+La base de datos por defecto es H2 en archivo:
 
 ```text
 data/llamadas.mv.db
 ```
 
-También puede generar o utilizar:
+No se necesita instalar un servidor de base de datos adicional para ejecutar el proyecto.
+
+También se utilizan:
 
 ```text
 data/
+├── llamadas.mv.db
 ├── audios_crudos/
 ├── audios_encriptados/
 ├── geocache.json
@@ -326,7 +452,7 @@ Los logs de auditoría se almacenan en:
 logs/auditoria.log
 ```
 
-La configuración de estas rutas se encuentra en:
+Las rutas y parámetros principales se configuran en:
 
 ```text
 src/main/resources/application.properties
@@ -334,17 +460,138 @@ src/main/resources/application.properties
 
 ## Cifrado de audios
 
-Los audios almacenados se cifran mediante **AES-256-GCM** utilizando la clave configurada mediante:
+Los audios almacenados se cifran mediante **AES-256-GCM** utilizando:
 
 ```text
 CODES_ENCRYPT_KEY
 ```
 
-La clave de cifrado debe mantenerse separada de los archivos de datos y no debe incluirse en el repositorio.
+La clave no debe incluirse en el repositorio.
 
-Perder la clave puede impedir recuperar los audios cifrados.
+El respaldo de esta clave debe gestionarse de forma separada de los datos cifrados. Si se pierde, los audios cifrados pueden quedar irrecuperables.
 
-## Estructura del proyecto
+---
+
+# Auditoría y estado del sistema
+
+Los eventos relevantes de seguridad y operación se registran en:
+
+```text
+logs/auditoria.log
+```
+
+Entre los eventos registrados se incluyen login, logout mediante el endpoint, registro de usuarios, cambios y recuperación de contraseña, operaciones administrativas y operaciones sobre llamadas.
+
+CODES también ejecuta un autochequeo periódico en segundo plano.
+
+Por defecto:
+
+```text
+Primer chequeo: 30 segundos después del arranque
+Intervalo:      10 minutos
+Espacio mínimo: 1 GB
+```
+
+El autochequeo revisa:
+
+- acceso a la base de datos;
+- escritura en disco;
+- espacio disponible;
+- disponibilidad del ASR local;
+- acceso a la caché de geocodificación.
+
+El resultado puede consultarse como administrador:
+
+```text
+GET  /api/admin/status
+POST /api/admin/selftest
+```
+
+La documentación detallada de auditoría, cambios y preparación para producción local está en:
+
+```text
+AUDITORIA_Y_CAMBIOS.md
+```
+
+---
+
+# API principal
+
+Estas son las rutas principales actualmente implementadas:
+
+```text
+GET    /api/health
+
+POST   /api/auth/login
+POST   /api/auth/logout
+POST   /api/auth/register
+POST   /api/auth/forgot-password
+POST   /api/auth/reset-password
+POST   /api/auth/change-password
+GET/POST /api/auth/captcha-site-key
+
+GET    /api/users
+POST   /api/users
+PATCH  /api/users/{id}/disable
+PATCH  /api/users/{id}/enable
+PATCH  /api/users/{id}/reset-password
+PATCH  /api/users/{id}/close-sessions
+
+GET    /api/llamadas/pending
+GET    /api/llamadas/in-progress
+GET    /api/llamadas/closed
+POST   /api/llamadas/{id}/assign
+POST   /api/llamadas/{id}/close
+POST   /api/llamadas/live
+
+GET    /api/metrics
+
+GET    /api/admin/status
+POST   /api/admin/selftest
+```
+
+Las operaciones protegidas requieren autenticación y, según el caso, un rol autorizado.
+
+---
+
+# Configuración principal
+
+La configuración de la aplicación está en:
+
+```text
+src/main/resources/application.properties
+```
+
+Variables de entorno principales:
+
+```text
+CODES_SERVER_ADDRESS
+CODES_SERVER_PORT
+
+CODES_JWT_SECRET
+CODES_ENCRYPT_KEY
+
+CODES_ADMIN_USER
+CODES_ADMIN_PASSWORD
+
+CODES_TURNSTILE_SITE_KEY
+CODES_TURNSTILE_SECRET_KEY
+
+CODES_DATA_DIR
+
+CODES_SMTP_HOST
+CODES_SMTP_PORT
+CODES_SMTP_USERNAME
+CODES_SMTP_PASSWORD
+CODES_MAIL_FROM
+CODES_PUBLIC_BASE_URL
+```
+
+Otros parámetros de operación, como el intervalo del autochequeo, mantenimiento, CORS, rutas de datos y configuración del ASR, se encuentran en `application.properties`.
+
+---
+
+# Estructura del proyecto
 
 ```text
 CODES/
@@ -352,40 +599,43 @@ CODES/
 ├── data/
 │   └── calles_chile.txt
 ├── src/
-│   └── main/
-│       ├── java/
-│       │   └── cl/codes/
-│       │       ├── classifier/
-│       │       ├── config/
-│       │       ├── controller/
-│       │       ├── model/
-│       │       ├── repository/
-│       │       ├── security/
-│       │       └── service/
-│       └── resources/
-│           ├── static/
-│           │   ├── index.html
-│           │   ├── script.js
-│           │   └── styles.css
-│           └── application.properties
+│   ├── main/
+│   │   ├── java/cl/codes/
+│   │   │   ├── classifier/
+│   │   │   ├── config/
+│   │   │   ├── controller/
+│   │   │   ├── model/
+│   │   │   ├── repository/
+│   │   │   ├── security/
+│   │   │   └── service/
+│   │   └── resources/
+│   │       ├── static/
+│   │       │   ├── index.html
+│   │       │   ├── script.js
+│   │       │   └── styles.css
+│   │       └── application.properties
+│   └── test/
 ├── tools/
 │   ├── asr/
 │   └── streets/
 ├── CODES.bat
 ├── pom.xml
+├── AUDITORIA_Y_CAMBIOS.md
 ├── README.md
 └── .gitignore
 ```
 
-## Limpieza del proyecto
+---
 
-Para mantener el proyecto liviano existe:
+# Limpieza del proyecto
+
+El proyecto incluye:
 
 ```text
 tools/limpiar_proyecto.ps1
 ```
 
-Sin parámetros, el script solo muestra qué elementos podrían eliminarse.
+Sin parámetros, muestra qué elementos podrían limpiarse:
 
 ```powershell
 .\tools\limpiar_proyecto.ps1
@@ -397,69 +647,25 @@ Para ejecutar la limpieza:
 .\tools\limpiar_proyecto.ps1 -Borrar
 ```
 
-También permite generar un ZIP liviano:
+También puede generar un ZIP liviano:
 
 ```powershell
 .\tools\limpiar_proyecto.ps1 -Borrar -Comprimir
 ```
 
-El proceso de limpieza está diseñado para conservar la base de datos, los secretos y los audios de casos.
+Antes de ejecutar una limpieza destructiva conviene revisar qué archivos considera prescindibles el script. Los datos operativos, secretos y audios deben conservarse de acuerdo con la política definida para la instalación.
 
-## API principal
+---
 
-La aplicación expone, entre otras, las siguientes rutas:
+# Desarrollo y pruebas
 
-```text
-GET  /api/health
-POST /api/auth/login
-POST /api/auth/register
-
-GET  /api/llamadas/pending
-GET  /api/llamadas/in-progress
-GET  /api/llamadas/closed
-POST /api/llamadas/{id}/assign
-POST /api/llamadas/{id}/close
-POST /api/llamadas/live
-
-GET  /api/metrics
-```
-
-Las operaciones protegidas requieren autenticación y, según la operación, un rol autorizado. Los roles internos son `operator`, `supervisor` y `administrator`. Las operaciones sobre llamadas también comprueban la institución del usuario; un operador solo puede cerrar una llamada que tenga asignada, mientras que supervisor y administrador tienen permisos ampliados dentro del alcance permitido.
-
-## Configuración principal
-
-La configuración de la aplicación está en:
-
-```text
-src/main/resources/application.properties
-```
-
-Entre los parámetros principales se encuentran:
-
-```text
-server.port
-server.address
-app.encrypt-key
-app.jwt-secret
-app.jwt-expiracion-minutos
-app.admin-bootstrap-user
-app.admin-bootstrap-password
-app.cors-allowed-origins
-app.turnstile-site-key
-app.turnstile-secret-key
-app.calles-diccionario
-app.asr.*
-```
-
-## Desarrollo
-
-Para compilar el proyecto:
+Para compilar:
 
 ```powershell
 mvn clean package
 ```
 
-Para ejecutarlo directamente:
+Para ejecutar:
 
 ```powershell
 mvn spring-boot:run
@@ -471,33 +677,70 @@ Para ejecutar las pruebas:
 mvn test
 ```
 
-## Seguridad y aislamiento por institución
+El repositorio contiene pruebas automatizadas, pero una compilación o ejecución exitosa debe comprobarse en el entorno donde se vaya a desplegar. La documentación no considera una prueba como "pasada" únicamente porque el código exista.
 
-Cada llamada guarda la institución del usuario que la crea. Las listas de llamadas, métricas, asignaciones y cierres se filtran por institución para usuarios no administradores. Los administradores pueden supervisar todas las instituciones.
+---
 
-Las llamadas existentes creadas antes de esta separación pueden ser actualizadas automáticamente al iniciar la aplicación cuando su `createdByUser` permite determinar la institución. Las llamadas antiguas sin institución identificable quedan visibles únicamente para administradores hasta que sean revisadas.
+# Antes de usarlo en producción
 
-## Consideraciones antes de producción
+CODES maneja información potencialmente sensible. Antes de utilizarlo operativamente conviene revisar, como mínimo:
 
-Este proyecto contiene información potencialmente sensible relacionada con llamadas e incidentes. Antes de utilizarlo en un entorno real se deberían revisar, como mínimo:
-
-- gestión y rotación de secretos;
-- cambio de la contraseña inicial generada por el instalador;
-- migraciones controladas de base de datos en lugar de depender de `ddl-auto=update`;
-- ejecución de la batería de tests automatizados antes de cada despliegue;
-- contraseñas iniciales;
-- HTTPS;
-- protección del WebSocket del ASR;
-- autenticación y autorización;
-- configuración de CORS;
+- secretos y rotación de claves;
+- contraseña inicial del administrador;
+- HTTPS si la red no es completamente controlada;
 - firewall y segmentación de red;
-- políticas de retención y eliminación de audios;
-- copias de seguridad y recuperación de la base de datos;
-- protección de logs;
-- cumplimiento de las obligaciones legales y de privacidad aplicables;
-- límites y condiciones de los servicios externos de geocodificación y mapas.
+- CORS;
+- protección del WebSocket del ASR;
+- respaldo de `CODES_ENCRYPT_KEY`;
+- copias de seguridad de la base de datos;
+- pruebas reales de restauración;
+- política de retención y eliminación de llamadas y audios;
+- protección y rotación de logs;
+- configuración de SMTP;
+- claves reales de Turnstile;
+- límites y condiciones de los servicios externos de geocodificación;
+- actualización y procedencia del modelo ASR;
+- monitoreo del servidor y del ASR;
+- pruebas de integración y seguridad.
 
-## Licencia y uso
+La configuración actual utiliza H2 con:
 
-No se declara una licencia open source específica en este repositorio. Por tanto, salvo que el equipo responsable indique lo contrario, el código debe considerarse **proyecto en desarrollo / uso interno o académico** y no debe asumirse que puede redistribuirse libremente.
+```text
+spring.jpa.hibernate.ddl-auto=update
+```
 
+Esto simplifica una instalación local, pero para una infraestructura de mayor escala conviene definir una estrategia formal de migraciones y evaluar una base de datos como PostgreSQL.
+
+---
+
+# Estado conocido
+
+El proyecto tiene varias medidas de seguridad y operación implementadas, pero todavía existen tareas que dependen de infraestructura o de decisiones de despliegue.
+
+Entre ellas:
+
+- HTTPS/reverse proxy;
+- política formal de retención;
+- backups y restauración probada;
+- almacenamiento/monitoreo externo de auditoría;
+- migraciones formales de base de datos;
+- endurecimiento del WebSocket del ASR;
+- monitoreo externo independiente.
+
+Además, el backend dispone de `POST /api/auth/logout`, pero el cierre de sesión debe utilizar ese endpoint para invalidar el JWT inmediatamente. El comportamiento visual del frontend no debe confundirse con la invalidación del token en servidor.
+
+Para el detalle de lo implementado y de lo que queda pendiente, consultar:
+
+```text
+AUDITORIA_Y_CAMBIOS.md
+```
+
+---
+
+# Licencia y uso
+
+Este repositorio no declara una licencia open source específica.
+
+Salvo que el equipo responsable indique lo contrario, debe considerarse un proyecto en desarrollo para uso interno, académico o controlado. No se debe asumir que el código, los modelos, los datos de OpenStreetMap ni los servicios externos utilizados tienen las mismas condiciones de licencia o redistribución.
+
+Revisar las condiciones de cada dependencia y servicio antes de distribuir una versión del sistema.
