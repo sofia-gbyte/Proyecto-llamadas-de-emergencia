@@ -128,15 +128,26 @@ public class MonitorAudioService {
         return name.endsWith(".wav") || name.endsWith(".mp3") || name.endsWith(".m4a");
     }
 
-    private void processAudio(Path audioPath) {
+    void processAudio(Path audioPath) {
         log.info("New audio detected: {}", audioPath);
+        String transcription;
         try {
-            String transcription = streetCorrection.correct(transcriptionService.transcribe(audioPath));
-            log.info("Transcription: {}", transcription);
+            transcription = streetCorrection.correct(transcriptionService.transcribe(audioPath));
+        } catch (Exception e) {
+            discardAudio(audioPath, "transcription could not be obtained", e);
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            return;
+        }
+        log.info("Transcription: {}", transcription);
 
-            Classifier.ResultadoClasificacion classification = Classifier.classifyCall(transcription);
-            log.info("Assigned priority: {}", classification.priority());
+        Classifier.ResultadoClasificacion classification = Classifier.classifyCall(transcription);
+        if (!Classifier.hasOperationalInformation(classification)) {
+            discardAudio(audioPath, "transcription has insufficient operational information", null);
+            return;
+        }
+        log.info("Assigned priority: {}", classification.priority());
 
+        try {
             GeocoderService.Coordinates coords = geocoderService.geocode(classification.direccion(), transcription);
 
             String marker = LocalDateTime.now().format(MARCA_TIEMPO);
@@ -166,6 +177,16 @@ public class MonitorAudioService {
 
         } catch (Exception e) {
             log.error("Error processing audio {}", audioPath, e);
+        }
+    }
+
+    private void discardAudio(Path audioPath, String reason, Exception cause) {
+        if (cause == null) log.info("Discarding audio {}: {}", audioPath, reason);
+        else log.warn("Discarding audio {}: {}", audioPath, reason, cause);
+        try {
+            Files.deleteIfExists(audioPath);
+        } catch (IOException e) {
+            log.error("Could not delete discarded audio {}", audioPath, e);
         }
     }
 }

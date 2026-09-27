@@ -247,6 +247,14 @@ public final class Classifier {
             List<String> institucionesSugeridas
     ) {}
 
+    public static boolean hasOperationalInformation(ResultadoClasificacion resultado) {
+        return resultado != null && (
+                !resultado.highlightedWords().isEmpty()
+                        || !resultado.institucionesSugeridas().isEmpty()
+                        || (resultado.direccion() != null && !resultado.direccion().isBlank())
+        );
+    }
+
     // -----------------------------------------------------------------
     // 5. Función principal
     // -----------------------------------------------------------------

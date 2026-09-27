@@ -32,4 +32,17 @@ class ClassifierTest {
         assertFalse(resultado.institucionesSugeridas().contains("carabineros"));
         assertTrue(resultado.priority().equals("MEDIA"));
     }
+
+    @Test
+    void identificaTranscripcionesSinInformacionOperacional() {
+        assertFalse(Classifier.hasOperationalInformation(Classifier.classifyCall("")));
+        assertFalse(Classifier.hasOperationalInformation(Classifier.classifyCall("texto sin sentido")));
+    }
+
+    @Test
+    void conservaSolicitudesVerdesConInformacionOperacional() {
+        assertTrue(Classifier.hasOperationalInformation(
+                Classifier.classifyCall("Quiero saber el horario de atención de la comisaría")
+        ));
+    }
 }

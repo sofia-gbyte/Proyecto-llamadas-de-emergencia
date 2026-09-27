@@ -59,8 +59,10 @@ public class LiveCallService {
         validateCoordinates(operatorLatitude, operatorLongitude);
         User creator = userRepository.findByUsername(user).orElseThrow(() -> new IllegalArgumentException("User not found"));
         String texto = streetCorrection.correct(cleanTranscription(transcription));
-        if (texto.isBlank()) throw new IllegalArgumentException("The transcription is empty.");
         Classifier.ResultadoClasificacion classification = Classifier.classifyCall(texto);
+        if (!Classifier.hasOperationalInformation(classification)) {
+            throw new IllegalArgumentException("The transcription has insufficient operational information.");
+        }
         GeocoderService.Coordinates coords = geocoder.geocode(classification.direccion(), texto, operatorLatitude, operatorLongitude);
 
         Path temporal = null;
