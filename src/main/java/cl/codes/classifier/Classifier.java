@@ -178,6 +178,10 @@ public final class Classifier {
 
     public static String extraerDireccion(String texto) {
         if (texto == null) return null;
+        // Convierte números dictados en palabras ("dieciséis treinta" -> "1630",
+        // "mil seiscientos treinta" -> "1630") ANTES de aplicar los patrones de
+        // abajo, que solo reconocen dígitos (\d). El resto del texto no cambia.
+        texto = NumeroEnPalabras.convertir(texto);
         Matcher m = PATRON_DIRECCION.matcher(texto);
         if (m.find()) {
             String tipo = m.group(1).trim();
