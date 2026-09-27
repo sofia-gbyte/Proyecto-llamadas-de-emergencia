@@ -28,16 +28,22 @@ public class AsrStreamingService {
     private final boolean autoStart;
     private final Path root;
     private final String modelName;
+    private final String language;
+    private final int threads;
     private Process proceso;
 
     public AsrStreamingService(
             @Value("${app.asr.auto-start:true}") boolean autoStart,
             @Value("${app.asr.root:./tools/asr}") String asrRoot,
-            @Value("${app.asr.model-name:sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11}") String modelName
+            @Value("${app.asr.model-name:sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11}") String modelName,
+            @Value("${app.asr.idioma:es-ES}") String language,
+            @Value("${app.asr.hilos:2}") int threads
     ) {
         this.autoStart = autoStart;
         this.root = Path.of(asrRoot).toAbsolutePath().normalize();
         this.modelName = modelName;
+        this.language = language;
+        this.threads = threads;
     }
 
     @PostConstruct
@@ -57,9 +63,9 @@ public class AsrStreamingService {
             Path joiner = modelo.resolve("joiner.int8.onnx");
             Path tokens = modelo.resolve("tokens.txt");
 
-            String exe = encontrarEjecutable();
-            if (exe == null) {
-                log.warn("No se encontró sherpa-onnx-online-websocket-server.exe. CODES continuará, pero el ASR en vivo debe iniciarse manualmente.");
+            Path serverScript = root.resolve("websocket_server.py");
+            if (!java.nio.file.Files.exists(serverScript)) {
+                log.warn("No se encontró el servidor ASR Python en {}.", serverScript);
                 return;
             }
             if (!java.nio.file.Files.exists(encoder) || !java.nio.file.Files.exists(decoder)
@@ -69,17 +75,16 @@ public class AsrStreamingService {
             }
 
             List<String> cmd = new ArrayList<>();
-            cmd.add(exe);
+            cmd.add("python");
+            cmd.add(serverScript.toString());
             cmd.add("--port=6006");
-            cmd.add("--num-work-threads=2");
-            cmd.add("--num-io-threads=2");
+            cmd.add("--threads=" + threads);
+            cmd.add("--language=" + language);
+            cmd.add("--sample-rate=16000");
             cmd.add("--tokens=" + tokens);
             cmd.add("--encoder=" + encoder);
             cmd.add("--decoder=" + decoder);
             cmd.add("--joiner=" + joiner);
-            cmd.add("--log-file=" + root.resolve("asr.log"));
-            cmd.add("--max-batch-size=5");
-            cmd.add("--loop-interval-ms=10");
 
             ProcessBuilder pb = new ProcessBuilder(cmd)
                     .directory(root.toFile())
@@ -104,34 +109,6 @@ public class AsrStreamingService {
         } catch (Exception e) {
             log.warn("No se pudo iniciar Sherpa automáticamente: {}", e.getMessage());
         }
-    }
-
-    private String encontrarEjecutable() {
-        try {
-            Process p = new ProcessBuilder("cmd", "/c", "where", "sherpa-onnx-online-websocket-server.exe")
-                    .redirectErrorStream(true).start();
-            String out;
-            try (BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
-                out = br.readLine();
-            }
-            p.waitFor(3, TimeUnit.SECONDS);
-            if (out != null && !out.isBlank()) return out.trim();
-        } catch (Exception ignored) {}
-
-        try {
-            Process p = new ProcessBuilder("python", "-c", "import sysconfig; print(sysconfig.get_path('scripts'))")
-                    .redirectErrorStream(true).start();
-            String scripts;
-            try (BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
-                scripts = br.readLine();
-            }
-            p.waitFor(3, TimeUnit.SECONDS);
-            if (scripts != null) {
-                Path candidato = Path.of(scripts.trim(), "sherpa-onnx-online-websocket-server.exe");
-                if (java.nio.file.Files.exists(candidato)) return candidato.toString();
-            }
-        } catch (Exception ignored) {}
-        return null;
     }
 
     /** Expuesto para el autochequeo/estado de administrador: true si el WebSocket responde ahora mismo. */

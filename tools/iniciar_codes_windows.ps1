@@ -1,9 +1,11 @@
-param(
+﻿param(
     [string]$JavaPath,
     [string]$MavenBin
 )
 
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $false
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 $MavenBin = if ($MavenBin) { $MavenBin.Trim().Trim('"') } else { $null }
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
@@ -49,6 +51,43 @@ function Test-PortOpen {
         return $false
     }
 }
+
+# Si CODES se cerró antes cliqueando la X de la ventana (en vez de dejar que
+# el script termine solo), Windows mata la consola de golpe y el "finally"
+# que libera los puertos nunca alcanza a correr. Eso deja procesos huérfanos
+# de Java (8000) y/o Python/sherpa-onnx (6006) todavía corriendo, y el
+# siguiente inicio los confunde con una instancia sana, saltándose por
+# completo el arranque real (incluida la revisión/descarga del modelo ASR).
+# Por eso, ANTES de decidir nada, nos aseguramos de partir limpios: si hay
+# algo escuchando en 8000 o 6006 que no sea una instancia sana de CODES,
+# lo cerramos.
+function Stop-ProcesoHuerfanoEnPuerto {
+    param([int]$Port, [string]$Etiqueta)
+    try {
+        $conexiones = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+        foreach ($conexion in $conexiones) {
+            $procId = $conexion.OwningProcess
+            if ($procId -and $procId -ne $PID) {
+                try {
+                    $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
+                    $nombre = if ($proc) { $proc.ProcessName } else { "PID $procId" }
+                    Write-Host "Se encontró un proceso ($nombre) de una sesión anterior de CODES todavía escuchando en el puerto $Port ($Etiqueta). Cerrándolo..." -ForegroundColor Yellow
+                    taskkill.exe /PID $procId /T /F | Out-Null
+                }
+                catch {}
+            }
+        }
+    }
+    catch {
+        # Get-NetTCPConnection puede no estar disponible en algunos Windows;
+        # si falla, seguimos igual con la lógica normal de detección de puertos.
+    }
+}
+
+Write-Host 'Verificando que no queden procesos de una sesión anterior de CODES...' -ForegroundColor DarkGray
+Stop-ProcesoHuerfanoEnPuerto -Port 8000 -Etiqueta 'Spring Boot'
+Stop-ProcesoHuerfanoEnPuerto -Port 6006 -Etiqueta 'ASR / sherpa-onnx'
+Start-Sleep -Milliseconds 500
 
 function Get-JavaInfo {
     function Parse-JavaMajorVersion([string]$Text) {
@@ -356,6 +395,7 @@ Write-Host 'Iniciando Spring Boot y verificando /api/health...' -ForegroundColor
 Write-Host 'Los errores de arranque se guardaran en logs\spring-boot.log' -ForegroundColor DarkGray
 New-Item -ItemType Directory -Force -Path (Join-Path $root 'logs') | Out-Null
 $springLog = Join-Path $root 'logs\spring-boot.log'
+$mvnCmd = Join-Path $mavenBinResolved 'mvn.cmd'
 
 function Test-SpringHealth {
     try {
@@ -370,11 +410,9 @@ function Test-SpringHealth {
 # Si ya hay una instancia sana, no lanzamos otra.
 if (Test-SpringHealth) {
     Write-Host 'Servidor CODES ya estaba activo y responde correctamente.' -ForegroundColor Green
-    Start-Process 'http://localhost:8000'
     $springProcess = $null
 } else {
     if (Test-Path $springLog) { Remove-Item $springLog -Force -ErrorAction SilentlyContinue }
-    $mvnCmd = Join-Path $mavenBinResolved 'mvn.cmd'
     if (-not (Test-Path $mvnCmd)) {
         Write-Host "No se encontro Maven en: $mvnCmd" -ForegroundColor Red
         exit 1
@@ -408,64 +446,102 @@ if (Test-SpringHealth) {
     }
 
     Write-Host 'Servidor CODES: OK' -ForegroundColor Green
-    Start-Process 'http://localhost:8000'
+}
+
+$staticIndex = Join-Path $root 'target\classes\static\index.html'
+if (-not (Test-Path $staticIndex)) {
+    Write-Host 'Faltan los recursos compilados de la interfaz. Regenerando recursos web...' -ForegroundColor Yellow
+    & $mvnCmd process-resources
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $staticIndex)) {
+        Write-Host 'ERROR: no se pudieron recuperar los recursos web de CODES.' -ForegroundColor Red
+        exit 1
+    }
 }
 
 # ASR: se verifica después de que Spring Boot esté sano.
-# La falla del ASR NO debe impedir que CODES abra.
 $asrScript = Join-Path $root 'tools\asr\start_asr_windows.ps1'
+$asrProcess = $null
 
 Write-Host ''
 Write-Host 'Verificando ASR en localhost:6006...' -ForegroundColor Cyan
-
 if (Test-PortOpen -HostName '127.0.0.1' -Port 6006) {
     Write-Host 'ASR: OK (localhost:6006)' -ForegroundColor Green
 }
 elseif (Test-Path $asrScript) {
     try {
-        $asrLog = Join-Path $root 'logs\asr.log'
+        $asrStdoutLog = Join-Path $root 'logs\asr-stdout.log'
+        $asrStderrLog = Join-Path $root 'logs\asr-stderr.log'
         New-Item -ItemType Directory -Force -Path (Join-Path $root 'logs') | Out-Null
+        if (Test-Path $asrStdoutLog) { Remove-Item $asrStdoutLog -Force -ErrorAction SilentlyContinue }
+        if (Test-Path $asrStderrLog) { Remove-Item $asrStderrLog -Force -ErrorAction SilentlyContinue }
 
+        Write-Host 'El primer inicio puede descargar e instalar sherpa-onnx y el modelo ASR; esto puede tardar varios minutos.' -ForegroundColor Yellow
         Write-Host 'Iniciando ASR en segundo plano...' -ForegroundColor Cyan
         $asrProcess = Start-Process -FilePath 'powershell.exe' `
             -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$asrScript) `
             -WorkingDirectory $root `
-            -RedirectStandardOutput $asrLog `
-            -RedirectStandardError $asrLog `
+            -RedirectStandardOutput $asrStdoutLog `
+            -RedirectStandardError $asrStderrLog `
             -PassThru `
             -WindowStyle Hidden
 
+        # El ASR corre oculto y con su salida redirigida a logs\asr-*.log, así que
+        # el avance de instalación (p. ej. la descarga del modelo, ~1 GB) no se ve
+        # en ninguna parte por defecto. Vamos leyendo la última línea del log y
+        # reflejándola aquí, en la consola que la persona sí está mirando.
         $asrOk = $false
-        for ($i = 0; $i -lt 20; $i++) {
+        $ultimaLineaAsr = ''
+        for ($i = 1; $i -le 300; $i++) {
             Start-Sleep -Seconds 1
-            if (Test-PortOpen -HostName '127.0.0.1' -Port 6006) {
-                $asrOk = $true
-                break
-            }
+            if (Test-PortOpen -HostName '127.0.0.1' -Port 6006) { $asrOk = $true; break }
             if ($asrProcess.HasExited) { break }
+            if (Test-Path $asrStdoutLog) {
+                $lineaActual = Get-Content $asrStdoutLog -Tail 1 -ErrorAction SilentlyContinue
+                if ($lineaActual -and $lineaActual -ne $ultimaLineaAsr) {
+                    Write-Host "   $lineaActual" -ForegroundColor DarkGray
+                    $ultimaLineaAsr = $lineaActual
+                }
+            }
+            if (-not $ultimaLineaAsr -and ($i % 30) -eq 0) { Write-Host "Preparando ASR... ${i}s" -ForegroundColor DarkGray }
         }
-
         if ($asrOk) {
             Write-Host 'ASR: OK (localhost:6006)' -ForegroundColor Green
         } else {
-            Write-Host 'ASR: no respondió. CODES continuará activo.' -ForegroundColor Yellow
-            Write-Host 'Revisa logs\asr.log.' -ForegroundColor Yellow
+            Write-Host 'ASR: no respondió tras la espera. CODES continuará activo.' -ForegroundColor Yellow
+            if ($asrProcess -and $asrProcess.HasExited) { Write-Host "El proceso ASR terminó con código $($asrProcess.ExitCode)." -ForegroundColor Red }
+            if (Test-Path $asrStdoutLog) { Write-Host '--- ASR stdout ---' -ForegroundColor Yellow; Get-Content $asrStdoutLog -Tail 30 }
+            if (Test-Path $asrStderrLog) { Write-Host '--- ASR stderr ---' -ForegroundColor Yellow; Get-Content $asrStderrLog -Tail 30 }
+            Write-Host 'Revisa logs\asr-stderr.log, logs\asr-stdout.log y tools\asr\asr.log.' -ForegroundColor Yellow
         }
-    }
-    catch {
+    } catch {
         Write-Host "ASR: no se pudo iniciar: $($_.Exception.Message)" -ForegroundColor Yellow
         Write-Host 'CODES continuará activo.' -ForegroundColor Yellow
     }
-}
-else {
+} else {
     Write-Host 'ASR: script de inicio no encontrado. CODES continuará activo.' -ForegroundColor Yellow
 }
+
+Write-Host 'Abriendo CODES en el navegador...' -ForegroundColor Cyan
+Start-Process 'http://localhost:8000'
 
 Write-Host ' Servidor: http://localhost:8000/api/health' -ForegroundColor Green
 if (Test-SpringHealth) { Write-Host ' Servidor: OK' -ForegroundColor Green } else { Write-Host ' Servidor: ERROR' -ForegroundColor Red }
 if (Test-PortOpen -HostName '127.0.0.1' -Port 6006) { Write-Host ' ASR: OK (6006)' -ForegroundColor Green } else { Write-Host ' ASR: SIN CONEXION (6006)' -ForegroundColor Yellow }
 Write-Host '=============================================' -ForegroundColor Cyan
 Write-Host 'Cierra esta ventana para detener CODES.' -ForegroundColor DarkGray
+
+# Este watchdog es independiente del proceso de PowerShell que muestra esta
+# ventana. Si la usuaria pulsa X y Windows termina esta consola abruptamente,
+# el watchdog detecta que este PID desapareció y mata Spring + ASR igualmente.
+$watchdog = Join-Path $root 'tools\codes_watchdog.ps1'
+if (Test-Path $watchdog) {
+    try {
+        Start-Process -FilePath 'powershell.exe' `
+            -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$watchdog,'-ParentPid',$PID) `
+            -WorkingDirectory $root `
+            -WindowStyle Hidden | Out-Null
+    } catch {}
+}
 
 try {
     while (Test-SpringHealth) {
@@ -476,4 +552,13 @@ try {
 finally {
     if ($asrProcess -and -not $asrProcess.HasExited) { try { taskkill.exe /PID $asrProcess.Id /T /F | Out-Null } catch {} }
     if ($springProcess -and -not $springProcess.HasExited) { try { taskkill.exe /PID $springProcess.Id /T /F | Out-Null } catch {} }
+    Start-Sleep -Milliseconds 500
+    foreach ($port in @(6006,8000)) {
+        try {
+            $connections = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+            foreach ($c in $connections) { if ($c.OwningProcess -and $c.OwningProcess -ne $PID) { taskkill.exe /PID $c.OwningProcess /T /F | Out-Null } }
+        } catch {}
+    }
+    Write-Host ''
+    Write-Host 'CODES detenido. ASR y puertos liberados.' -ForegroundColor Yellow
 }

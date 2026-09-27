@@ -16,6 +16,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 $projectRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $backupRoot = Resolve-Path $Respaldo
 if (-not (Test-Path (Join-Path $backupRoot 'manifest.json'))) {

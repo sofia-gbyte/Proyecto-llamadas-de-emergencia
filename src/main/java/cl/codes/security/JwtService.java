@@ -42,8 +42,18 @@ public class JwtService {
     }
 
     public String generateToken(String username, String role) {
+        return generateToken(username, role, expiracionMinutos);
+    }
+
+    /**
+     * Igual que {@link #generateToken(String, String)} pero con una
+     * expiración propia, más corta que la sesión normal de turno. Se usa
+     * para las sesiones de "vista previa" que un ADMINISTRATOR abre para
+     * ver la interfaz de una institución sin credenciales reales.
+     */
+    public String generateToken(String username, String role, long expiracionMinutosPersonalizada) {
         Date now = new Date();
-        Date expiresAt = new Date(now.getTime() + expiracionMinutos * 60_000);
+        Date expiresAt = new Date(now.getTime() + expiracionMinutosPersonalizada * 60_000);
 
         return Jwts.builder()
                 .subject(username)

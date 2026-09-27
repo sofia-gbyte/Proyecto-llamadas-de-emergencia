@@ -34,6 +34,41 @@ class ClassifierTest {
     }
 
     @Test
+    void sugiereCarabinerosYSamuEnAgresionSexual() {
+        var resultado = Classifier.classifyCall(
+                "Mi vecina fue víctima de una violación hace unos minutos, está muy mal"
+        );
+
+        assertTrue(resultado.priority().equals("URGENTE"));
+        assertTrue(resultado.institucionesSugeridas().containsAll(
+                List.of("carabineros", "samu")
+        ));
+    }
+
+    @Test
+    void sugiereSamuYCarabinerosEnRiesgoSuicida() {
+        var resultado = Classifier.classifyCall(
+                "Mi hermano dice que se va a tirar del puente, está en la baranda ahora mismo"
+        );
+
+        assertTrue(resultado.priority().equals("URGENTE"));
+        assertTrue(resultado.institucionesSugeridas().containsAll(
+                List.of("samu", "carabineros")
+        ));
+    }
+
+    @Test
+    void sugiereCarabinerosEnApunalamientoSinPalabraArma() {
+        var resultado = Classifier.classifyCall(
+                "Un sujeto acaba de apuñalar a otro en la plaza, hay mucha sangre"
+        );
+
+        assertTrue(resultado.institucionesSugeridas().containsAll(
+                List.of("carabineros", "samu")
+        ));
+    }
+
+    @Test
     void identificaTranscripcionesSinInformacionOperacional() {
         assertFalse(Classifier.hasOperationalInformation(Classifier.classifyCall("")));
         assertFalse(Classifier.hasOperationalInformation(Classifier.classifyCall("texto sin sentido")));

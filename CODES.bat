@@ -13,12 +13,14 @@ echo.
 echo   1. Iniciar CODES completo (ASR y calles)
 echo   2. Limpiar proyecto (liberar espacio)
 echo   3. Crear respaldo local
-echo   4. Salir
+echo   4. Borrar casos de prueba (base de datos)
+echo   5. Salir
 echo.
 
-choice /c 1234 /n /m "Elige una opcion (1-4): "
+choice /c 12345 /n /m "Elige una opcion (1-5): "
 
-if errorlevel 4 goto :fin
+if errorlevel 5 goto :fin
+if errorlevel 4 goto :menu_casos
 if errorlevel 3 goto :menu_backup
 if errorlevel 2 goto :menu_limpiar
 if errorlevel 1 goto :iniciar
@@ -54,7 +56,8 @@ echo   Servidor: http://localhost:8000/api/health
 echo   ASR:     ws://localhost:6006
 echo.
 echo El servidor se levantara en segundo plano y quedara activo mientras CODES este abierto.
-echo El navegador se abrira SOLO cuando /api/health responda OK.
+echo El navegador se abrira despues de verificar el backend y esperar al ASR.
+echo El primer inicio puede tardar mientras descarga el modelo ASR.
 echo Si algo falla, revisa logs\spring-boot.log y tools\asr\asr.log
 echo.
 
@@ -105,7 +108,7 @@ goto :menu
 :menu_limpiar
 cls
 echo ============================================
-echo   Limpieza de CODES (modelos ASR, target, cachés)
+echo   Limpieza de CODES (modelos ASR, target, caches)
 echo ============================================
 echo.
 echo   1. Solo ver que se borraria (no borra nada)
@@ -138,6 +141,42 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\limpiar_proyect
 echo.
 pause
 goto :menu
+
+:: ------------------------------------------------------------------
+:: Borrar casos de prueba (toca la base de datos, a proposito separado
+:: de la limpieza de arriba para que no se borre nada por accidente)
+:: ------------------------------------------------------------------
+:menu_casos
+cls
+echo ============================================
+echo   Borrar casos de prueba (base de datos)
+echo ============================================
+echo.
+echo Esto borra los CASOS guardados (la tabla de llamadas), no archivos
+echo del proyecto. Es irreversible salvo que tengas un respaldo.
+echo.
+echo   1. Solo ver cuantos casos hay ahora (no borra nada)
+echo   2. Borrar TODOS los casos de verdad
+echo   3. Volver al menu principal
+echo.
+
+choice /c 123 /n /m "Elige una opcion (1-3): "
+
+if errorlevel 3 goto :menu
+if errorlevel 2 goto :borrar_casos
+if errorlevel 1 goto :ver_casos
+
+:ver_casos
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\borrar_casos_prueba.ps1"
+echo.
+pause
+goto :menu_casos
+
+:borrar_casos
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\borrar_casos_prueba.ps1" -Borrar
+echo.
+pause
+goto :menu_casos
 
 :: ------------------------------------------------------------------
 :: Actualizar calles de Chile (cache de 7 dias)
@@ -191,7 +230,7 @@ exit /b 0
 
 :: ------------------------------------------------------------------
 :: Funciones auxiliares (no crean su propio scope: dejan las variables
-:: JAVA_EXE / MAVEN_BIN puestas para quien las llamó)
+:: JAVA_EXE / MAVEN_BIN puestas para quien las llamo)
 :: ------------------------------------------------------------------
 :buscar_java
 set "JAVA_EXE="

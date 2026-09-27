@@ -880,6 +880,43 @@
             color: #6d87b3;
         }
 
+        /* ===== VISTA PREVIA DE OPERADOR (admin) ===== */
+        .vista-previa-operador {
+            background: #14233c;
+            border: 1px solid #1e3455;
+            border-radius: 12px;
+            padding: 0.9rem 1.1rem;
+            margin-bottom: 1.25rem;
+        }
+        .vista-previa-operador .header {
+            margin-bottom: 0.4rem;
+        }
+        .vista-previa-ayuda {
+            font-size: 0.75rem;
+            color: #6d87b3;
+            margin: 0 0 0.75rem;
+            line-height: 1.4;
+        }
+        .vista-previa-botones {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        /* ===== BANNER MODO PRUEBA ===== */
+        .banner-vista-previa {
+            background: #4a2e0a;
+            border-bottom: 1px solid #a9660c;
+            color: #ffcf8a;
+            font-size: 0.78rem;
+            text-align: center;
+            padding: 0.45rem 1rem;
+        }
+        .banner-vista-previa strong {
+            color: #ffb14a;
+            letter-spacing: 0.03em;
+        }
+
         .usuario-card {
             background: #14233c;
             border: 1px solid #1e3455;

@@ -3,6 +3,11 @@ const API_URL = '/api';
 const REFRESCO_MS = 8000;
 
 let sesion = null;
+// true cuando la pestaña se abrió como "vista previa de operador" (admin
+// mirando la interfaz de una institución con la cuenta sintética
+// preview_<institucion>): oculta/bloquea acciones que escriban datos,
+// como defensa adicional a lo que ya rechaza el backend.
+let vistaPreviaSoloLectura = false;
 let mapa = null;
 let marcador = null;
 let marcadorDispositivo = null;
@@ -244,11 +249,17 @@ async function apiFetch(ruta, opciones = {}) {
     ...(opciones.headers || {})
   };
 
+  const rutaConBarra = ruta.startsWith('/') ? ruta : `/${ruta}`;
+  const rutaFinal =
+    rutaConBarra === API_URL || rutaConBarra.startsWith(`${API_URL}/`)
+      ? rutaConBarra
+      : `${API_URL}${rutaConBarra}`;
+
   if (sesion?.token) {
     headers.Authorization = `Bearer ${sesion.token}`;
   }
 
-  const resp = await fetch(`${API_URL}${ruta}`, {
+  const resp = await fetch(rutaFinal, {
     ...opciones,
     headers
   });
@@ -665,6 +676,18 @@ async function cerrarSesion() {
     sesion.username;
 
   sesion = null;
+
+  if (vistaPreviaSoloLectura) {
+    vistaPreviaSoloLectura = false;
+
+    if ($('banner-vista-previa')) {
+      $('banner-vista-previa').hidden = true;
+    }
+
+    if ($('btn-llamada-en-vivo')) {
+      $('btn-llamada-en-vivo').hidden = false;
+    }
+  }
 
   cacheColas = {
     pendientes: [],
@@ -1720,10 +1743,12 @@ function renderizarDetalle(l) {
     );
 
   const puedeAsignar =
-    colaActual === 'pendientes';
+    colaActual === 'pendientes' &&
+    !vistaPreviaSoloLectura;
 
   const puedeCerrar =
-    colaActual === 'en-curso';
+    colaActual === 'en-curso' &&
+    !vistaPreviaSoloLectura;
 
   const resumen =
     l.operationalSummary ||
@@ -2218,6 +2243,59 @@ function actualizarTabs() {
 // USUARIOS / ADMINISTRADOR
 // ======================================================
 
+async function abrirVistaPrevia(institucion) {
+  try {
+    const r = await apiFetch(
+      `/api/admin/preview-session/${institucion}`,
+      { method: 'POST' }
+    );
+
+    const d = await leerRespuesta(r);
+
+    if (!r.ok) {
+      throw new Error(d.error || 'No se pudo abrir la vista previa.');
+    }
+
+    const params = new URLSearchParams({
+      previewToken: d.token,
+      previewUsername: d.username,
+      previewInstitution: d.institution,
+      previewExpira: String(d.expiresInMinutes)
+    });
+
+    const ventana = window.open(
+      `${location.origin}${location.pathname}?${params.toString()}`,
+      '_blank',
+      'noopener'
+    );
+
+    if (!ventana) {
+      mostrarAlerta(
+        'El navegador bloqueó la pestaña nueva. Habilita las ventanas emergentes para este sitio e inténtalo de nuevo.',
+        'error'
+      );
+      return;
+    }
+
+    mostrarAlerta(
+      `Vista previa de ${etiquetaInstitucion(institucion)} abierta en una pestaña nueva (expira en ${d.expiresInMinutes} min, solo lectura).`,
+      'ok'
+    );
+  } catch (e) {
+    if (e.message !== 'No autenticado') {
+      mostrarAlerta(e.message, 'error');
+    }
+  }
+}
+
+function etiquetaInstitucion(institucion) {
+  return (
+    { bomberos: 'Bomberos', carabineros: 'Carabineros', samu: 'SAMU' }[
+      institucion
+    ] || institucion
+  );
+}
+
 async function cargarUsuarios() {
   if (
     sesion?.role !==
@@ -2319,6 +2397,16 @@ function renderizarUsuarios(usuarios) {
                       ${escapeHtml(
                         u.institution
                       )}
+                    </span>
+                  `
+                  : ''
+              }
+
+              ${
+                u.testAccount
+                  ? `
+                    <span class="usuario-estado" title="Cuenta sintética de solo lectura usada por el modo vista previa; no tiene contraseña utilizable.">
+                      ◎ vista previa
                     </span>
                   `
                   : ''
@@ -2842,6 +2930,56 @@ async function iniciarLive() {
         'Micrófono conectado · sin ubicación del equipo; la búsqueda del mapa seguirá funcionando.';
     }
 
+    /*
+     * La grabación del audio (lo que se guarda como
+     * evidencia del caso) NO debe depender de que el
+     * ASR se conecte. Si sherpa-onnx está caído o
+     * inestable, igual queremos quedarnos con el audio
+     * para poder transcribirlo o revisarlo después.
+     * Por eso el MediaRecorder arranca apenas tenemos
+     * el micrófono, no dentro del onopen del WebSocket.
+     */
+    const mimeGrabacion =
+      MediaRecorder.isTypeSupported(
+        'audio/webm;codecs=opus'
+      )
+        ? 'audio/webm;codecs=opus'
+        : 'audio/webm';
+
+    live.mediaRecorder =
+      new MediaRecorder(
+        live.stream,
+        {
+          mimeType:
+            mimeGrabacion
+        }
+      );
+
+    live.mediaRecorder.ondataavailable =
+      e => {
+
+        if (
+          e.data.size
+        ) {
+          live.chunks.push(
+            e.data
+          );
+        }
+      };
+
+    live.mediaRecorder.start(
+      1000
+    );
+
+    live.startedAt =
+      Date.now();
+
+    live.timer =
+      setInterval(
+        actualizarLiveTimer,
+        250
+      );
+
     live.ws =
       new WebSocket(
         ASR_WS_URL
@@ -2930,47 +3068,6 @@ async function iniciarLive() {
           silencioso.connect(
             live.audioContext.destination
           );
-
-          const mime =
-            MediaRecorder.isTypeSupported(
-              'audio/webm;codecs=opus'
-            )
-              ? 'audio/webm;codecs=opus'
-              : 'audio/webm';
-
-          live.mediaRecorder =
-            new MediaRecorder(
-              live.stream,
-              {
-                mimeType:
-                  mime
-              }
-            );
-
-          live.mediaRecorder.ondataavailable =
-            e => {
-
-              if (
-                e.data.size
-              ) {
-                live.chunks.push(
-                  e.data
-                );
-              }
-            };
-
-          live.mediaRecorder.start(
-            1000
-          );
-
-          live.startedAt =
-            Date.now();
-
-          live.timer =
-            setInterval(
-              actualizarLiveTimer,
-              250
-            );
 
           setLiveStatus(
             'EN VIVO',
@@ -3116,6 +3213,15 @@ async function detenerLive(
   live.stopping =
     true;
 
+  let guardarFallido =
+    false;
+
+  $('live-iniciar').disabled =
+    guardar;
+
+  $('live-detener').disabled =
+    true;
+
   clearInterval(
     live.timer
   );
@@ -3192,15 +3298,39 @@ async function detenerLive(
       );
   }
 
+  await grabacionPromise;
+
+  const socketAsr = live.ws;
   if (
-    live.ws &&
-    live.ws.readyState ===
+    socketAsr &&
+    socketAsr.readyState ===
       WebSocket.OPEN
   ) {
-    live.ws.close();
-  }
+    await new Promise(resolve => {
+      let resuelto = false;
+      const resolver = () => {
+        if (resuelto) return;
+        resuelto = true;
+        clearTimeout(temporizador);
+        resolve();
+      };
+      const mensajeAnterior = socketAsr.onmessage;
+      const temporizador = setTimeout(resolver, 3000);
 
-  await grabacionPromise;
+      socketAsr.onmessage = event => {
+        mensajeAnterior?.(event);
+        if (String(event.data || '').trim() === 'Done!') {
+          resolver();
+        }
+      };
+
+      socketAsr.send('Done');
+    });
+
+    if (socketAsr.readyState === WebSocket.OPEN) {
+      socketAsr.close();
+    }
+  }
 
   const transcript =
     limpiarTranscripcion(
@@ -3209,12 +3339,6 @@ async function detenerLive(
 
   live.startedAt =
     null;
-
-  $('live-iniciar').disabled =
-    false;
-
-  $('live-detener').disabled =
-    true;
 
   $('live-asr').textContent =
     'ASR: detenido';
@@ -3260,6 +3384,9 @@ async function detenerLive(
       'No se obtuvo transcripción. Revisa el servidor ASR y vuelve a intentar.',
       'error'
     );
+
+    $('live-iniciar').disabled =
+      false;
 
     live.stopping =
       false;
@@ -3401,6 +3528,12 @@ async function detenerLive(
         $('modal-live').hidden =
           true;
 
+        $('live-iniciar').disabled =
+          false;
+
+        $('live-detener').textContent =
+          'Detener y guardar';
+
         live.stopping =
           false;
 
@@ -3409,6 +3542,9 @@ async function detenerLive(
     );
 
   } catch (e) {
+
+    guardarFallido =
+      true;
 
     setLiveStatus(
       'Error al guardar',
@@ -3428,6 +3564,12 @@ async function detenerLive(
       transcript
     );
 
+    $('live-detener').textContent =
+      'Reintentar guardado';
+
+    $('live-detener').disabled =
+      false;
+
     live.stopping =
       false;
   }
@@ -3441,14 +3583,13 @@ async function detenerLive(
     source: null,
     processor: null,
     mediaRecorder: null,
-    chunks: [],
-    transcript: '',
+    chunks: guardarFallido ? live.chunks : [],
+    transcript: guardarFallido ? live.transcript : '',
     stopping: false,
 
-    ubicacionOperador: {
-      lat: null,
-      lng: null
-    }
+    ubicacionOperador: guardarFallido
+      ? live.ubicacionOperador
+      : { lat: null, lng: null }
   };
 }
 
@@ -3651,6 +3792,21 @@ document.addEventListener(
           )
       );
 
+    document
+      .querySelectorAll(
+        '[data-preview-institucion]'
+      )
+      .forEach(
+        b =>
+          b.addEventListener(
+            'click',
+            () =>
+              abrirVistaPrevia(
+                b.dataset.previewInstitucion
+              )
+          )
+      );
+
     window.addEventListener(
       'resize',
       () => {
@@ -3671,7 +3827,46 @@ document.addEventListener(
 
     renderizarFeed();
 
-    if ($('pantalla-auth')) {
+    const parametrosUrl = new URLSearchParams(location.search);
+    const previewToken = parametrosUrl.get('previewToken');
+
+    if (previewToken) {
+      // Pestaña abierta desde "Vista previa de operador": entra
+      // directamente con el token de solo lectura, sin pasar por el
+      // formulario de login.
+      vistaPreviaSoloLectura = true;
+
+      sesion = {
+        token: previewToken,
+        username: parametrosUrl.get('previewUsername') || 'preview',
+        role: 'operator',
+        expiresInMinutes:
+          Number(parametrosUrl.get('previewExpira')) || 20
+      };
+
+      const institucionPreview =
+        parametrosUrl.get('previewInstitution') || '';
+
+      if ($('banner-vista-previa')) {
+        $('banner-vista-previa').hidden = false;
+      }
+
+      if ($('banner-vista-previa-institucion')) {
+        $('banner-vista-previa-institucion').textContent =
+          etiquetaInstitucion(institucionPreview);
+      }
+
+      if ($('btn-llamada-en-vivo')) {
+        $('btn-llamada-en-vivo').hidden = true;
+      }
+
+      // Saca el token de la URL para que no quede en el historial ni se
+      // comparta por accidente al copiar el link de la pestaña.
+      history.replaceState({}, '', location.pathname);
+
+      ocultarPantallaAuth();
+      entrarConsola();
+    } else if ($('pantalla-auth')) {
       $('pantalla-auth').hidden =
         false;
     }
@@ -3748,4 +3943,21 @@ document.getElementById('btn-cambiar-clave')?.addEventListener('click', cambiarC
   panel.querySelectorAll('button').forEach((btn) => {
     btn.addEventListener('click', () => cerrarMenu());
   });
+})();
+
+/* ===== LATIDO DE PÁGINA (ver PageWatchdogService) =====
+   Mientras esta pestaña siga abierta (haya o no sesión iniciada), avisamos
+   al servidor cada pocos segundos. Si deja de recibir avisos, asume que
+   cerraron la página y se apaga solo, liberando el ASR y los puertos
+   8000/6006. Se manda con keepalive para que el último aviso salga incluso
+   si el navegador ya está cerrando la pestaña. */
+(function iniciarLatidoDePagina() {
+  const INTERVALO_MS = 5000;
+
+  function latir() {
+    fetch(`${API_URL}/heartbeat`, { method: 'POST', keepalive: true }).catch(() => {});
+  }
+
+  latir();
+  setInterval(latir, INTERVALO_MS);
 })();

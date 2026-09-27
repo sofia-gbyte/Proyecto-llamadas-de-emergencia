@@ -18,12 +18,12 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\tools\asr\start_asr_windows.ps1
 ```
 
-La primera instalación descarga el modelo (~1.3 GB descomprimido). No se guarda dentro del ZIP del proyecto para no inflarlo.
+La primera instalación descarga el modelo (~1.3 GB descomprimido) e instala `sherpa-onnx`/`sherpa-onnx-bin`. No se guarda dentro del ZIP del proyecto para no inflarlo.
 
 ## Uso
 
 1. Ejecuta Spring Boot en `http://localhost:8000`.
-2. Ejecuta `start_asr_windows.ps1` en otra terminal.
+2. Ejecuta CODES normalmente con `CODES.bat`. CODES instala/verifica automáticamente `sherpa-onnx` y el modelo y levanta el ASR en `localhost:6006`.
 3. Inicia sesión en CODES.
 4. Pulsa **🎙 Llamada en vivo**.
 5. Autoriza el micrófono.

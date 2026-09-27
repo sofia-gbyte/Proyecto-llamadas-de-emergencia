@@ -34,6 +34,14 @@ public class User {
 
     private boolean active = true;
 
+    // Cuenta sintética creada para que un ADMINISTRATOR pueda ver la
+    // interfaz de operador de una institución ("modo prueba") sin usar
+    // credenciales reales. Nunca se loguea con contraseña (el hash es
+    // aleatorio e inaccesible) y CallService/LiveCallService le bloquean
+    // cualquier escritura sobre llamadas reales: solo puede mirar.
+    @Column(name = "test_account", nullable = false, columnDefinition = "boolean default false")
+    private boolean testAccount = false;
+
     // Cualquier JWT emitido ANTES de esta marca deja de aceptarse, aunque no
     // haya expirado todavía. Se actualiza al cerrar sesión, al cambiar la
     // contraseña (propia o por recuperación) o cuando un administrador
@@ -70,6 +78,9 @@ public class User {
 
     public boolean isActive() { return active; }
     public void setActive(boolean active) { this.active = active; }
+
+    public boolean isTestAccount() { return testAccount; }
+    public void setTestAccount(boolean testAccount) { this.testAccount = testAccount; }
 
     public LocalDateTime getSessionsValidFrom() { return sessionsValidFrom; }
     public void setSessionsValidFrom(LocalDateTime sessionsValidFrom) { this.sessionsValidFrom = sessionsValidFrom; }

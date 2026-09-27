@@ -233,6 +233,60 @@ public final class Classifier {
     }
 
     // -----------------------------------------------------------------
+    // 3.1 Palabras que activan cada institución (carabineros/samu/bomberos)
+    // -----------------------------------------------------------------
+    // Deliberadamente MÁS AMPLIAS que el diccionario de prioridad de arriba:
+    // una llamada puede no alcanzar el umbral de una categoría de prioridad
+    // y aun así necesitar que se avise a una institución concreta (p. ej.
+    // "persona herida" sin más detalle igual debe llegar a SAMU). Por eso
+    // varias palabras se repiten aquí aunque ya estén en PALABRAS_CLAVE, y
+    // varias (p. ej. "herido", "caida", "atrapado") no existen en ese
+    // diccionario y solo viven acá.
+    //
+    // Antes esta lista era mucho más corta y dejaba fuera casos como
+    // violación/abuso sexual, suicidio, secuestro o apuñalamientos, que por
+    // lo tanto nunca sugerían ninguna institución pese a ser URGENTE. Si se
+    // agrega una palabra nueva a PALABRAS_CLAVE que también deba avisar a
+    // una institución, hay que agregarla también acá.
+    private static final List<String> PALABRAS_CARABINEROS = List.of(
+            "dispar", "balazo", "balacera", "tiroteo", "baleado", "baleada",
+            "arma", "escopeta", "pistola", "fusil", "ametralladora", "subfusil", "fierro", "chumbo",
+            "cuchillo", "puñal", "navaja", "cortaplumas", "apuñal", "cuchillada", "degollad",
+            "secuestro", "secuestrado", "rehen",
+            "violacion", "violando", "abuso sexual", "agresion sexual",
+            "pele", "golpiza", "golpe", "puñete", "patada", "agresion", "agresivo", "violento", "forcejeo",
+            "botellazo", "piedrazo", "cogotazo",
+            "robo", "roba", "asalt", "portonazo", "encerrona", "lanzazo", "bajonear", "copamiento",
+            "ladron", "delincuente", "sujeto armado", "encapuchado", "pasamontañas",
+            "vehiculo robado", "auto robado", "patente clonada", "amenaza de arma", "amenaza",
+            "ebrio", "manejando ebrio", "cocaina", "pasta base", "microtrafico",
+            "violencia intrafamiliar", "vif", "maltrato", "me quiere matar", "me esta pegando",
+            "encerrado", "privado de libertad",
+            "hurto", "cartereo", "carterazo",
+            "control de identidad", "sujeto sospechoso", "actitud sospechosa", "merodeando",
+            "niño perdido", "adolescente perdido", "persona perdida",
+            "carabinero herido", "policia herido", "funcionario baleado"
+    );
+    private static final List<String> PALABRAS_SAMU = List.of(
+            "no respira", "no reacciona", "sin signos vitales", "desangrando", "desangrado", "mucha sangre", "sangr",
+            "convulsion", "se ahoga", "atragant", "paro cardiaco", "paro", "infarto",
+            "muerto", "muerta", "cadaver", "cuerpo sin vida", "cuerpo inerte",
+            "apuñal", "cuchillada", "degollad", "baleado", "baleada", "balazo",
+            "herido", "herida", "lesionado", "inconsciente",
+            "accidente", "choque", "colision", "atropell", "volcamiento", "volco",
+            "sobredosis", "intoxicacion", "intoxic", "quemadura", "caida",
+            "suicidio", "se va a matar", "se quiere matar", "colgarse", "saltar al vacio", "se va a tirar",
+            "violacion", "abuso sexual", "agresion sexual",
+            "golpiza", "botellazo", "piedrazo", "gritos desgarradores",
+            "carabinero herido", "policia herido", "funcionario baleado"
+    );
+    private static final List<String> PALABRAS_BOMBEROS = List.of(
+            "incendi", "quema", "llamas", "humo", "fuego", "explosion", "explosivo", "fuga de gas",
+            "derrumbe", "alud", "colapso", "atrapado", "rescate", "sismo fuerte", "tsunami",
+            "granada", "bomba"
+    );
+
+    // -----------------------------------------------------------------
     // 4. Resultado estructurado
     // -----------------------------------------------------------------
 
@@ -342,17 +396,9 @@ public final class Classifier {
 
     private static List<String> institucionesSugeridas(String textoNorm) {
         LinkedHashSet<String> instituciones = new LinkedHashSet<>();
-        boolean policial = contieneAlgunaNoNegada(textoNorm,
-                "dispar", "arma", "balacera", "tiroteo", "robo", "asalto", "asalt",
-                "pele", "agres", "violencia", "vif", "secuestro", "rehen", "encerrona",
-                "portonazo", "amenaza", "sujeto sospechoso", "vehiculo robado");
-        boolean medico = contieneAlgunaNoNegada(textoNorm,
-            "no respira", "no reacciona", "convulsion", "paro", "infarto", "herido", "herida",
-                "lesionado", "inconsciente", "sangr", "atropell", "accidente", "choque",
-                "sobredosis", "intoxic", "quemadura", "caida", "se ahoga", "atragant");
-        boolean bomberos = contieneAlgunaNoNegada(textoNorm,
-                "incendi", "fuego", "humo", "explosion", "explosivo", "fuga de gas",
-                "derrumbe", "colapso", "atrapado", "rescate", "alud", "tsunami");
+        boolean policial = contieneAlgunaNoNegada(textoNorm, PALABRAS_CARABINEROS.toArray(String[]::new));
+        boolean medico = contieneAlgunaNoNegada(textoNorm, PALABRAS_SAMU.toArray(String[]::new));
+        boolean bomberos = contieneAlgunaNoNegada(textoNorm, PALABRAS_BOMBEROS.toArray(String[]::new));
 
         if (policial) instituciones.add("carabineros");
         if (medico) instituciones.add("samu");
@@ -362,7 +408,8 @@ public final class Classifier {
 
     private static boolean contieneAlgunaNoNegada(String texto, String... frases) {
         for (String frase : frases) {
-            if (texto.contains(frase) && !estaNegada(texto, frase)) return true;
+            String fraseNorm = normalizar(frase);
+            if (texto.contains(fraseNorm) && !estaNegada(texto, fraseNorm)) return true;
         }
         return false;
     }

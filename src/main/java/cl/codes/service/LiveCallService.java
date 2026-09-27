@@ -58,6 +58,10 @@ public class LiveCallService {
     public Call create(String transcription, MultipartFile audio, String user, String ip, Double operatorLatitude, Double operatorLongitude) throws Exception {
         validateCoordinates(operatorLatitude, operatorLongitude);
         User creator = userRepository.findByUsername(user).orElseThrow(() -> new IllegalArgumentException("User not found"));
+        if (creator.isTestAccount()) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                "Esta es una sesión de vista previa (solo lectura): no puede crear llamadas reales.");
+        }
         String texto = streetCorrection.correct(cleanTranscription(transcription));
         Classifier.ResultadoClasificacion classification = Classifier.classifyCall(texto);
         if (!Classifier.hasOperationalInformation(classification)) {

@@ -29,6 +29,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $false
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
@@ -44,6 +46,19 @@ function Get-TamanoMB {
         $bytes = $item.Length
     }
     return [math]::Round($bytes / 1MB, 1)
+}
+
+function Test-PortOpen {
+    param([int]$Port)
+    $client = [System.Net.Sockets.TcpClient]::new()
+    try {
+        $client.Connect('127.0.0.1', $Port)
+        return $true
+    } catch {
+        return $false
+    } finally {
+        $client.Dispose()
+    }
 }
 
 # Cada elemento: ruta relativa + explicación de por qué es seguro borrarlo.
@@ -111,6 +126,41 @@ if (-not $Borrar) {
     Write-Host 'Vuelve a ejecutar con -Borrar para limpiar de verdad.' -ForegroundColor Cyan
     Write-Host 'Opciones extra: -IncluirLogs, -IncluirDiccionarioCalles, -Comprimir' -ForegroundColor DarkGray
     return
+}
+
+$activeServices = @()
+if (Test-PortOpen -Port 8000) { $activeServices += @{ Puerto = 8000; Etiqueta = 'CODES (puerto 8000)' } }
+if (Test-PortOpen -Port 6006) { $activeServices += @{ Puerto = 6006; Etiqueta = 'ASR (puerto 6006)' } }
+if ($activeServices.Count -gt 0) {
+    $nombres = ($activeServices | ForEach-Object { $_.Etiqueta }) -join ', '
+    Write-Host "Hay servicios activos: $nombres." -ForegroundColor Yellow
+    Write-Host 'Puede ser CODES abierto de verdad ahora mismo, o un proceso que quedo colgado de una sesion anterior (por ejemplo, si se cerro la ventana con la X).' -ForegroundColor Yellow
+    Write-Host ''
+    $respuesta = Read-Host '¿Quieres que cierre esos procesos ahora para poder limpiar? (S/N)'
+    if ($respuesta -match '^[sS]') {
+        foreach ($s in $activeServices) {
+            try {
+                $conexiones = Get-NetTCPConnection -LocalPort $s.Puerto -State Listen -ErrorAction SilentlyContinue
+                foreach ($conexion in $conexiones) {
+                    $procId = $conexion.OwningProcess
+                    if ($procId) {
+                        Write-Host "Cerrando proceso en el puerto $($s.Puerto) (PID $procId)..." -ForegroundColor Yellow
+                        taskkill.exe /PID $procId /T /F | Out-Null
+                    }
+                }
+            } catch {}
+        }
+        Start-Sleep -Seconds 1
+        $activeServices = @()
+        if (Test-PortOpen -Port 8000) { $activeServices += 'CODES (puerto 8000)' }
+        if (Test-PortOpen -Port 6006) { $activeServices += 'ASR (puerto 6006)' }
+    }
+}
+if ($activeServices.Count -gt 0) {
+    $nombresRestantes = if ($activeServices[0] -is [string]) { $activeServices -join ', ' } else { ($activeServices | ForEach-Object { $_.Etiqueta }) -join ', ' }
+    Write-Host "No se puede limpiar mientras hay servicios activos: $nombresRestantes." -ForegroundColor Red
+    Write-Host 'Cierra CODES y el ASR, y vuelve a ejecutar la limpieza.' -ForegroundColor Yellow
+    exit 1
 }
 
 if ($existentes.Count -gt 0) {

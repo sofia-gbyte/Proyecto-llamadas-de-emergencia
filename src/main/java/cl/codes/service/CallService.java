@@ -85,8 +85,16 @@ public class CallService {
         return new java.util.ArrayList<>(merged.values());
     }
 
+    private void ensureNotPreview(User user) {
+        if (user.isTestAccount()) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                "Esta es una sesión de vista previa (solo lectura): no puede modificar llamadas reales.");
+        }
+    }
+
     public Call assign(Long id, Authentication auth) {
         User user = currentUser(auth);
+        ensureNotPreview(user);
         Call call = repo.findById(id).orElseThrow(() -> new IllegalArgumentException("Call not found"));
         ensureSameInstitution(user, call);
         if (call.isAssigned()) throw new IllegalStateException("This call was already assigned");
@@ -99,6 +107,7 @@ public class CallService {
 
     public Call close(Long id, String comment, Authentication auth) {
         User user = currentUser(auth);
+        ensureNotPreview(user);
         Call call = repo.findById(id).orElseThrow(() -> new IllegalArgumentException("Call not found"));
         ensureSameInstitution(user, call);
         if (!call.isAssigned()) throw new IllegalStateException("This case cannot be closed before assignment");
@@ -110,7 +119,7 @@ public class CallService {
         return repo.save(call);
     }
 
-    public record Metrics(long totalCalls, long activeUrgentCalls, long pending, long inProgress, Double averageResponseSeconds) {}
+    public record Metrics(long totalCalls, long urgentesActivas, long pendientes, long enProgreso, Double tiempoPromedioRespuestaSeg) {}
 
     public Metrics metrics(Authentication auth) {
         User user = currentUser(auth);
@@ -134,4 +143,9 @@ public class CallService {
         Double averageResponse = averageOptional.isPresent() ? Math.round(averageOptional.getAsDouble() * 10.0) / 10.0 : null;
         return new Metrics(total, activeUrgentCalls, pending, inProgress, averageResponse);
     }
+
+    /* Nombres del record alineados 1 a 1 con lo que espera script.js
+       (d.pendientes, d.enProgreso, d.urgentesActivas, d.tiempoPromedioRespuestaSeg):
+       antes se llamaban distinto en Java y el JSON nunca calzaba con el
+       frontend, por eso el panel RESUMEN se quedaba en "–". */
 }

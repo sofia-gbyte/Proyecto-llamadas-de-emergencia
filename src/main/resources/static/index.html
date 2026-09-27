@@ -136,6 +136,12 @@
     </div>
 
     <!-- ===== HEADER ===== -->
+    <div class="banner-vista-previa" id="banner-vista-previa" hidden>
+        <strong>MODO PRUEBA</strong> — viendo la interfaz de operador de
+        <span id="banner-vista-previa-institucion">—</span> como administrador. Sesión de solo lectura: no puede
+        asignar, cerrar ni crear llamadas reales.
+    </div>
+
     <header class="barra-estado">
         <div class="marca">
             <span class="marca-nombre">CODES</span>
@@ -272,6 +278,22 @@
 
             <!-- GESTIÓN DE USUARIOS (ADMIN) -->
             <div class="gestion-usuarios" id="gestion-usuarios">
+                <div class="vista-previa-operador" id="vista-previa-operador">
+                    <div class="header">
+                        <h2>Vista previa de operador</h2>
+                        <span class="total">Modo prueba · solo lectura</span>
+                    </div>
+                    <p class="vista-previa-ayuda">
+                        Abre en una pestaña nueva la interfaz tal como la ve un operador de esa institución,
+                        sin crear ni usar un usuario real. Expira sola en 20 minutos y no puede asignar,
+                        cerrar ni crear llamadas.
+                    </p>
+                    <div class="vista-previa-botones">
+                        <button class="btn-accion secundario" type="button" data-preview-institucion="bomberos">Ver como Bomberos</button>
+                        <button class="btn-accion secundario" type="button" data-preview-institucion="carabineros">Ver como Carabineros</button>
+                        <button class="btn-accion secundario" type="button" data-preview-institucion="samu">Ver como SAMU</button>
+                    </div>
+                </div>
                 <div class="header">
                     <h2>Gestión de Usuarios</h2>
                     <span class="total" id="usuarios-total">Total: 0 usuarios</span>
