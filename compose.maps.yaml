@@ -1,0 +1,67 @@
+services:
+  tile-import:
+    image: overv/openstreetmap-tile-server:v2.3.0
+    profiles: [tools]
+    command: import
+    environment:
+      THREADS: ${TILE_THREADS:-4}
+    shm_size: 1gb
+    volumes:
+      - type: bind
+        source: ${OSM_PBF_FILE:-./map-data/chile-latest.osm.pbf}
+        target: /data/region.osm.pbf
+        read_only: true
+      - tile-database:/data/database
+      - tile-cache:/data/tiles
+
+  tiles:
+    image: overv/openstreetmap-tile-server:v2.3.0
+    profiles: [maps]
+    command: run
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:${TILE_SERVER_PORT:-8081}:80
+    volumes:
+      - tile-database:/data/database
+      - tile-cache:/data/tiles
+    shm_size: 1gb
+
+  nominatim:
+    image: mediagis/nominatim:5.3
+    profiles: [maps]
+    restart: unless-stopped
+    environment:
+      PBF_PATH: /nominatim/data/region.osm.pbf
+      IMPORT_STYLE: address
+      IMPORT_WIKIPEDIA: "false"
+      UPDATE_MODE: none
+      THREADS: ${NOMINATIM_THREADS:-4}
+      NOMINATIM_PASSWORD: ${MAPS_NOMINATIM_PASSWORD:?Set MAPS_NOMINATIM_PASSWORD in .env.maps}
+    ports:
+      - 127.0.0.1:${NOMINATIM_PORT:-8082}:8080
+    volumes:
+      - type: bind
+        source: ${OSM_PBF_FILE:-./map-data/chile-latest.osm.pbf}
+        target: /nominatim/data/region.osm.pbf
+        read_only: true
+      - nominatim-database:/var/lib/postgresql/16/main
+      - nominatim-flatnode:/nominatim/flatnode
+    shm_size: 1gb
+
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:v26.9.0
+    profiles: [maps]
+    restart: unless-stopped
+    command: [osrm-routed, --algorithm, mld, /data/chile-latest.osrm]
+    ports:
+      - 127.0.0.1:${OSRM_PORT:-5000}:5000
+    volumes:
+      - type: bind
+        source: ${OSM_DATA_DIR:-./map-data}
+        target: /data
+
+volumes:
+  tile-database:
+  tile-cache:
+  nominatim-database:
+  nominatim-flatnode:

@@ -206,7 +206,10 @@ public class AuthController {
                       org.springframework.web.bind.annotation.RequestMethod.POST}
     )
     public ResponseEntity<?> captchaSiteKey() {
-        return ResponseEntity.ok(Map.of("siteKey", turnstileService.getSiteKey()));
+        return ResponseEntity.ok(Map.of(
+                "enabled", turnstileService.isEnabled(),
+                "siteKey", turnstileService.getSiteKey()
+        ));
     }
 
     private ResponseEntity<?> invalidCredentials() {

@@ -20,6 +20,8 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 La primera instalación descarga el modelo (~1.3 GB descomprimido) e instala `sherpa-onnx`/`sherpa-onnx-bin`. No se guarda dentro del ZIP del proyecto para no inflarlo.
 
+El modelo empaquetado se identifica con la tarjeta de [Nemotron ASR en Hugging Face](https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b); el instalador descarga el archivo publicado en las releases de `k2-fsa/sherpa-onnx`. CODES no llama a una API de inferencia de Hugging Face: la inferencia se ejecuta localmente con `sherpa-onnx`. La licencia del modelo es OpenMDW-1.1; revisar sus términos antes de redistribuirlo o usarlo comercialmente.
+
 ## Uso
 
 1. Ejecuta Spring Boot en `http://localhost:8000`.

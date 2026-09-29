@@ -17,14 +17,17 @@ public class TurnstileService {
     private final RestClient restClient;
     private final String secretKey;
     private final String siteKey;
+    private final boolean enabled;
 
     public TurnstileService(
             @Value("${app.turnstile-secret-key:}") String secretKey,
-            @Value("${app.turnstile-site-key:}") String siteKey
+            @Value("${app.turnstile-site-key:}") String siteKey,
+            @Value("${app.turnstile.enabled:false}") boolean enabled
     ) {
         this.restClient = RestClient.builder().build();
         this.secretKey = secretKey;
         this.siteKey = siteKey;
+        this.enabled = enabled;
     }
 
     public boolean isConfigured() {
@@ -35,7 +38,12 @@ public class TurnstileService {
         return siteKey;
     }
 
+    public boolean isEnabled() {
+        return enabled;
+    }
+
     public boolean verify(String token, String remoteIp) {
+        if (!enabled) return true;
         if (!isConfigured() || token == null || token.isBlank()) {
             return false;
         }

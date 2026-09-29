@@ -196,7 +196,7 @@ public final class Classifier {
         }
 
         Matcher contexto = Pattern.compile(
-                "(?i)(?:ubicad[ao]|queda|esta|está)\\s+(?:al|a la|en|por)\\s+([^,.]{3,70})(?:\\s*,\\s*(?:en\\s+)?([^,.]{3,40}))?"
+            "(?i)(?:ubicad[ao]|queda|esta|está)\\s+(?:al|a la|en|por)\\s+([^,.]{3,70}?)(?=\\s*(?:,|\\by\\s+(?=(?:hay|necesita|requiere|presenta|se encuentra|est[aá]n?)\\b)|\\b(?:donde|porque|necesita|requiere|presenta|se encuentra)\\b|$))(?:\\s*,\\s*(?:en\\s+)?([^,.]{3,40}))?"
         ).matcher(texto);
         if (contexto.find()) {
             String lugar = contexto.group(1).trim();
@@ -263,6 +263,8 @@ public final class Classifier {
             "robo", "roba", "asalt", "portonazo", "encerrona", "lanzazo", "bajonear", "copamiento",
             "ladron", "delincuente", "sujeto armado", "encapuchado", "pasamontañas",
             "vehiculo robado", "auto robado", "patente clonada", "amenaza de arma", "amenaza",
+            "suicidio", "intento de suicidio", "riesgo suicida", "se va a matar", "se quiere matar",
+            "colgarse", "saltar al vacio", "se va a tirar",
             "ebrio", "manejando ebrio", "cocaina", "pasta base", "microtrafico",
             "violencia intrafamiliar", "vif", "maltrato", "me quiere matar", "me esta pegando",
             "encerrado", "privado de libertad",

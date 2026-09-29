@@ -80,4 +80,13 @@ class ClassifierTest {
                 Classifier.classifyCall("Quiero saber el horario de atención de la comisaría")
         ));
     }
+
+        @Test
+        void extraeUbicacionSinGuardarElRestoDelRelato() {
+                var resultado = Classifier.classifyCall(
+                                "Hay un choque ubicado en Manuel Montt y hay dos personas heridas"
+                );
+
+                assertTrue(resultado.direccion().equals("Manuel Montt"));
+        }
 }

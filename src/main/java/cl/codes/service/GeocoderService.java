@@ -39,8 +39,8 @@ import java.util.*;
  *     similitud textual + coincidencia territorial y se elige el mejor.
  *
  * Área de cobertura: TODO resultado se descarta si queda a más de
- * app.geocoder.radio-km del centro de búsqueda (la ubicación real del
- * operador si está disponible; si no, el punto fijo app.geocoder.centro-*).
+ * app.geocoder.radio-km del centro operativo configurado en
+ * app.geocoder.centro-*.
  * Antes esto era solo un "bonus" opcional en el puntaje, y Photon en
  * particular no tenía ninguna restricción geográfica cuando no se lograba
  * detectar una comuna en el texto: buscaba en todo el mundo. Ahora se
@@ -68,6 +68,8 @@ public class GeocoderService {
     private final Path cachePath;
     private final String pais;
     private final String userAgent;
+    private final String nominatimBaseUrl;
+    private final String photonBaseUrl;
     private final double centroLatDefecto;
     private final double centroLngDefecto;
     private final double radioKm;
@@ -94,6 +96,8 @@ public class GeocoderService {
             @Value("${app.geocache-path}") String geocachePath,
             @Value("${app.geocoder.pais}") String pais,
             @Value("${app.geocoder.user-agent}") String userAgent,
+            @Value("${app.geocoder.nominatim-base-url:https://nominatim.openstreetmap.org}") String nominatimBaseUrl,
+            @Value("${app.geocoder.photon-base-url:https://photon.komoot.io/api}") String photonBaseUrl,
             @Value("${app.geocoder.centro-lat:-33.4489}") double centroLatDefecto,
             @Value("${app.geocoder.centro-lng:-70.6693}") double centroLngDefecto,
             @Value("${app.geocoder.radio-km:30}") double radioKm
@@ -101,6 +105,10 @@ public class GeocoderService {
         this.cachePath = Path.of(geocachePath);
         this.pais = pais;
         this.userAgent = userAgent;
+        this.nominatimBaseUrl = nominatimBaseUrl.strip().replaceAll("/+$", "");
+        String photonEndpoint = photonBaseUrl.strip();
+        this.photonBaseUrl = Set.of("disabled", "none", "off").contains(photonEndpoint.toLowerCase(Locale.ROOT))
+            ? "" : photonEndpoint.replaceAll("/+$", "");
         this.centroLatDefecto = centroLatDefecto;
         this.centroLngDefecto = centroLngDefecto;
         this.radioKm = radioKm;
@@ -115,9 +123,8 @@ public class GeocoderService {
     }
 
     /**
-     * Variante para llamadas en vivo: la ubicación del navegador del operator
-     * se usa únicamente como señal secundaria para ordenar candidatos del mapa.
-     * No se guarda en la llamada ni sustituye la ubicación hablada.
+    * Variante para llamadas en vivo. Las coordenadas del operador no sustituyen
+    * la ubicación hablada ni limitan la búsqueda del incidente.
      */
     public Coordinates geocode(String address, String context, Double sourceLatitude, Double sourceLongitude) {
         LinkedHashSet<String> consultas = new LinkedHashSet<>();
@@ -135,13 +142,10 @@ public class GeocoderService {
 
         String territorio = extraerTerritorio(context, address);
 
-        // Centro "duro" de la búsqueda: la ubicación real del operador si está
-        // disponible (llamada en vivo); si no, el punto fijo configurado
-        // (por defecto, el mismo centro que usa el mapa). NUNCA queda vacío,
-        // a diferencia de antes, donde sin comuna detectada no había ningún
-        // centro y Photon quedaba sin restricción geográfica.
-        double centroLat = (sourceLatitude != null && sourceLongitude != null) ? sourceLatitude : centroLatDefecto;
-        double centroLng = (sourceLatitude != null && sourceLongitude != null) ? sourceLongitude : centroLngDefecto;
+        // El área de búsqueda representa la cobertura de la central, no la
+        // ubicación del operador, que puede estar lejos del incidente.
+        double centroLat = centroLatDefecto;
+        double centroLng = centroLngDefecto;
         String bbox = bbox(centroLat, centroLng, radioKm);
 
         // 1) Búsqueda estructurada: mucho más confiable que texto libre porque
@@ -210,7 +214,7 @@ public class GeocoderService {
 
     /** Búsqueda estructurada: le indicamos a Nominatim que "calle" es una vía, no texto libre. */
     private List<Candidato> buscarNominatimEstructurado(String calle, String territorio, String bbox) {
-        StringBuilder url = new StringBuilder("https://nominatim.openstreetmap.org/search?street=")
+        StringBuilder url = new StringBuilder(nominatimBaseUrl).append("/search?street=")
                 .append(URLEncoder.encode(calle, StandardCharsets.UTF_8))
                 .append("&country=").append(URLEncoder.encode(pais, StandardCharsets.UTF_8))
                 .append("&format=json&limit=5&addressdetails=1&countrycodes=cl");
@@ -224,7 +228,7 @@ public class GeocoderService {
     private List<Candidato> buscarNominatimLibre(String address, String bbox) {
         String consulta = normalizarConsulta(address);
         if (consulta.isBlank()) return List.of();
-        StringBuilder url = new StringBuilder("https://nominatim.openstreetmap.org/search?q=")
+        StringBuilder url = new StringBuilder(nominatimBaseUrl).append("/search?q=")
                 .append(URLEncoder.encode(consulta + ", " + pais, StandardCharsets.UTF_8))
                 .append("&format=json&limit=5&addressdetails=1&countrycodes=cl");
         if (bbox != null) url.append("&viewbox=").append(bbox).append("&bounded=1");
@@ -293,8 +297,9 @@ public class GeocoderService {
 
     private List<Candidato> buscarPhoton(String consulta, double centroLat, double centroLng, String bbox) {
         List<Candidato> resultado = new ArrayList<>();
+        if (photonBaseUrl.isBlank()) return resultado;
         try {
-            StringBuilder url = new StringBuilder("https://photon.komoot.io/api/?q=")
+            StringBuilder url = new StringBuilder(photonBaseUrl).append("/?q=")
                     .append(URLEncoder.encode(normalizarConsulta(consulta), StandardCharsets.UTF_8))
                     .append("&limit=10")
                     .append("&lat=").append(centroLat).append("&lon=").append(centroLng);
@@ -451,7 +456,7 @@ public class GeocoderService {
     private String extraerLugar(String texto) {
         if (texto == null) return null;
         java.util.regex.Matcher m = java.util.regex.Pattern.compile(
-                "(?i)(?:en|por|cerca de|frente a|junto a|al lado de|detras de|atras de)\\s+(?:la|el|un|una|los|las)?\\s*([A-Za-zÁÉÍÓÚÑáéíóúñ0-9 .'-]{4,70}?)(?=,|\\b(?:ubicad[ao]|queda|está|esta|en|por)\\b|$)"
+            "(?i)(?:en|por|cerca de|frente a|junto a|al lado de|detras de|atras de)\\s+(?:la|el|un|una|los|las)?\\s*([A-Za-zÁÉÍÓÚÑáéíóúñ0-9 .'-]{4,70}?)(?=,|\\by\\s+(?=(?:hay|necesita|requiere|presenta|est[aá]n?)\\b)|\\b(?:ubicad[ao]|queda|está|esta|en|por|donde|porque)\\b|$)"
         ).matcher(texto);
         return m.find() ? m.group(1).trim() : null;
     }
@@ -459,7 +464,7 @@ public class GeocoderService {
     private String extraerContextoUbicacion(String texto) {
         if (texto == null) return null;
         java.util.regex.Matcher m = java.util.regex.Pattern.compile(
-                "(?i)(?:ubicad[ao]|queda|esta|está)\\s+(?:al|a la|en|por)\\s+([^,.]{3,70})(?:\\s*,\\s*(?:en\\s+)?([^,.]{3,40}))?"
+            "(?i)(?:ubicad[ao]|queda|esta|está|se\\s+encuentra)\\s+(?:al|a la|en|por)\\s+([^,.]{3,70}?)(?=\\s*(?:,|\\by\\s+(?=(?:hay|necesita|requiere|presenta|est[aá]n?)\\b)|\\b(?:donde|porque|necesita|requiere|presenta|se\\s+encuentra)\\b|$))(?:\\s*,\\s*(?:en\\s+)?([^,.]{3,40}))?"
         ).matcher(texto);
         if (!m.find()) return null;
         String lugar = m.group(1).strip();

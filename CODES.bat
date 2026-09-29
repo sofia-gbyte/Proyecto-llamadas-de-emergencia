@@ -10,19 +10,21 @@ echo ============================================
 echo   CODES - Centro de monitoreo de emergencias
 echo ============================================
 echo.
-echo   1. Iniciar CODES completo (ASR y calles)
-echo   2. Limpiar proyecto (liberar espacio)
-echo   3. Crear respaldo local
-echo   4. Borrar casos de prueba (base de datos)
-echo   5. Salir
+echo   1. Iniciar CODES completo (ASR/calles/mapas configurados)
+echo   2. Instalar o iniciar Docker Desktop (mapas propios)
+echo   3. Limpiar proyecto (liberar espacio)
+echo   4. Crear respaldo local
+echo   5. Borrar casos de prueba (base de datos)
+echo   6. Salir
 echo.
 
-choice /c 12345 /n /m "Elige una opcion (1-5): "
+choice /c 123456 /n /m "Elige una opcion (1-6): "
 
-if errorlevel 5 goto :fin
-if errorlevel 4 goto :menu_casos
-if errorlevel 3 goto :menu_backup
-if errorlevel 2 goto :menu_limpiar
+if errorlevel 6 goto :fin
+if errorlevel 5 goto :menu_casos
+if errorlevel 4 goto :menu_backup
+if errorlevel 3 goto :menu_limpiar
+if errorlevel 2 goto :menu_docker
 if errorlevel 1 goto :iniciar
 
 :: ------------------------------------------------------------------
@@ -82,6 +84,20 @@ if not "%EXIT_CODE%"=="0" (
     echo La ventana queda abierta para que puedas ver el error.
     pause
 )
+
+:: ------------------------------------------------------------------
+:: Docker Desktop para servicios cartograficos autohospedados
+:: ------------------------------------------------------------------
+:menu_docker
+    cls
+    echo ============================================
+    echo   Docker Desktop - mapas propios
+    echo ============================================
+    echo.
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\maps\install_docker_windows.ps1"
+    echo.
+    pause
+    goto :menu
 
 goto :fin
 

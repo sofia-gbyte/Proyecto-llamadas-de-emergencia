@@ -8,6 +8,7 @@ import cl.codes.service.LiveCallService;
 import cl.codes.service.CallService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -20,15 +21,29 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api")
 public class CallController {
+    private static final String DEFAULT_MAP_TILES_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 
     private final CallService service;
     private final LiveCallService enVivoService;
     private final AuditLogService auditLogService;
+    private final String mapTilesUrl;
+    private final String routingUrl;
+    private final String asrWebsocketUrl;
 
-    public CallController(CallService service, LiveCallService enVivoService, AuditLogService auditLogService) {
+    public CallController(
+            CallService service,
+            LiveCallService enVivoService,
+            AuditLogService auditLogService,
+            @Value("${app.map.tiles-url:}") String mapTilesUrl,
+            @Value("${app.map.routing-url:https://router.project-osrm.org}") String routingUrl,
+            @Value("${app.asr.websocket-url:ws://localhost:6006}") String asrWebsocketUrl
+    ) {
         this.service = service;
         this.enVivoService = enVivoService;
         this.auditLogService = auditLogService;
+        this.mapTilesUrl = mapTilesUrl.isBlank() ? DEFAULT_MAP_TILES_URL : mapTilesUrl;
+        this.routingUrl = routingUrl;
+        this.asrWebsocketUrl = asrWebsocketUrl;
     }
 
     @GetMapping("/llamadas/pending")
@@ -84,5 +99,14 @@ public class CallController {
     @GetMapping("/health")
     public Map<String, String> health() {
         return Map.of("status", "ok");
+    }
+
+    @GetMapping("/public-config")
+    public Map<String, String> publicConfig() {
+        return Map.of(
+                "mapTilesUrl", mapTilesUrl,
+                "routingUrl", routingUrl,
+                "asrWebsocketUrl", asrWebsocketUrl
+        );
     }
 }

@@ -335,9 +335,6 @@ if (Test-Path $secretFile) {
 `$env:CODES_ENCRYPT_KEY = '$enc'
 `$env:CODES_ADMIN_USER = 'admin'
 `$env:CODES_ADMIN_PASSWORD = '$adminPassword'
-# Claves REALES de Cloudflare Turnstile (opcional). Sin ellas se usan las claves de PRUEBA.
-# `$env:CODES_TURNSTILE_SITE_KEY = 'tu-site-key'
-# `$env:CODES_TURNSTILE_SECRET_KEY = 'tu-secret-key'
 "@ | Set-Content -Encoding UTF8 $secretFile
     . $secretFile
     Write-Host ''
@@ -355,17 +352,44 @@ if ([string]::IsNullOrWhiteSpace($env:CODES_JWT_SECRET)) {
     throw 'CODES_JWT_SECRET no quedó cargada desde data\.codes-secrets.ps1. Revisa ese archivo antes de iniciar CODES.'
 }
 
-# Cloudflare Turnstile (captcha del login y del registro).
-# - Claves reales: agrégalas a data\.codes-secrets.ps1 (o como variables de entorno de Windows):
-#       $env:CODES_TURNSTILE_SITE_KEY   = 'tu-site-key'
-#       $env:CODES_TURNSTILE_SECRET_KEY = 'tu-secret-key'
-# - Si no hay claves NO se pregunta nada: se usan las claves de PRUEBA que publica Cloudflare
-#   (el widget se ve y funciona normal, pero siempre aprueba). Solo para desarrollo/demo.
-$turnstileModoPrueba = $false
-if ([string]::IsNullOrWhiteSpace($env:CODES_TURNSTILE_SITE_KEY) -or [string]::IsNullOrWhiteSpace($env:CODES_TURNSTILE_SECRET_KEY)) {
-    $env:CODES_TURNSTILE_SITE_KEY = '1x00000000000000000000AA'
-    $env:CODES_TURNSTILE_SECRET_KEY = '1x0000000000000000000000000000000AA'
-    $turnstileModoPrueba = $true
+$mapsEnvFile = Join-Path $root '.env.maps'
+$mapSettingNames = @(
+    'CODES_MAP_TILES_URL',
+    'CODES_ROUTING_URL',
+    'CODES_NOMINATIM_BASE_URL',
+    'CODES_PHOTON_BASE_URL',
+    'CODES_GEOCODER_CENTER_LAT',
+    'CODES_GEOCODER_CENTER_LNG',
+    'CODES_GEOCODER_RADIUS_KM',
+    'CODES_GEOCODER_USER_AGENT',
+    'CODES_ASR_WEBSOCKET_URL'
+)
+if (Test-Path $mapsEnvFile) {
+    foreach ($line in Get-Content $mapsEnvFile) {
+        $parts = $line -split '=', 2
+        if ($parts.Count -ne 2) { continue }
+        $name = $parts[0].Trim()
+        if ($mapSettingNames -notcontains $name) { continue }
+        $value = $parts[1].Trim()
+        if ($value.Length -ge 2 -and $value[0] -eq '"' -and $value[$value.Length - 1] -eq '"') {
+            $value = $value.Substring(1, $value.Length - 2)
+        } elseif ($value.Length -ge 2 -and $value[0] -eq "'" -and $value[$value.Length - 1] -eq "'") {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+        [Environment]::SetEnvironmentVariable($name, $value, [EnvironmentVariableTarget]::Process)
+    }
+    Write-Host 'Configuracion de mapas y ASR cargada desde .env.maps.' -ForegroundColor DarkGray
+}
+
+if ([string]::IsNullOrWhiteSpace($env:CODES_TURNSTILE_ENABLED)) {
+    $env:CODES_TURNSTILE_ENABLED = 'false'
+}
+$turnstileEstado = 'Desactivado; limites de intentos activos'
+if ($env:CODES_TURNSTILE_ENABLED -eq 'true') {
+    if ([string]::IsNullOrWhiteSpace($env:CODES_TURNSTILE_SITE_KEY) -or [string]::IsNullOrWhiteSpace($env:CODES_TURNSTILE_SECRET_KEY)) {
+        throw 'Turnstile esta habilitado pero faltan CODES_TURNSTILE_SITE_KEY o CODES_TURNSTILE_SECRET_KEY.'
+    }
+    $turnstileEstado = 'Habilitado (requiere Cloudflare)'
 }
 
 Write-Host ''
@@ -374,11 +398,7 @@ Write-Host ' CODES - Sistema de Despacho' -ForegroundColor Cyan
 Write-Host '============================================='
 Write-Host "Java:       $($javaInfo.Version) OK" -ForegroundColor Green
 Write-Host "Maven:      OK" -ForegroundColor Green
-if ($turnstileModoPrueba) {
-    Write-Host 'Captcha:    Turnstile en MODO PRUEBA (siempre aprueba; no usar en producción)' -ForegroundColor Yellow
-} else {
-    Write-Host 'Captcha:    Turnstile OK (claves reales)' -ForegroundColor Green
-}
+Write-Host "Captcha:    $turnstileEstado" -ForegroundColor Green
 Write-Host 'Spring Boot: http://localhost:8000' -ForegroundColor Green
 Write-Host 'ASR:         ws://localhost:6006' -ForegroundColor Green
 Write-Host ''

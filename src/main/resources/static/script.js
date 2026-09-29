@@ -1,6 +1,28 @@
 /* CODES · Frontend integrado con Spring Boot */
 const API_URL = '/api';
 const REFRESCO_MS = 8000;
+const URL_TESSELAS_POR_DEFECTO = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+let configuracionPublica = {
+  mapTilesUrl: URL_TESSELAS_POR_DEFECTO,
+  routingUrl: 'https://router.project-osrm.org',
+  asrWebsocketUrl: 'ws://localhost:6006'
+};
+let capaBaseMapa = null;
+let captchaRequerido = false;
+const configuracionPublicaPromise = fetch(`${API_URL}/public-config`)
+  .then(resp => resp.ok ? resp.json() : {})
+  .then(config => {
+    const tilesAnteriores = configuracionPublica.mapTilesUrl;
+    configuracionPublica = { ...configuracionPublica, ...config };
+    if (mapa && capaBaseMapa && configuracionPublica.mapTilesUrl !== tilesAnteriores) {
+      mapa.removeLayer(capaBaseMapa);
+      capaBaseMapa = crearCapaBase(configuracionPublica.mapTilesUrl).addTo(mapa);
+    }
+    if (typeof ASR_WS_URL !== 'undefined') ASR_WS_URL = configuracionPublica.asrWebsocketUrl;
+    const notaAsr = $('live-nota');
+    if (notaAsr) notaAsr.textContent = `Servidor ASR: ${configuracionPublica.asrWebsocketUrl}`;
+  })
+  .catch(error => console.warn('Se usarán los endpoints por defecto.', error));
 
 let sesion = null;
 // true cuando la pestaña se abrió como "vista previa de operador" (admin
@@ -79,15 +101,33 @@ async function inicializarCaptcha() {
   try {
     const resp = await fetch(`${API_URL}/auth/captcha-site-key`);
     const config = resp.ok ? await resp.json() : {};
+    captchaRequerido = config.enabled === true;
+    if (!captchaRequerido) {
+      captchaConfigurado = true;
+      ['login', 'register'].forEach(tipo => {
+        const error = $(captchaErrores[tipo]);
+        if (error) error.hidden = true;
+      });
+      return;
+    }
     if (!config.siteKey) {
       captchaConfigurado = false;
-      const msg = 'La verificación de seguridad no está configurada en el servidor.';
+      const msg = 'Turnstile está habilitado pero no está configurado correctamente en el servidor.';
       ['login', 'register'].forEach(t => mostrarErrorCaptcha(t, msg));
       return;
     }
     captchaSiteKey = config.siteKey;
     captchaConfigurado = true;
-    renderizarCaptcha('login');
+    if (window.turnstile) {
+      renderizarCaptcha('login');
+    } else {
+      const script = document.createElement('script');
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      script.defer = true;
+      script.onload = () => renderizarCaptcha('login');
+      script.onerror = () => mostrarErrorCaptcha('login', 'No se pudo cargar Turnstile.');
+      document.head.appendChild(script);
+    }
   } catch (error) {
     console.error('No se pudo cargar la verificación de seguridad.', error);
     ['login', 'register'].forEach(t => mostrarErrorCaptcha(t, 'No se pudo conectar con el servidor.'));
@@ -458,13 +498,13 @@ async function iniciarSesion(e) {
   const password =
     $('login-password').value;
 
-  if (!captchaConfigurado) {
-    error.textContent = 'La verificación de seguridad no está configurada. Revisa las claves de Cloudflare Turnstile del servidor.';
+  if (captchaRequerido && !captchaConfigurado) {
+    error.textContent = 'Turnstile está habilitado pero no está configurado correctamente en el servidor.';
     error.hidden = false;
     return;
   }
 
-  if (!captchaTokens.login) {
+  if (captchaRequerido && !captchaTokens.login) {
     error.textContent = 'Completa la verificación de seguridad.';
     error.hidden = false;
     return;
@@ -481,7 +521,7 @@ async function iniciarSesion(e) {
         body: JSON.stringify({
           username: nombreUsuario,
           password,
-          captchaToken: captchaTokens.login
+          captchaToken: captchaRequerido ? captchaTokens.login : ''
         })
       }
     );
@@ -550,7 +590,7 @@ async function registrarCuenta(e) {
 
     password,
 
-    captchaToken: captchaTokens.register,
+    captchaToken: captchaRequerido ? captchaTokens.register : '',
 
     nombre:
       $('reg-nombre').value.trim(),
@@ -565,13 +605,13 @@ async function registrarCuenta(e) {
       $('reg-institucion').value
   };
 
-  if (!captchaConfigurado) {
-    error.textContent = 'La verificación de seguridad no está configurada. Revisa las claves de Cloudflare Turnstile del servidor.';
+  if (captchaRequerido && !captchaConfigurado) {
+    error.textContent = 'Turnstile está habilitado pero no está configurado correctamente en el servidor.';
     error.hidden = false;
     return;
   }
 
-  if (!captchaTokens.register) {
+  if (captchaRequerido && !captchaTokens.register) {
     error.textContent = 'Completa la verificación de seguridad.';
     error.hidden = false;
     return;
@@ -788,23 +828,20 @@ function initMapa() {
       12
     );
 
-  L
-    .tileLayer(
-      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      {
-        attribution:
-          'Tiles © Esri · Sources: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
-        maxZoom: 19,
-        subdomains: ['server', 'services']
-      }
-    )
-    .addTo(mapa);
+  capaBaseMapa = crearCapaBase(configuracionPublica.mapTilesUrl).addTo(mapa);
 
   $('btn-mi-ubicacion')?.addEventListener(
     'click',
     mostrarUbicacionDispositivo,
     { once: true }
   );
+}
+
+function crearCapaBase(url) {
+  return L.tileLayer(url, {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
+    maxZoom: 19
+  });
 }
 
 function mostrarUbicacionDispositivo() {
@@ -897,7 +934,13 @@ async function dibujarRutaAlIncidente(l) {
   if (rutaEstado) rutaEstado.textContent = 'Calculando ruta hacia el incidente…';
 
   try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${encodeURIComponent(origen.lng)},${encodeURIComponent(origen.lat)};${encodeURIComponent(l.longitude)},${encodeURIComponent(l.latitude)}?overview=full&geometries=geojson`;
+    await configuracionPublicaPromise;
+    if (!configuracionPublica.routingUrl) {
+      if (rutaEstado) rutaEstado.textContent = 'El servicio de rutas no está configurado.';
+      return;
+    }
+    const baseRuta = configuracionPublica.routingUrl.replace(/\/+$/, '');
+    const url = `${baseRuta}/route/v1/driving/${encodeURIComponent(origen.lng)},${encodeURIComponent(origen.lat)};${encodeURIComponent(l.longitude)},${encodeURIComponent(l.latitude)}?overview=full&geometries=geojson`;
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
@@ -997,15 +1040,8 @@ function actualizarMapa(l) {
       return;
     }
 
-    window.open(
-      `https://www.google.com/maps/search/?api=1&query=${
-        encodeURIComponent(
-          `${l.latitude},${l.longitude}`
-        )
-      }`,
-      '_blank',
-      'noopener'
-    );
+    initMapa();
+    mapa.setView([l.latitude, l.longitude], Math.max(mapa.getZoom(), 15));
   };
 
   if (
@@ -2619,8 +2655,7 @@ function actualizarTodo() {
 // LLAMADA EN VIVO / SHERPA-ONNX
 // ======================================================
 
-const ASR_WS_URL =
-  'ws://localhost:6006';
+let ASR_WS_URL = configuracionPublica.asrWebsocketUrl;
 
 let live = {
   ws: null,
@@ -3147,7 +3182,7 @@ async function iniciarLive() {
           'ASR: error';
 
         $('live-nota').textContent =
-          'No se pudo conectar a ws://localhost:6006. Inicia start_asr_windows.ps1.';
+          `No se pudo conectar a ${ASR_WS_URL}. Revisa el servicio ASR.`;
       };
 
     live.ws.onclose =

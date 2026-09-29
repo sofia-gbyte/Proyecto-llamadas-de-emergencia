@@ -2,8 +2,6 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>CODES · Prototipo de casos escritos</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 <style>
 
@@ -3311,9 +3309,6 @@ body.tema-claro .caso-textarea {
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script>
 (() => {
 "use strict";
@@ -3630,8 +3625,8 @@ function mostrarMarcadorUbicacion(ubicacion) {
 function initMap() {
   if (!window.L) return;
   map = L.map("mapa", {zoomControl:true}).setView([-33.4489,-70.6693], 12);
-  L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
-    attribution:"Tiles © Esri · Sources: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
     maxZoom:19
   }).addTo(map);
 }
@@ -3740,7 +3735,7 @@ function setupUI() {
   $("caso-texto").addEventListener("input",()=>$("caso-caracteres").textContent=$("caso-texto").value.length+" / 2000");
   $("btn-abrir-mapa").onclick=()=>{
     const l=cases.find(c=>c.id===selectedId);
-    if(l){const lat=l.latitude??l.lat, lng=l.longitude??l.lng; window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`,"_blank","noopener");}
+        if(l){const lat=l.latitude??l.lat, lng=l.longitude??l.lng; map.setView([lat,lng],Math.max(map.getZoom(),15));}
   };
   $("btn-mi-ubicacion").onclick=async()=>{
     if(!navigator.geolocation){$("ubicacion-estado").textContent="Geolocalización no disponible en este navegador.";return;}

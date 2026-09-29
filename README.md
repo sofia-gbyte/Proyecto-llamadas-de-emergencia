@@ -2,9 +2,20 @@
 
 CODES es una aplicación web para apoyar la recepción, registro y gestión de llamadas de emergencia. El sistema permite trabajar con llamadas en vivo, transcripción local mediante ASR, clasificación inicial, geocodificación y seguimiento de los casos desde una interfaz web.
 
-El proyecto está orientado a uso local o dentro de una red interna controlada. **No está pensado para exponerse directamente a Internet.**
+El proyecto está orientado a uso local o dentro de una red interna controlada. **Aún no está listo para exponerse directamente a Internet.**
 
-> Esta documentación describe el estado actual del código incluido en este repositorio. Las funciones que dependen de infraestructura externa —por ejemplo, correo, claves de Cloudflare, servicios de geocodificación o un reverse proxy HTTPS— deben configurarse y probarse en el entorno donde se vaya a utilizar.
+> Leaflet se incluye dentro de la aplicación, pero las teselas, rutas y geocodificación siguen usando servicios públicos por defecto. Se pueden sustituir por servicios propios mediante variables de entorno. Ver [OPERACION_LOCAL.md](OPERACION_LOCAL.md) y el [inventario de licencias y servicios](THIRD_PARTY_LICENSES.md).
+
+## Contenido
+
+- [Inicio rápido](#inicio-rápido)
+- [Docker y mapas propios](OPERACION_LOCAL.md#mapa-y-servicios-cartograficos)
+- [ASR local](#llamadas-en-vivo-y-asr)
+- [Direcciones y datos OSM](#direcciones-y-geocodificación)
+- [Red y acceso desde otros equipos](#red-y-acceso-desde-otros-equipos)
+- [Desarrollo y pruebas](#desarrollo-y-pruebas)
+- [Producción](#antes-de-usarlo-en-producción)
+- [Licencias y asistencia de IA](THIRD_PARTY_LICENSES.md)
 
 ---
 
@@ -16,7 +27,7 @@ El proyecto está orientado a uso local o dentro de una red interna controlada. 
 - Extracción y corrección de direcciones a partir de la transcripción.
 - Geocodificación de direcciones.
 - Clasificación inicial de llamadas mediante lógica heurística.
-- Mapa basado en **Leaflet**.
+- Mapa basado en **Leaflet** (incluido dentro del JAR) y datos cartográficos de OpenStreetMap.
 - Usuarios con roles `operator`, `supervisor` y `administrator`.
 - Activación administrativa de cuentas registradas.
 - Aislamiento de llamadas y métricas por institución para usuarios no administradores.
@@ -40,7 +51,7 @@ El proyecto está orientado a uso local o dentro de una red interna controlada. 
 - H2 Database
 - JSON Web Token (JJWT)
 - Leaflet
-- Cloudflare Turnstile
+- Cloudflare Turnstile opcional (desactivado por defecto)
 - sherpa-onnx
 - Python, para las herramientas auxiliares de calles
 
@@ -54,7 +65,8 @@ Para ejecutar CODES desde el código fuente:
 - Maven
 - Windows si se quieren utilizar los scripts `.bat` y `.ps1` incluidos.
 - Python, solo para las herramientas relacionadas con el diccionario de calles.
-- Acceso a Internet si se necesitan descargar el modelo ASR, utilizar Turnstile o consultar servicios externos de geocodificación/Overpass.
+- Docker Desktop con Linux containers, solo si se quieren usar los servicios cartograficos propios de `compose.maps.yaml` en Windows.
+- Acceso a Internet para descargar el modelo ASR o, con la configuración por defecto, consultar teselas/rutas/geocodificación públicas y actualizar el diccionario de calles.
 
 El modelo de ASR no forma parte del ZIP liviano. Los scripts de `tools/asr` pueden instalarlo cuando sea necesario.
 
@@ -72,7 +84,9 @@ La forma más sencilla de iniciar CODES es:
 CODES.bat
 ```
 
-El menú permite iniciar CODES con ASR, ejecutar la limpieza, crear un respaldo local o salir.
+El menú permite iniciar CODES con ASR, instalar o iniciar Docker Desktop para mapas propios, ejecutar la limpieza y crear un respaldo local. Si existe `.env.maps`, el lanzador carga desde allí las URLs locales de mapas/geocodificación y ASR.
+
+Docker es opcional para ejecutar el backend. Su opción del menú solicita confirmación antes de instalar Docker Desktop y no acepta sus términos por ti. Revisa [los límites de licencia](THIRD_PARTY_LICENSES.md#docker-en-windows-y-linux).
 
 Durante el inicio, el script comprueba Java y Maven, prepara las claves locales necesarias y ejecuta Spring Boot. Cuando corresponde, también intenta preparar/iniciar el ASR local.
 
@@ -131,8 +145,6 @@ $env:CODES_JWT_SECRET="secreto-largo-y-aleatorio"
 $env:CODES_ENCRYPT_KEY="clave-base64-de-32-bytes"
 $env:CODES_ADMIN_USER="admin"
 $env:CODES_ADMIN_PASSWORD="una-password-segura"
-$env:CODES_TURNSTILE_SITE_KEY="site-key-de-cloudflare"
-$env:CODES_TURNSTILE_SECRET_KEY="secret-key-de-cloudflare"
 ```
 
 La clave JWT y la clave de cifrado de audios son independientes. **No deben reutilizarse entre sí.**
@@ -158,22 +170,21 @@ El bootstrap del administrador se ejecuta únicamente cuando todavía no existe 
 
 ---
 
-# Cloudflare Turnstile
+# Verificación anti-bots (opcional)
 
-El login y el registro utilizan Cloudflare Turnstile.
+Turnstile está desactivado por defecto. Login y registro conservan los límites de intentos del servidor. Para habilitar la verificación externa:
 
-Para una instalación real se deben configurar:
+Para una instalación real con Turnstile se deben configurar:
 
 ```powershell
 $env:CODES_TURNSTILE_SITE_KEY="..."
 $env:CODES_TURNSTILE_SECRET_KEY="..."
+$env:CODES_TURNSTILE_ENABLED="true"
 ```
 
 La `SITE_KEY` puede utilizarse en el cliente. La `SECRET_KEY` debe permanecer únicamente en el servidor.
 
-Los scripts de Windows pueden utilizar claves oficiales de prueba cuando no se proporcionan claves propias. Esas claves son para desarrollo/demo y no deben considerarse una configuración de producción.
-
-Turnstile necesita acceso a Internet desde el navegador y desde el backend según el flujo de validación.
+Al habilitarlo, Turnstile requiere acceso a Cloudflare desde el navegador y el backend. Para una instalación pública sin ese proveedor, configura protección equivalente en el proxy/WAF y conserva los límites del servidor; no expongas el login sin controles anti-abuso.
 
 ---
 
@@ -381,9 +392,11 @@ Si el diccionario no está disponible, CODES puede conservar la transcripción s
 
 La geocodificación se realiza mediante `GeocoderService`. El sistema aplica comprobaciones de similitud antes de aceptar un resultado.
 
-La ubicación del operador, cuando está disponible, puede utilizarse como señal secundaria para resolver candidatos. No se toma automáticamente como la ubicación del incidente.
+La ubicación GPS del operador no limita la búsqueda: un incidente puede estar lejos del dispositivo. El radio y el centro de búsqueda representan el área operativa configurada en `application.properties`.
 
-Las consultas a servicios externos deben respetar los límites y condiciones de uso del proveedor correspondiente.
+Por defecto, Nominatim y Photon se consultan en servicios públicos externos. Se pueden dirigir a instancias propias mediante `CODES_NOMINATIM_BASE_URL` y `CODES_PHOTON_BASE_URL`. La caché local evita repetir consultas ya resueltas, pero no reemplaza un geocodificador local completo.
+
+Para desplegar teselas, Nominatim y OSRM propios con Docker Compose, seguir [OPERACION_LOCAL.md](OPERACION_LOCAL.md). Ese stack permite trabajar sin las APIs públicas después de importar el extracto OSM; hay que mantener y actualizar sus propios datos/volúmenes.
 
 ---
 
@@ -417,10 +430,10 @@ python -m pip install osmium
 Luego se puede descargar, por ejemplo, el PBF de Chile desde Geofabrik y procesarlo con:
 
 ```powershell
-python tools/streets/extract_calles_chile.py chile-latest.osm.pbf data/calles_chile.txt
+python tools/streets/extract_calles_chile.py .\map-data\chile-latest.osm.pbf .\data\calles_chile.txt
 ```
 
-El archivo PBF es un insumo de trabajo y puede eliminarse después de generar el diccionario si ya no se necesita.
+Asi se puede generar el diccionario desde el mismo PBF autohospedado sin llamar a Overpass. El archivo PBF es un insumo de trabajo; si los servicios propios se mantienen, conservarlo y actualizarlo junto con los datos de teselas/geocodificacion/rutas.
 
 ---
 
@@ -576,6 +589,17 @@ CODES_ADMIN_PASSWORD
 
 CODES_TURNSTILE_SITE_KEY
 CODES_TURNSTILE_SECRET_KEY
+CODES_TURNSTILE_ENABLED
+
+CODES_MAP_TILES_URL
+CODES_ROUTING_URL
+CODES_NOMINATIM_BASE_URL
+CODES_PHOTON_BASE_URL
+CODES_GEOCODER_CENTER_LAT
+CODES_GEOCODER_CENTER_LNG
+CODES_GEOCODER_RADIUS_KM
+CODES_GEOCODER_USER_AGENT
+CODES_ASR_WEBSOCKET_URL
 
 CODES_DATA_DIR
 
@@ -697,8 +721,8 @@ CODES maneja información potencialmente sensible. Antes de utilizarlo operativa
 - política de retención y eliminación de llamadas y audios;
 - protección y rotación de logs;
 - configuración de SMTP;
-- claves reales de Turnstile;
-- límites y condiciones de los servicios externos de geocodificación;
+- protección anti-abuso para login/registro (Turnstile o controles equivalentes);
+- límites y condiciones de los servicios públicos de mapas/geocodificación/rutas, o despliegue de instancias propias;
 - actualización y procedencia del modelo ASR;
 - monitoreo del servidor y del ASR;
 - pruebas de integración y seguridad.
@@ -737,10 +761,8 @@ OPERACION_LOCAL.md
 
 ---
 
-# Licencia y uso
+# Licencias y producción
 
-Este repositorio no declara una licencia open source específica.
+Este repositorio no declara una licencia open source propia. Los componentes, el modelo ASR, los datos de OpenStreetMap y los servicios alojados tienen términos distintos. Revisar el [inventario de licencias y servicios](THIRD_PARTY_LICENSES.md) antes de distribuir.
 
-Salvo que el equipo responsable indique lo contrario, debe considerarse un proyecto en desarrollo para uso interno, académico o controlado. No se debe asumir que el código, los modelos, los datos de OpenStreetMap ni los servicios externos utilizados tienen las mismas condiciones de licencia o redistribución.
-
-Revisar las condiciones de cada dependencia y servicio antes de distribuir una versión del sistema.
+Para exponer CODES a dispositivos por Internet todavía hacen falta, entre otras cosas, HTTPS/WSS, autenticación del WebSocket ASR, una base de datos de producción, almacenamiento y respaldo protegidos, y pruebas de seguridad. La guía de siguientes pasos está en [OPERACION_LOCAL.md](OPERACION_LOCAL.md).

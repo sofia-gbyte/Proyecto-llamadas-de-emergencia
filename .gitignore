@@ -26,6 +26,8 @@ Thumbs.db
 /tools/asr/asr.log
 /tools/asr/*.tar.bz2
 *.osm.pbf
+/map-data/
+.env.maps
 
 # Local secrets
 /data/.codes-secrets.ps1
