@@ -1,0 +1,14 @@
+﻿{
+    "createdAt":  "2026-10-15T00:01:21.4847596-03:00",
+    "project":  "Proyecto-llamadas-de-emergencia-main",
+    "includesLogs":  true,
+    "files":  [
+                  ":\\Users\\Basti\\Downloads\\CODES_liviano_20261014_231833\\Proyecto-llamadas-de-emergencia-main\\backups\\codes_20261015_000121\\data\\.codes-secrets.ps1",
+                  ":\\Users\\Basti\\Downloads\\CODES_liviano_20261014_231833\\Proyecto-llamadas-de-emergencia-main\\backups\\codes_20261015_000121\\data\\calles_chile.txt",
+                  ":\\Users\\Basti\\Downloads\\CODES_liviano_20261014_231833\\Proyecto-llamadas-de-emergencia-main\\backups\\codes_20261015_000121\\data\\llamadas.mv.db",
+                  ":\\Users\\Basti\\Downloads\\CODES_liviano_20261014_231833\\Proyecto-llamadas-de-emergencia-main\\backups\\codes_20261015_000121\\logs\\logs\\asr-stderr.log",
+                  ":\\Users\\Basti\\Downloads\\CODES_liviano_20261014_231833\\Proyecto-llamadas-de-emergencia-main\\backups\\codes_20261015_000121\\logs\\logs\\asr-stdout.log",
+                  ":\\Users\\Basti\\Downloads\\CODES_liviano_20261014_231833\\Proyecto-llamadas-de-emergencia-main\\backups\\codes_20261015_000121\\logs\\logs\\auditoria.log",
+                  ":\\Users\\Basti\\Downloads\\CODES_liviano_20261014_231833\\Proyecto-llamadas-de-emergencia-main\\backups\\codes_20261015_000121\\logs\\logs\\spring-boot.log"
+              ]
+}
