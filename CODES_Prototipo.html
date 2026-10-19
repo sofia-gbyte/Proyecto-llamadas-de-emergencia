@@ -2,7 +2,6 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>CODES · Prototipo de casos escritos</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 <style>
 
         /* ===== RESET Y ESTILOS BASE ===== */
@@ -3105,7 +3104,7 @@ body.tema-claro .caso-textarea {
         </div>
 
         <div class="header-derecha">
-            <button class="btn-accion primario btn-live" id="btn-llamada-en-vivo" type="button">Llamada en vivo</button>
+            <button class="btn-accion primario btn-live" id="btn-llamada-en-vivo" type="button">Nuevo caso escrito</button>
 
             <div class="sistema-estado">
                 <span class="indicador online" id="indicador-estado"></span>
@@ -3222,10 +3221,11 @@ body.tema-claro .caso-textarea {
                 <div class="mapa-overlay" id="mapa-overlay">
                     <strong id="mapa-titulo">Sin incidente seleccionado</strong>
                     <span id="mapa-direccion">Selecciona una llamada para mostrar su ubicación.</span>
+                    <span id="mapa-provider-estado" aria-live="polite" hidden></span>
                     <span id="ruta-estado" aria-live="polite">Selecciona un caso para calcular una ruta.</span>
                     <button type="button" class="btn-accion secundario" id="btn-abrir-mapa" disabled>↗ Abrir mapa</button>
-                    <button type="button" class="btn-accion secundario" id="btn-mi-ubicacion">◎ Usar mi ubicación</button>
-                    <span id="ubicacion-estado" aria-live="polite">Ubicación del dispositivo desactivada.</span>
+                    <button type="button" class="btn-accion secundario" id="btn-mi-ubicacion" title="Usar la Universidad Mayor, Av. Manuel Montt 367, como origen de ruta">◎ Origen: Universidad Mayor</button>
+                    <span id="ubicacion-estado" aria-live="polite">Origen fijo · Universidad Mayor, Av. Manuel Montt 367, Providencia.</span>
                 </div>
             </div>
             <div id="info-container">
@@ -3308,8 +3308,53 @@ body.tema-claro .caso-textarea {
   </div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script>
+window.__leafletReady = (function () {
+  var fuentes = [
+    { css: '/vendor/leaflet/leaflet.css', js: '/vendor/leaflet/leaflet.js' },
+    { css: '/webjars/leaflet/1.9.4/dist/leaflet.css', js: '/webjars/leaflet/1.9.4/dist/leaflet.js' },
+    { css: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', js: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js' },
+    { css: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css', js: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js' },
+    { css: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css', js: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js' }
+  ];
+  function probar(i) {
+    if (window.L) return Promise.resolve(true);
+    if (i >= fuentes.length) return Promise.resolve(false);
+    return new Promise(function (resolve) {
+      var fuente = fuentes[i];
+      var css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.href = fuente.css;
+      document.head.appendChild(css);
+      var js = document.createElement('script');
+      js.src = fuente.js;
+      js.onload = function () {
+        if (window.L) resolve(true);
+        else {
+          css.remove();
+          probar(i + 1).then(resolve);
+        }
+      };
+      js.onerror = function () {
+        css.remove();
+        js.remove();
+        probar(i + 1).then(resolve);
+      };
+      document.body.appendChild(js);
+    });
+  }
+  return probar(0);
+})();
+</script>
+<script>
+window.__leafletReady.then(function (leafletLoaded) {
+if (!leafletLoaded) {
+  var estadoMapa = document.getElementById('mapa-provider-estado');
+  if (estadoMapa) {
+    estadoMapa.hidden = false;
+    estadoMapa.textContent = 'No se pudo cargar Leaflet. Revisa la conexión e inténtalo de nuevo.';
+  }
+}
 (() => {
 "use strict";
 
@@ -3355,7 +3400,9 @@ let cases = [
 
 let selectedId = null;
 let activeTab = "pendientes";
-let map = null, marker = null, routeLine = null, operatorMarker = null;
+let map = null, marker = null, routeLine = null, operatorMarker = null, operatorAccuracyCircle = null;
+const ubicacionOrigenPresentacion = {lat:-33.4323795,lng:-70.6192785};
+let ubicacionActualOperador = ubicacionOrigenPresentacion;
 let eventFeed = [
   {msg:"Sistema iniciado en modo prototipo.", cls:""},
   {msg:"Caso #1042 clasificado como urgente.", cls:"urgente"},
@@ -3554,8 +3601,7 @@ function updateMap(l) {
   marker = L.marker([lat,lng]).addTo(map).bindPopup(`<strong>Caso #${l.id}</strong><br>${esc(l.address)}`).openPopup();
   map.setView([lat,lng], 15);
 
-  // Igual que el CODES original: obtiene la ubicación del operador y
-  // calcula una ruta real por calles desde el operador al incidente.
+  // La ubicación se solicita solo tras pulsar el botón, como exige el navegador.
   dibujarRutaAlIncidente(l);
   setTimeout(()=>map.invalidateSize(),80);
 }
@@ -3571,11 +3617,7 @@ async function dibujarRutaAlIncidente(l) {
   }
 
   if (!ubicacionActualOperador) {
-    if (estado) estado.textContent='Obteniendo tu ubicación para calcular la ruta…';
-    await obtenerUbicacionParaRuta();
-  }
-  if (!ubicacionActualOperador) {
-    if (estado) estado.textContent='No se pudo obtener tu ubicación. Pulsa “Usar mi ubicación” y concede permiso al navegador.';
+    if (estado) estado.textContent='No hay un origen configurado para calcular la ruta.';
     return;
   }
 
@@ -3601,34 +3643,104 @@ async function dibujarRutaAlIncidente(l) {
   }
 }
 
-function obtenerUbicacionParaRuta() {
-  return new Promise(resolve=>{
-    if(!navigator.geolocation){resolve(null);return;}
-    navigator.geolocation.getCurrentPosition(pos=>{
-      ubicacionActualOperador={lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy};
-      mostrarMarcadorUbicacion(ubicacionActualOperador);
-      resolve(ubicacionActualOperador);
-    },()=>resolve(null),{enableHighAccuracy:false,timeout:10000,maximumAge:120000});
-  });
-}
-
 function mostrarMarcadorUbicacion(ubicacion) {
   if(!map || !ubicacion) return;
   const ll=[ubicacion.lat,ubicacion.lng];
-  const acc=Math.max(ubicacion.accuracy||100,40);
   if(operatorMarker) map.removeLayer(operatorMarker);
-  if(window.precisionDispositivo) map.removeLayer(window.precisionDispositivo);
-  window.precisionDispositivo=L.circle(ll,{radius:acc,color:'#4da3ff',fillColor:'#4da3ff',fillOpacity:.14,weight:1.5}).addTo(map);
-  operatorMarker=L.circleMarker(ll,{radius:8,color:'#fff',weight:3,fillColor:'#1683ff',fillOpacity:1}).addTo(map).bindPopup(`Tu ubicación aproximada<br>Precisión: ${Math.round(acc)} m`);
+  if(operatorAccuracyCircle) map.removeLayer(operatorAccuracyCircle);
+  operatorAccuracyCircle=null;
+  operatorMarker=L.circleMarker(ll,{radius:8,color:'#fff',weight:3,fillColor:'#1683ff',fillOpacity:1})
+    .addTo(map)
+    .bindPopup('Origen de ruta · Universidad Mayor, Av. Manuel Montt 367, Providencia');
 }
 
 function initMap() {
-  if (!window.L) return;
+  if (map || !window.L || !$("mapa")) return;
   map = L.map("mapa", {zoomControl:true}).setView([-33.4489,-70.6693], 12);
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
-    maxZoom:19
-  }).addTo(map);
+  activateTileProvider(0);
+}
+
+const tileProviders = [
+  {
+    name: "Esri World Imagery",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    attribution: "Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+    maxZoom: 19
+  },
+  {
+    name: "OpenStreetMap",
+    url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>',
+    maxZoom: 19
+  },
+  {
+    name: "Carto Voyager",
+    url: "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+    attribution: '&copy; OpenStreetMap contributors &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener noreferrer">CARTO</a>',
+    maxZoom: 20
+  },
+  {
+    name: "Esri World Street Map",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+    attribution: "Tiles &copy; Esri",
+    maxZoom: 19
+  }
+];
+let activeTileProvider = -1;
+let baseTileLayer = null;
+let tileFallbackTimer = null;
+
+function updateMapProviderStatus(message) {
+  const status = $("mapa-provider-estado");
+  if (!status) return;
+  const provider = tileProviders[Math.max(activeTileProvider, 0)];
+  status.textContent = message || `Mapa: ${provider.name}${activeTileProvider > 0 ? " (respaldo)" : ""}.`;
+  status.hidden = false;
+}
+
+function activateTileProvider(index, previousProviderName = "") {
+  if (!map) return;
+  if (tileFallbackTimer) clearTimeout(tileFallbackTimer);
+  if (index >= tileProviders.length) {
+    updateMapProviderStatus("No se pudieron cargar los mapas base. Comprueba tu conexión a Internet.");
+    return;
+  }
+
+  activeTileProvider = index;
+  const provider = tileProviders[index];
+  const previousLayer = baseTileLayer;
+  const nextLayer = L.tileLayer(provider.url, {
+    attribution: provider.attribution,
+    maxZoom: provider.maxZoom,
+    updateWhenIdle: true,
+    keepBuffer: 2
+  });
+  let tileLoaded = false;
+  nextLayer.on("tileload", () => {
+    if (activeTileProvider !== index) return;
+    tileLoaded = true;
+    if (tileFallbackTimer) clearTimeout(tileFallbackTimer);
+    updateMapProviderStatus();
+    if (previousLayer && map.hasLayer(previousLayer)) map.removeLayer(previousLayer);
+  });
+  nextLayer.on("tileerror", () => {
+    if (tileLoaded || activeTileProvider !== index) return;
+    if (tileFallbackTimer) clearTimeout(tileFallbackTimer);
+    tileFallbackTimer = setTimeout(() => {
+      if (!tileLoaded && activeTileProvider === index) {
+        activateTileProvider(index + 1, provider.name);
+      }
+    }, 1800);
+  });
+  baseTileLayer = nextLayer.addTo(map);
+  updateMapProviderStatus(previousProviderName
+    ? `${previousProviderName} no responde; probando ${provider.name}…`
+    : `Cargando mapa: ${provider.name}…`);
+  tileFallbackTimer = setTimeout(() => {
+    if (!tileLoaded && activeTileProvider === index) {
+      activateTileProvider(index + 1, provider.name);
+    }
+  }, 7000);
 }
 
 function openLive() {
@@ -3688,8 +3800,6 @@ window.__assign=assignCase; window.__close=closeCase; window.__map=id=>{
   document.querySelector('[data-vista="mapa"]').click(); selectCase(id);
 };
 
-let ubicacionActualOperador = null;
-
 function setupAuth() {
   const auth=$("pantalla-auth");
   const login=$("form-login");
@@ -3726,7 +3836,15 @@ function setupUI() {
     const v=btn.dataset.vista;
     $("info-container").style.display=v==="info"?"block":"none";
     $("mapa-container").classList.toggle("visible",v==="mapa");
-    if(v==="mapa" && map) setTimeout(()=>map.invalidateSize(),100);
+    if(v==="mapa") {
+      initMap();
+      setTimeout(()=>{
+        if (map) {
+          map.invalidateSize(true);
+          updateMap(cases.find(c=>c.id===selectedId));
+        }
+      },100);
+    }
   }));
   $("btn-llamada-en-vivo").onclick=openLive;
   $("live-cerrar").onclick=closeLive;
@@ -3735,19 +3853,14 @@ function setupUI() {
   $("caso-texto").addEventListener("input",()=>$("caso-caracteres").textContent=$("caso-texto").value.length+" / 2000");
   $("btn-abrir-mapa").onclick=()=>{
     const l=cases.find(c=>c.id===selectedId);
-        if(l){const lat=l.latitude??l.lat, lng=l.longitude??l.lng; map.setView([lat,lng],Math.max(map.getZoom(),15));}
+    if(l && map){const lat=l.latitude??l.lat, lng=l.longitude??l.lng; map.setView([lat,lng],Math.max(map.getZoom(),15));}
   };
-  $("btn-mi-ubicacion").onclick=async()=>{
-    if(!navigator.geolocation){$("ubicacion-estado").textContent="Geolocalización no disponible en este navegador.";return;}
-    $("ubicacion-estado").textContent="Solicitando ubicación aproximada...";
-    const u=await obtenerUbicacionParaRuta();
-    if(u){
-      $("ubicacion-estado").textContent=`Ubicación aproximada · margen de ${Math.round(u.accuracy||100)} m`;
-      const l=cases.find(c=>c.id===selectedId);
-      if(l) dibujarRutaAlIncidente(l);
-    } else {
-      $("ubicacion-estado").textContent="No se pudo obtener la ubicación del dispositivo.";
-    }
+  $("btn-mi-ubicacion").onclick=()=>{
+    ubicacionActualOperador={...ubicacionOrigenPresentacion};
+    mostrarMarcadorUbicacion(ubicacionActualOperador);
+    $("ubicacion-estado").textContent="Origen fijo · Universidad Mayor, Av. Manuel Montt 367, Providencia.";
+    const l=cases.find(c=>c.id===selectedId);
+    if(l) dibujarRutaAlIncidente(l);
   };
   $("btn-menu-usuario").onclick=()=>{const d=$("dropdown-usuario"); d.hidden=!d.hidden;};
   $("btn-salir").onclick=()=>{$("pantalla-auth").hidden=false;};
@@ -3758,11 +3871,17 @@ function setupUI() {
 setupAuth();
 setupUI();
 initMap();
+window.addEventListener("resize",()=>{
+  if (map && $("mapa-container").classList.contains("visible")) {
+    map.invalidateSize(true);
+  }
+});
 renderFeed();
 updateMetrics();
 renderList();
 setTimeout(()=>selectCase(1042),300);
 setInterval(()=>{ $("reloj").textContent=new Date().toLocaleTimeString("es-CL"); },1000);
 })();
+});
 </script>
 </body></html>
