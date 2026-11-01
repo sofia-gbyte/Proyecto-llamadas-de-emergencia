@@ -28,14 +28,11 @@ class MonitorAudioServiceTest {
         geocoderService = mock(GeocoderService.class);
         securityService = mock(SecurityService.class);
         repository = mock(CallRepository.class);
-        ChileStreetCorrectionService streetCorrection = mock(ChileStreetCorrectionService.class);
-        when(streetCorrection.correct(anyString())).thenAnswer(invocation -> invocation.getArgument(0));
         service = new MonitorAudioService(
                 tempDir.resolve("raw").toString(),
                 tempDir.resolve("encrypted").toString(),
                 transcriptionService,
                 geocoderService,
-                streetCorrection,
                 securityService,
                 repository,
                 mock(OperationalSummaryService.class)

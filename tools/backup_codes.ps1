@@ -31,7 +31,6 @@ $items = @(
     'data\llamadas.mv.db',
     'data\llamadas.trace.db',
     'data\geocache.json',
-    'data\calles_chile.txt',
     'data\.codes-secrets.ps1',
     'data\audios_crudos',
     'data\audios_encriptados'

@@ -37,12 +37,12 @@ echo   Diagnostico de CODES
 echo ============================================
 echo.
 echo   1. Verificar Java y Maven
-echo   2. Revisar estado del backend ASR
+echo   2. Revisar estado de servicios externos
 echo   3. Volver al menu principal
 echo.
 choice /c 123 /n /m "Elige una opcion (1-3): "
 if errorlevel 3 goto :menu
-if errorlevel 2 goto :diag_asr
+if errorlevel 2 goto :diag_servicios
 if errorlevel 1 goto :diag_java
 
 :diag_java
@@ -57,8 +57,8 @@ echo.
 pause
 goto :menu_diagnostico
 
-:diag_asr
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "if (Test-NetConnection -ComputerName localhost -Port 6006 -InformationLevel Quiet) { Write-Host 'ASR local responde en ws://localhost:6006' -ForegroundColor Green } else { Write-Host 'ASR local no responde en ws://localhost:6006' -ForegroundColor Yellow }"
+:diag_servicios
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Write-Host 'CODES usa Groq Whisper para transcribir y Geoapify para geocodificar.' -ForegroundColor Green; Write-Host 'Configura GROQ_API_KEY y GEOAPIFY_API_KEY en data\.codes-secrets.ps1.' -ForegroundColor Yellow"
 echo.
 pause
 goto :menu_diagnostico
@@ -67,14 +67,6 @@ goto :menu_diagnostico
 :: Iniciar CODES
 :: ------------------------------------------------------------------
 :iniciar
-call :actualizar_calles
-if errorlevel 1 (
-    echo.
-    echo ADVERTENCIA: no se pudo actualizar data\calles_chile.txt.
-    echo CODES continuara usando el archivo de calles existente.
-    echo.
-)
-
 call :buscar_java
 
 call :buscar_maven 2>nul
@@ -91,12 +83,12 @@ echo ============================================
 echo   Iniciando y verificando CODES
 echo ============================================
 echo   Servidor: http://localhost:8000/api/health
-echo   ASR:     ws://localhost:6006
+echo   Transcripción: Groq Whisper
+echo   Geocodificación: Geoapify
 echo.
 echo El servidor se levantara en segundo plano y quedara activo mientras CODES este abierto.
-echo El navegador se abrira despues de verificar el backend y esperar al ASR.
-echo El primer inicio puede tardar mientras descarga el modelo ASR.
-echo Si algo falla, revisa logs\spring-boot.log y tools\asr\asr.log
+echo El navegador se abrira despues de verificar el backend.
+echo Si algo falla, revisa logs\spring-boot.log.
 echo.
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\iniciar_codes_windows.ps1" -JavaPath "%JAVA_EXE%" -MavenBin "%MAVEN_BIN%"
@@ -144,7 +136,7 @@ goto :menu
 :menu_limpiar
 cls
 echo ============================================
-echo   Limpieza de CODES (modelos ASR, target, caches)
+echo   Limpieza de CODES (target, caches)
 echo ============================================
 echo.
 echo   1. Solo ver que se borraria (no borra nada)
@@ -214,55 +206,6 @@ echo.
 pause
 goto :menu_casos
 
-:: ------------------------------------------------------------------
-:: Actualizar calles de Chile (cache de 7 dias)
-:: ------------------------------------------------------------------
-:actualizar_calles
-set "CALLES_FILE=data\calles_chile.txt"
-set "CALLES_MAX_AGE_DAYS=7"
-
-if exist "%CALLES_FILE%" (
-    for /f %%A in ('powershell.exe -NoProfile -Command "if ((Get-Date) - (Get-Item '%CALLES_FILE%').LastWriteTime -lt [TimeSpan]::FromDays(%CALLES_MAX_AGE_DAYS%)) { exit 0 } else { exit 1 }"') do rem
-    powershell.exe -NoProfile -Command "if ((Get-Date) - (Get-Item '%CALLES_FILE%').LastWriteTime -lt [TimeSpan]::FromDays(%CALLES_MAX_AGE_DAYS%)) { exit 0 } else { exit 1 }"
-    if not errorlevel 1 (
-        echo.
-        echo Calles de Chile ya estan actualizadas. Se conserva el cache local.
-        echo Proxima actualizacion automatica: cuando el archivo tenga mas de %CALLES_MAX_AGE_DAYS% dias.
-        echo.
-        exit /b 0
-    )
-)
-
-echo.
-echo ============================================
-echo   Actualizando calles de Chile desde Overpass
-echo ============================================
-echo.
-echo Ejecutando:
-echo   python tools/streets/fetch_calles_overpass.py data\calles_chile.txt --pais
-echo.
-
-where python >nul 2>&1
-if errorlevel 1 (
-    echo Python no encontrado en PATH.
-    exit /b 1
-)
-
-python tools/streets/fetch_calles_overpass.py "%CALLES_FILE%" --pais
-set "CALLES_EXIT=%ERRORLEVEL%"
-
-if not "%CALLES_EXIT%"=="0" (
-    echo.
-    echo No se actualizo el archivo de calles. Se mantiene el existente.
-    echo Causa: Overpass no estuvo disponible o rechazo la consulta.
-    echo.
-    exit /b %CALLES_EXIT%
-)
-
-echo.
-echo Calles de Chile actualizadas correctamente.
-echo.
-exit /b 0
 
 :: ------------------------------------------------------------------
 :: Funciones auxiliares (no crean su propio scope: dejan las variables

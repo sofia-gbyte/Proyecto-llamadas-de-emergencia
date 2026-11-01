@@ -29,7 +29,7 @@ import java.util.Map;
 /**
  * Panel de diagnóstico solo para administradores. Deliberadamente separado
  * de /api/health (que es público y se mantiene mínimo): acá sí se detallan
- * cosas como espacio en disco o estado del ASR, que no deberían quedar
+ * cosas como espacio en disco o estado de los proveedores externos, que no deberían quedar
  * visibles para cualquiera que golpee la API sin sesión.
  */
 @RestController

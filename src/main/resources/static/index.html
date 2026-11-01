@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>CODES · Centro de Operaciones y Despacho de Emergencias</title>
 <link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="console-redesign.css?v=20261101-web-desktop-7" />
 </head>
 <body>
 
@@ -192,7 +193,7 @@
                 </button>
             </div>
 
-            <div class="riel-seccion riel-admin" id="riel-admin">
+            <div class="riel-seccion riel-admin" id="riel-admin" hidden>
                 <div class="riel-titulo">ADMINISTRACIÓN</div>
                 <div class="admin-tabs" id="admin-tabs">
                     <button class="admin-tab" data-admin-tab="usuarios" type="button">
@@ -204,7 +205,7 @@
             <div class="riel-separador"></div>
 
             <div class="metricas" id="metricas" aria-label="Resumen operativo">
-                <div class="riel-titulo">RESUMEN</div>
+                <div class="riel-titulo">CENTRO OPERATIVO</div>
                 <div class="metrica-tarjeta">
                     <div class="info">
                         <span class="valor" id="m-pendientes">–</span>
@@ -223,7 +224,7 @@
                         <span class="label">Urgentes</span>
                     </div>
                 </div>
-                <div class="metrica-tarjeta">
+                <div class="metrica-tarjeta metrica-respuesta">
                     <div class="info">
                         <span class="valor" id="m-tiempo">–</span>
                         <span class="label">Respuesta</span>
@@ -245,6 +246,10 @@
                     Cerradas <span class="contador" id="cont-cerradas">0</span>
                 </button>
             </nav>
+            <label class="busqueda-incidentes">
+                <span class="sr-only">Buscar por número de caso, incidente o dirección</span>
+                <input id="busqueda-incidentes" type="search" placeholder="Buscar caso o dirección…" autocomplete="off" />
+            </label>
             <div class="lista-llamadas" id="lista-llamadas">
                 <p class="estado-vacio">Cargando llamadas…</p>
             </div>
@@ -253,20 +258,7 @@
         <!-- PANEL DETALLE -->
         <section class="panel-detalle" id="panel-detalle">
             <div class="detalle-menu" id="detalle-menu">
-                <button class="detalle-menu-btn activo" data-vista="info">Información</button>
-                <button class="detalle-menu-btn" data-vista="mapa">Mapa</button>
-            </div>
-            <div id="mapa-container">
-                <div id="mapa" aria-label="Mapa de ubicación del incidente"></div>
-                <div class="mapa-overlay" id="mapa-overlay">
-                    <strong id="mapa-titulo">Sin incidente seleccionado</strong>
-                    <span id="mapa-direccion">Selecciona una llamada para mostrar su ubicación.</span>
-                    <span id="mapa-provider-estado" aria-live="polite" hidden></span>
-                    <span id="ruta-estado" aria-live="polite">Selecciona un caso para calcular una ruta.</span>
-                    <button type="button" class="btn-accion secundario" id="btn-abrir-mapa" disabled>↗ Abrir mapa</button>
-                    <button type="button" class="btn-accion secundario" id="btn-mi-ubicacion">◎ Usar mi ubicación</button>
-                    <span id="ubicacion-estado" aria-live="polite">Ubicación del dispositivo desactivada.</span>
-                </div>
+                <span class="detalle-menu-titulo">Información del incidente</span>
             </div>
             <div id="info-container">
                 <p class="estado-vacio">Selecciona una llamada de la cola para ver el detalle.</p>
@@ -300,6 +292,19 @@
             </div>
         </section>
 
+        <div id="mapa-container" aria-label="Mapa del incidente">
+            <div id="mapa" aria-label="Mapa de ubicación del incidente"></div>
+            <div class="mapa-overlay" id="mapa-overlay">
+                <strong id="mapa-titulo">Sin incidente seleccionado</strong>
+                <span id="mapa-direccion">Selecciona una llamada para mostrar su ubicación.</span>
+                <span id="mapa-provider-estado" aria-live="polite" hidden></span>
+                <span id="ruta-estado" aria-live="polite">Selecciona un caso para calcular una ruta.</span>
+                <button type="button" class="btn-accion secundario" id="btn-reintentar-ruta" hidden>Reintentar ruta</button>
+                <button type="button" class="btn-accion secundario" id="btn-mi-ubicacion">Ubicación actual</button>
+                <span id="ubicacion-estado" aria-live="polite">Ubicación del dispositivo desactivada.</span>
+            </div>
+        </div>
+
         <!-- PANEL FEED -->
         <section class="panel-feed" id="panel-feed">
             <div class="feed-header">
@@ -318,22 +323,22 @@
     <button class="modal-cerrar" id="live-cerrar" type="button" aria-label="Cerrar" title="Cerrar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     <div class="live-cabecera">
       <div>
-        <span class="live-kicker">CODES · ASR LOCAL</span>
+        <span class="live-kicker">CODES · TRANSCRIPCIÓN NUBE</span>
         <h2>Llamada en vivo</h2>
       </div>
       <span class="live-status" id="live-status" hidden>Listo</span>
     </div>
-    <p class="live-ayuda">Habla normalmente. La transcripción llega en tiempo real desde sherpa-onnx, sin enviar el audio a una API externa.</p>
+    <p class="live-ayuda">Graba la llamada desde el micrófono. Al detener y guardar, el servidor enviará el audio a Groq Whisper para transcribirlo y crear el caso.</p>
     <div class="live-transcripcion" id="live-transcripcion">Presiona <strong>Iniciar micrófono</strong> para comenzar…</div>
     <div class="live-meta">
       <span id="live-tiempo">00:00</span>
-      <span id="live-asr">ASR: desconectado</span>
+      <span id="live-provider">Groq Whisper</span>
     </div>
     <div class="live-acciones">
     <button class="btn-accion primario" id="live-iniciar" type="button">Iniciar micrófono</button>
     <button class="btn-accion peligro" id="live-detener" type="button" disabled>Detener y guardar</button>
     </div>
-    <p class="live-nota" id="live-nota">Necesitas tener el servidor ASR en <code>ws://localhost:6006</code>.</p>
+    <p class="live-nota" id="live-nota">La transcripción se procesa en el servidor al guardar la grabación.</p>
   </div>
 </div>
 
@@ -357,7 +362,7 @@
   ];
   function iniciarApp() {
     var s = document.createElement('script');
-    s.src = 'script.js?v=20261015-mapa-fix';
+    s.src = 'script.js?v=20261101-web-desktop-9';
     document.body.appendChild(s);
   }
   function probar(i) {

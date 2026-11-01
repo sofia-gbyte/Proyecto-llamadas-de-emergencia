@@ -5,6 +5,7 @@ import cl.codes.model.Call;
 import cl.codes.repository.CallRepository;
 import cl.codes.repository.UserRepository;
 import cl.codes.model.User;
+import cl.codes.exception.ResourceNotFoundException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -17,7 +18,7 @@ import java.time.format.DateTimeFormatter;
 
 /**
  * Cierra el ciclo de una llamada iniciada desde el micrófono del navegador:
- * transcripción streaming -> clasificación -> geocodificación -> cifrado -> BD.
+ * grabación -> Groq Whisper -> clasificación -> Geoapify -> cifrado -> BD.
  */
 @Service
 public class LiveCallService {
@@ -26,9 +27,9 @@ public class LiveCallService {
     private final CallRepository repo;
     private final UserRepository userRepository;
     private final GeocoderService geocoder;
-    private final ChileStreetCorrectionService streetCorrection;
     private final SecurityService securityService;
     private final OperationalSummaryService operationalSummaryService;
+    private final TranscriptionService transcriptionService;
     private final ObjectMapper mapper = new ObjectMapper();
     private final Path encryptedFolder;
 
@@ -36,17 +37,17 @@ public class LiveCallService {
             CallRepository repo,
             UserRepository userRepository,
             GeocoderService geocoder,
-            ChileStreetCorrectionService streetCorrection,
             SecurityService securityService,
             OperationalSummaryService operationalSummaryService,
+            TranscriptionService transcriptionService,
             @org.springframework.beans.factory.annotation.Value("${app.audio-encriptado-dir}") String encryptedFolder
     ) throws IOException {
         this.repo = repo;
         this.userRepository = userRepository;
         this.geocoder = geocoder;
-        this.streetCorrection = streetCorrection;
         this.securityService = securityService;
         this.operationalSummaryService = operationalSummaryService;
+        this.transcriptionService = transcriptionService;
         this.encryptedFolder = Path.of(encryptedFolder);
         Files.createDirectories(this.encryptedFolder);
     }
@@ -57,21 +58,15 @@ public class LiveCallService {
 
     public Call create(String transcription, MultipartFile audio, String user, String ip, Double operatorLatitude, Double operatorLongitude) throws Exception {
         validateCoordinates(operatorLatitude, operatorLongitude);
-        User creator = userRepository.findByUsername(user).orElseThrow(() -> new IllegalArgumentException("User not found"));
+        User creator = userRepository.findByUsername(user).orElseThrow(() -> new ResourceNotFoundException("User not found"));
         if (creator.isTestAccount()) {
             throw new org.springframework.security.access.AccessDeniedException(
                 "Esta es una sesión de vista previa (solo lectura): no puede crear llamadas reales.");
         }
-        String texto = streetCorrection.correct(cleanTranscription(transcription));
-        Classifier.ResultadoClasificacion classification = Classifier.classifyCall(texto);
-        if (!Classifier.hasOperationalInformation(classification)) {
-            throw new IllegalArgumentException("The transcription has insufficient operational information.");
-        }
-        GeocoderService.Coordinates coords = geocoder.geocode(classification.direccion(), texto, operatorLatitude, operatorLongitude);
-
         Path temporal = null;
         Path encriptado = null;
         try {
+            String textoOrigen = cleanTranscription(transcription);
             if (audio != null && !audio.isEmpty()) {
                 validateAudio(audio);
                 String nombre = sanitizeName(audio.getOriginalFilename());
@@ -82,7 +77,27 @@ public class LiveCallService {
                 if (!Files.exists(temporal) || Files.size(temporal) == 0) {
                     throw new IllegalStateException("La grabación llegó vacía al servidor.");
                 }
+                if (textoOrigen.isBlank()) {
+                    textoOrigen = transcriptionService.transcribe(temporal);
+                }
+            }
+            if (textoOrigen.isBlank()) {
+                throw new IllegalArgumentException("Se necesita una transcripción o un audio para crear la llamada.");
+            }
+
+            String texto = cleanTranscription(textoOrigen);
+            Classifier.ResultadoClasificacion classification = Classifier.classifyCall(texto);
+            if (!Classifier.hasOperationalInformation(classification)) {
+                throw new IllegalArgumentException("The transcription has insufficient operational information.");
+            }
+            GeocoderService.Coordinates coords = geocoder.geocode(classification.direccion(), texto, operatorLatitude, operatorLongitude);
+            String direccion = coords.formattedAddress() != null && !coords.formattedAddress().isBlank()
+                    ? coords.formattedAddress()
+                    : classification.direccion();
+
+            if (temporal != null) {
                 Files.createDirectories(encryptedFolder);
+                String nombre = sanitizeName(audio.getOriginalFilename());
                 encriptado = encryptedFolder.resolve(
                         MARCA.format(LocalDateTime.now()) + "_" + nombre + ".enc"
                 );
@@ -94,7 +109,7 @@ public class LiveCallService {
 
             Call call = new Call();
             call.setTranscription(texto);
-            call.setOperationalSummary(operationalSummaryService.generate(texto, classification));
+            call.setOperationalSummary(operationalSummaryService.generate(texto, classification, direccion));
             call.setOriginalAudio(encriptado != null ? encriptado.toString() : null);
             call.setPriority(classification.priority());
             call.setUrgentScore(classification.puntajes().getOrDefault("urgente", 0));
@@ -104,7 +119,7 @@ public class LiveCallService {
             call.setHighlightedWords(mapper.writeValueAsString(classification.highlightedWords()));
             call.setClassificationReasons(mapper.writeValueAsString(classification.motivos()));
             call.setSuggestedInstitutions(mapper.writeValueAsString(classification.institucionesSugeridas()));
-            call.setDetectedAddress(classification.direccion());
+            call.setDetectedAddress(direccion);
             call.setLatitude(coords.lat());
             call.setLongitude(coords.lng());
             call.setSourceIp(ip);
@@ -157,5 +172,3 @@ public class LiveCallService {
         return base.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 }
-
-

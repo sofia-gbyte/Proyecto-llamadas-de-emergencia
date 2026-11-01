@@ -13,7 +13,7 @@
 
     <groupId>cl.codes</groupId>
     <artifactId>codes</artifactId>
-    <version>0.1.0</version>
+    <version>1.0.0</version>
     <name>CODES - Centro de Emergencias</name>
 
     <properties>
@@ -103,4 +103,3 @@
         </plugins>
     </build>
 </project>
-

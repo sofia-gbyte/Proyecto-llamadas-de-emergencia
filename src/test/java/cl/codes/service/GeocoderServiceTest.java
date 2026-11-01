@@ -25,35 +25,39 @@ class GeocoderServiceTest {
 
     private HttpServer server;
     private final AtomicReference<URI> lastRequest = new AtomicReference<>();
+    private final AtomicReference<Boolean> outsideCoverage = new AtomicReference<>(false);
 
     @BeforeEach
-    void startNominatimStub() throws IOException {
+    void startGeoapifyStub() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.createContext("/search", exchange -> {
+        server.createContext("/v1/geocode/search", exchange -> {
             lastRequest.set(exchange.getRequestURI());
-            String displayName = exchange.getRequestURI().getRawQuery().contains("La+Dehesa")
+            String text = queryParameters(exchange.getRequestURI()).getOrDefault("text", "");
+            boolean dehesa = text.contains("Dehesa");
+            String formatted = dehesa
                     ? "Avenida La Dehesa, Lo Barnechea, Santiago, Chile"
                     : "Avenida Manuel Montt, Providencia, Santiago, Chile";
-            byte[] response = ("[{\"lat\":\"-33.42\",\"lon\":\"-70.61\",\"display_name\":\""
-                    + displayName
-                    + "\",\"type\":\"residential\",\"address\":{\"city\":\"Providencia\"}}]")
-                    .getBytes(StandardCharsets.UTF_8);
+            String latitude = outsideCoverage.get() ? "-34.42" : "-33.42";
+            String response = "{\"results\":[{\"lat\":" + latitude + ",\"lon\":-70.61,"
+                    + "\"formatted\":\"" + formatted + "\",\"result_type\":\"street\","
+                    + "\"city\":\"" + (dehesa ? "Lo Barnechea" : "Providencia") + "\"}]}";
+            byte[] body = response.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, response.length);
-            try (var body = exchange.getResponseBody()) {
-                body.write(response);
+            exchange.sendResponseHeaders(200, body.length);
+            try (var output = exchange.getResponseBody()) {
+                output.write(body);
             }
         });
         server.start();
     }
 
     @AfterEach
-    void stopNominatimStub() {
+    void stopGeoapifyStub() {
         server.stop(0);
     }
 
     @Test
-    void doesNotTreatStreetTypeAsTerritory() {
+    void usesGeoapifyAndConstrainsSearchToConfiguredCoverage() {
         GeocoderService service = service();
 
         GeocoderService.Coordinates result = service.geocode(
@@ -62,23 +66,16 @@ class GeocoderServiceTest {
         );
 
         assertTrue(result.presente());
-        assertFalse(queryParameters(lastRequest.get()).containsKey("city"));
+        assertEquals("Avenida Manuel Montt, Providencia, Santiago, Chile", result.formattedAddress());
+        Map<String, String> parameters = queryParameters(lastRequest.get());
+        assertEquals("test-key", parameters.get("apiKey"));
+        assertTrue(parameters.get("text").contains("Chile"));
+        assertTrue(parameters.get("filter").startsWith("circle:"));
+        assertTrue(parameters.get("bias").startsWith("proximity:"));
     }
 
     @Test
-    void usesCommuneInsteadOfCountryFromCommaSeparatedAddress() {
-        GeocoderService service = service();
-
-        GeocoderService.Coordinates result = service.geocode(
-                "Calle Los Alerces #1234, Providencia, Chile"
-        );
-
-        assertTrue(result.presente());
-        assertEquals("Providencia", queryParameters(lastRequest.get()).get("city"));
-    }
-
-    @Test
-    void preservesMultiWordCommuneFromExplicitContext() {
+    void includesDetectedCommuneInGeoapifyQuery() {
         GeocoderService service = service();
 
         GeocoderService.Coordinates result = service.geocode(
@@ -87,17 +84,17 @@ class GeocoderServiceTest {
         );
 
         assertTrue(result.presente());
-        assertEquals("Lo Barnechea", queryParameters(lastRequest.get()).get("city"));
+        assertTrue(queryParameters(lastRequest.get()).get("text").contains("Lo Barnechea"));
     }
 
     @Test
-    void doesNotContactPublicProvidersWhenTheyAreNotConfigured() {
+    void doesNotContactProviderWhenGeoapifyKeyIsMissing() {
         GeocoderService service = new GeocoderService(
                 tempDir.resolve("geocache.json").toString(),
                 "Chile",
                 "CODES-test/1.0",
-                "disabled",
-                "disabled",
+                "",
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/v1/geocode/search",
                 -33.4489,
                 -70.6693,
                 30
@@ -109,13 +106,23 @@ class GeocoderServiceTest {
         assertNull(lastRequest.get());
     }
 
+    @Test
+    void rejectsResultsOutsideConfiguredCoverage() {
+        outsideCoverage.set(true);
+        GeocoderService service = service();
+
+        GeocoderService.Coordinates result = service.geocode("Avenida Manuel Montt #1234");
+
+        assertFalse(result.presente());
+    }
+
     private GeocoderService service() {
         return new GeocoderService(
                 tempDir.resolve("geocache.json").toString(),
                 "Chile",
                 "CODES-test/1.0",
-                "http://127.0.0.1:" + server.getAddress().getPort(),
-                "disabled",
+                "test-key",
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/v1/geocode/search",
                 -33.4489,
                 -70.6693,
                 30

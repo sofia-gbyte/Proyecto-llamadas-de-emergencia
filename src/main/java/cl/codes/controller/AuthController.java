@@ -4,6 +4,7 @@ import cl.codes.controller.dto.LoginRequest;
 import cl.codes.controller.dto.LoginResponse;
 import cl.codes.controller.dto.RegisterRequest;
 import cl.codes.controller.dto.UserResponse;
+import cl.codes.exception.ResourceNotFoundException;
 import cl.codes.controller.dto.ChangePasswordRequest;
 import cl.codes.controller.dto.ForgotPasswordRequest;
 import cl.codes.controller.dto.ResetPasswordRequest;
@@ -119,7 +120,7 @@ public class AuthController {
         // actual -y cualquier otro que el mismo usuario tuviera abierto-
         // deja de aceptarse desde este momento, aunque no haya expirado.
         User user = userRepository.findByUsername(auth.getName())
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         user.setSessionsValidFrom(LocalDateTime.now());
         userRepository.save(user);
         auditLogService.registrar(user.getUsername(), "logout", "session", null, request.getRemoteAddr(), "success");
@@ -184,7 +185,7 @@ public class AuthController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> changePassword(@Valid @RequestBody ChangePasswordRequest req, Authentication auth, HttpServletRequest request) {
         User user = userRepository.findByUsername(auth.getName())
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         if (!securityService.verifyPassword(req.currentPassword(), user.getPasswordHash())) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "Current password is incorrect"));
         }

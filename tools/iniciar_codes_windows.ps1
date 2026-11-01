@@ -55,11 +55,11 @@ function Test-PortOpen {
 # Si CODES se cerró antes cliqueando la X de la ventana (en vez de dejar que
 # el script termine solo), Windows mata la consola de golpe y el "finally"
 # que libera los puertos nunca alcanza a correr. Eso deja procesos huérfanos
-# de Java (8000) y/o Python/sherpa-onnx (6006) todavía corriendo, y el
+# de Java (8000) todavía corriendo, y el
 # siguiente inicio los confunde con una instancia sana, saltándose por
-# completo el arranque real (incluida la revisión/descarga del modelo ASR).
+# completo el arranque real del servidor.
 # Por eso, ANTES de decidir nada, nos aseguramos de partir limpios: si hay
-# algo escuchando en 8000 o 6006 que no sea una instancia sana de CODES,
+# algo escuchando en 8000 que no sea una instancia sana de CODES,
 # lo cerramos.
 function Stop-ProcesoHuerfanoEnPuerto {
     param([int]$Port, [string]$Etiqueta)
@@ -86,7 +86,6 @@ function Stop-ProcesoHuerfanoEnPuerto {
 
 Write-Host 'Verificando que no queden procesos de una sesión anterior de CODES...' -ForegroundColor DarkGray
 Stop-ProcesoHuerfanoEnPuerto -Port 8000 -Etiqueta 'Spring Boot'
-Stop-ProcesoHuerfanoEnPuerto -Port 6006 -Etiqueta 'ASR / sherpa-onnx'
 Start-Sleep -Milliseconds 500
 
 function Get-JavaInfo {
@@ -345,6 +344,8 @@ if (Test-Path $secretFile) {
 `$env:CODES_ENCRYPT_KEY = '$enc'
 `$env:CODES_ADMIN_USER = 'admin'
 `$env:CODES_ADMIN_PASSWORD = '$adminPassword'
+`$env:GROQ_API_KEY = ''
+`$env:GEOAPIFY_API_KEY = ''
 "@ | Set-Content -Encoding UTF8 $secretFile
     . $secretFile
     Write-Host ''
@@ -360,6 +361,12 @@ if (-not $env:CODES_ADMIN_PASSWORD) {
 }
 if ([string]::IsNullOrWhiteSpace($env:CODES_JWT_SECRET)) {
     throw 'CODES_JWT_SECRET no quedó cargada desde data\.codes-secrets.ps1. Revisa ese archivo antes de iniciar CODES.'
+}
+if ([string]::IsNullOrWhiteSpace($env:GROQ_API_KEY)) {
+    Write-Host 'Aviso: GROQ_API_KEY no está configurada; la transcripción desde audio no estará disponible.' -ForegroundColor Yellow
+}
+if ([string]::IsNullOrWhiteSpace($env:GEOAPIFY_API_KEY)) {
+    Write-Host 'Aviso: GEOAPIFY_API_KEY no está configurada; la geocodificación automática no estará disponible.' -ForegroundColor Yellow
 }
 
 if ([string]::IsNullOrWhiteSpace($env:CODES_TURNSTILE_ENABLED)) {
@@ -381,7 +388,8 @@ Write-Host "Java:       $($javaInfo.Version) OK" -ForegroundColor Green
 Write-Host "Maven:      OK" -ForegroundColor Green
 Write-Host "Captcha:    $turnstileEstado" -ForegroundColor Green
 Write-Host 'Spring Boot: http://localhost:8000' -ForegroundColor Green
-Write-Host 'ASR:         ws://localhost:6006' -ForegroundColor Green
+Write-Host "Groq Whisper: $(if ($env:GROQ_API_KEY) { 'configurado' } else { 'sin clave' })"
+Write-Host "Geoapify:     $(if ($env:GEOAPIFY_API_KEY) { 'configurado' } else { 'sin clave' })"
 Write-Host ''
 
 if (Test-PortOpen -HostName '127.0.0.1' -Port 8000) {
@@ -459,81 +467,17 @@ if (-not (Test-Path $staticIndex)) {
     }
 }
 
-# ASR: se verifica después de que Spring Boot esté sano.
-$asrScript = Join-Path $root 'tools\asr\start_asr_windows.ps1'
-$asrProcess = $null
-
-Write-Host ''
-Write-Host 'Verificando ASR en localhost:6006...' -ForegroundColor Cyan
-if (Test-PortOpen -HostName '127.0.0.1' -Port 6006) {
-    Write-Host 'ASR: OK (localhost:6006)' -ForegroundColor Green
-}
-elseif (Test-Path $asrScript) {
-    try {
-        $asrStdoutLog = Join-Path $root 'logs\asr-stdout.log'
-        $asrStderrLog = Join-Path $root 'logs\asr-stderr.log'
-        New-Item -ItemType Directory -Force -Path (Join-Path $root 'logs') | Out-Null
-        if (Test-Path $asrStdoutLog) { Remove-Item $asrStdoutLog -Force -ErrorAction SilentlyContinue }
-        if (Test-Path $asrStderrLog) { Remove-Item $asrStderrLog -Force -ErrorAction SilentlyContinue }
-
-        Write-Host 'El primer inicio puede descargar e instalar sherpa-onnx y el modelo ASR; esto puede tardar varios minutos.' -ForegroundColor Yellow
-        Write-Host 'Iniciando ASR en segundo plano...' -ForegroundColor Cyan
-        $asrProcess = Start-Process -FilePath 'powershell.exe' `
-            -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$asrScript) `
-            -WorkingDirectory $root `
-            -RedirectStandardOutput $asrStdoutLog `
-            -RedirectStandardError $asrStderrLog `
-            -PassThru `
-            -WindowStyle Hidden
-
-        # El ASR corre oculto y con su salida redirigida a logs\asr-*.log, así que
-        # el avance de instalación (p. ej. la descarga del modelo, ~1 GB) no se ve
-        # en ninguna parte por defecto. Vamos leyendo la última línea del log y
-        # reflejándola aquí, en la consola que la persona sí está mirando.
-        $asrOk = $false
-        $ultimaLineaAsr = ''
-        for ($i = 1; $i -le 300; $i++) {
-            Start-Sleep -Seconds 1
-            if (Test-PortOpen -HostName '127.0.0.1' -Port 6006) { $asrOk = $true; break }
-            if ($asrProcess.HasExited) { break }
-            if (Test-Path $asrStdoutLog) {
-                $lineaActual = Get-Content $asrStdoutLog -Tail 1 -ErrorAction SilentlyContinue
-                if ($lineaActual -and $lineaActual -ne $ultimaLineaAsr) {
-                    Write-Host "   $lineaActual" -ForegroundColor DarkGray
-                    $ultimaLineaAsr = $lineaActual
-                }
-            }
-            if (-not $ultimaLineaAsr -and ($i % 30) -eq 0) { Write-Host "Preparando ASR... ${i}s" -ForegroundColor DarkGray }
-        }
-        if ($asrOk) {
-            Write-Host 'ASR: OK (localhost:6006)' -ForegroundColor Green
-        } else {
-            Write-Host 'ASR: no respondió tras la espera. CODES continuará activo.' -ForegroundColor Yellow
-            if ($asrProcess -and $asrProcess.HasExited) { Write-Host "El proceso ASR terminó con código $($asrProcess.ExitCode)." -ForegroundColor Red }
-            if (Test-Path $asrStdoutLog) { Write-Host '--- ASR stdout ---' -ForegroundColor Yellow; Get-Content $asrStdoutLog -Tail 30 }
-            if (Test-Path $asrStderrLog) { Write-Host '--- ASR stderr ---' -ForegroundColor Yellow; Get-Content $asrStderrLog -Tail 30 }
-            Write-Host 'Revisa logs\asr-stderr.log, logs\asr-stdout.log y tools\asr\asr.log.' -ForegroundColor Yellow
-        }
-    } catch {
-        Write-Host "ASR: no se pudo iniciar: $($_.Exception.Message)" -ForegroundColor Yellow
-        Write-Host 'CODES continuará activo.' -ForegroundColor Yellow
-    }
-} else {
-    Write-Host 'ASR: script de inicio no encontrado. CODES continuará activo.' -ForegroundColor Yellow
-}
-
 Write-Host 'Abriendo CODES en el navegador...' -ForegroundColor Cyan
 Start-Process 'http://localhost:8000'
 
 Write-Host ' Servidor: http://localhost:8000/api/health' -ForegroundColor Green
 if (Test-SpringHealth) { Write-Host ' Servidor: OK' -ForegroundColor Green } else { Write-Host ' Servidor: ERROR' -ForegroundColor Red }
-if (Test-PortOpen -HostName '127.0.0.1' -Port 6006) { Write-Host ' ASR: OK (6006)' -ForegroundColor Green } else { Write-Host ' ASR: SIN CONEXION (6006)' -ForegroundColor Yellow }
 Write-Host '=============================================' -ForegroundColor Cyan
 Write-Host 'Cierra esta ventana para detener CODES.' -ForegroundColor DarkGray
 
 # Este watchdog es independiente del proceso de PowerShell que muestra esta
 # ventana. Si la usuaria pulsa X y Windows termina esta consola abruptamente,
-# el watchdog detecta que este PID desapareció y mata Spring + ASR igualmente.
+# el watchdog detecta que este PID desapareció y detiene Spring Boot.
 $watchdog = Join-Path $root 'tools\codes_watchdog.ps1'
 if (Test-Path $watchdog) {
     try {
@@ -551,15 +495,14 @@ try {
     }
 }
 finally {
-    if ($asrProcess -and -not $asrProcess.HasExited) { try { taskkill.exe /PID $asrProcess.Id /T /F | Out-Null } catch {} }
     if ($springProcess -and -not $springProcess.HasExited) { try { taskkill.exe /PID $springProcess.Id /T /F | Out-Null } catch {} }
     Start-Sleep -Milliseconds 500
-    foreach ($port in @(6006,8000)) {
+    foreach ($port in @(8000)) {
         try {
             $connections = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
             foreach ($c in $connections) { if ($c.OwningProcess -and $c.OwningProcess -ne $PID) { taskkill.exe /PID $c.OwningProcess /T /F | Out-Null } }
         } catch {}
     }
     Write-Host ''
-    Write-Host 'CODES detenido. ASR y puertos liberados.' -ForegroundColor Yellow
+    Write-Host 'CODES detenido y puerto liberado.' -ForegroundColor Yellow
 }

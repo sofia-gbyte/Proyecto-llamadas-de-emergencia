@@ -2,7 +2,7 @@
   Borra los CASOS (tabla "calls" de la base H2) para vaciar la basura que
   dejan las pruebas. Es una herramienta DISTINTA de limpiar_proyecto.ps1:
   esa nunca toca la base de datos; esta SOLO toca la base de datos y no
-  toca nada mas (ni target/, ni el modelo ASR, ni el diccionario de calles).
+  toca nada mas (ni target/ ni otros datos operativos).
 
   Por defecto NO borra nada: solo muestra cuantos casos hay ahora mismo.
   Para borrar de verdad hay que usar -Borrar Y ademas escribir la palabra

@@ -21,30 +21,12 @@ import java.time.Duration;
 import java.util.*;
 
 /**
- * Geocodificación tolerante para texto escrito y transcriptiones ASR.
- *
- * Estrategia:
- *  1) Búsqueda estructurada en Nominatim usando la calle detectada
- *     (parámetro "street"), mucho más precisa que texto libre.
- *  2) Nominatim con la consulta en texto libre, puntuando cada resultado
- *     por similitud contra lo que dijo el operador (antes se aceptaba el
- *     primer resultado sin comparar nada, lo que hacía que direcciones
- *     mal transcritas terminaran ancladas en un lugar cualquiera).
- *  3) Si hay comuna/territorio, obtiene su centro y lo usa como contexto
- *     espacial.
- *  4) Photon (también basado en OpenStreetMap) devuelve varios candidatos
- *     y permite aprovechar coincidencias aproximadas del nombre, algo útil
- *     cuando el ASR escribe "Manuel Mond" en vez de "Manuel Montt".
- *  5) Todos los candidatos (Nominatim + Photon) se puntúan juntos por
- *     similitud textual + coincidencia territorial y se elige el mejor.
+ * Geocodificación tolerante mediante Geoapify.
  *
  * Área de cobertura: TODO resultado se descarta si queda a más de
  * app.geocoder.radio-km del centro operativo configurado en
  * app.geocoder.centro-*.
- * Antes esto era solo un "bonus" opcional en el puntaje, y Photon en
- * particular no tenía ninguna restricción geográfica cuando no se lograba
- * detectar una comuna en el texto: buscaba en todo el mundo. Ahora se
- * acota la propia consulta (viewbox/bbox) Y se filtra duro después.
+ * La consulta y el filtro posterior respetan el área operativa configurada.
  *
  * La transcripción original nunca se modifica; solo se normaliza la consulta.
  */
@@ -52,14 +34,13 @@ import java.util.*;
 public class GeocoderService {
     private static final Logger log = LoggerFactory.getLogger(GeocoderService.class);
 
-    /** Nominatim pide un máximo de 1 solicitud por segundo desde un mismo origen. */
-    private static final long NOMINATIM_MIN_INTERVALO_MS = 1100;
     private static final double UMBRAL_ACEPTACION = 0.55;
-    /** 1 grado de latitud ≈ 111 km; se usa para convertir el radio de cobertura a un bbox aproximado. */
-    private static final double KM_POR_GRADO_LAT = 111.0;
 
-    public record Coordinates(Double lat, Double lng) {
-        static final Coordinates EMPTY = new Coordinates(null, null);
+    public record Coordinates(Double lat, Double lng, String formattedAddress) {
+        static final Coordinates EMPTY = new Coordinates(null, null, null);
+        public Coordinates(Double lat, Double lng) {
+            this(lat, lng, null);
+        }
         boolean presente() { return lat != null && lng != null; }
     }
 
@@ -68,15 +49,14 @@ public class GeocoderService {
     private final Path cachePath;
     private final String pais;
     private final String userAgent;
-    private final String nominatimBaseUrl;
-    private final String photonBaseUrl;
+    private final String geoapifyApiKey;
+    private final String geoapifyBaseUrl;
     private final double centroLatDefecto;
     private final double centroLngDefecto;
     private final double radioKm;
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(6)).build();
     private final ObjectMapper mapper = new ObjectMapper();
-    private long ultimaLlamadaNominatim = 0L;
 
     // La caché de geocodificación se mantiene en memoria y se carga una sola
     // vez al iniciar. Antes se releía y reescribía el archivo COMPLETO en
@@ -96,8 +76,8 @@ public class GeocoderService {
             @Value("${app.geocache-path}") String geocachePath,
             @Value("${app.geocoder.pais}") String pais,
             @Value("${app.geocoder.user-agent}") String userAgent,
-            @Value("${app.geocoder.nominatim-base-url:https://nominatim.openstreetmap.org}") String nominatimBaseUrl,
-            @Value("${app.geocoder.photon-base-url:https://photon.komoot.io/api}") String photonBaseUrl,
+            @Value("${app.geoapify.api-key:}") String geoapifyApiKey,
+            @Value("${app.geoapify.base-url:https://api.geoapify.com/v1/geocode/search}") String geoapifyBaseUrl,
             @Value("${app.geocoder.centro-lat:-33.4489}") double centroLatDefecto,
             @Value("${app.geocoder.centro-lng:-70.6693}") double centroLngDefecto,
             @Value("${app.geocoder.radio-km:30}") double radioKm
@@ -105,8 +85,8 @@ public class GeocoderService {
         this.cachePath = Path.of(geocachePath);
         this.pais = pais;
         this.userAgent = userAgent;
-        this.nominatimBaseUrl = normalizarBaseUrl(nominatimBaseUrl);
-        this.photonBaseUrl = normalizarBaseUrl(photonBaseUrl);
+        this.geoapifyApiKey = geoapifyApiKey == null ? "" : geoapifyApiKey.strip();
+        this.geoapifyBaseUrl = normalizarBaseUrl(geoapifyBaseUrl);
         this.centroLatDefecto = centroLatDefecto;
         this.centroLngDefecto = centroLngDefecto;
         this.radioKm = radioKm;
@@ -144,52 +124,19 @@ public class GeocoderService {
         // ubicación del operador, que puede estar lejos del incidente.
         double centroLat = centroLatDefecto;
         double centroLng = centroLngDefecto;
-        String bbox = bbox(centroLat, centroLng, radioKm);
-
-        if (nominatimBaseUrl.isBlank() && photonBaseUrl.isBlank()) {
-            log.warn("No hay proveedor de geocodificación configurado; se omitió la consulta externa.");
+        if (geoapifyApiKey.isBlank() || geoapifyBaseUrl.isBlank()) {
+            log.warn("Geoapify no está configurado; se omitió la consulta externa.");
             return Coordinates.EMPTY;
         }
 
-        // 1) Búsqueda estructurada: mucho más confiable que texto libre porque
-        //    le decimos a Nominatim explícitamente que "address" es una calle.
-        if (address != null && !address.isBlank()) {
-            String calle = limpiarNombreCalle(address);
-            if (calle != null && !calle.isBlank()) {
-                List<Candidato> estructurados = buscarNominatimEstructurado(calle, territorio, bbox);
-                Candidato mejorEstructurado = elegirMejor(estructurados, calle, territorio, centroLat, centroLng);
-                if (mejorEstructurado != null) {
-                    log.debug("Dirección resuelta por búsqueda estructurada.");
-                    return new Coordinates(mejorEstructurado.lat(), mejorEstructurado.lng());
-                }
-            }
-        }
-
-        // 2) Texto libre en Nominatim y Photon, puntuando TODOS los candidatos
-        //    juntos en vez de aceptar a ciegas el primer resultado. Ambas
-        //    fuentes quedan acotadas al área de cobertura (bbox/viewbox).
+        // Geoapify busca solo dentro del radio operativo y la coincidencia
+        // territorial se usa tanto para construir la consulta como para puntuar.
         for (String consulta : consultas) {
-            List<Candidato> candidatos = new ArrayList<>();
-            candidatos.addAll(buscarNominatimLibre(consulta, bbox));
-            candidatos.addAll(buscarPhoton(consulta, centroLat, centroLng, bbox));
+            List<Candidato> candidatos = buscarGeoapify(consulta, territorio, centroLat, centroLng);
             Candidato mejor = elegirMejor(candidatos, consulta, territorio, centroLat, centroLng);
             if (mejor != null) {
-                log.debug("Dirección resuelta por búsqueda libre.");
-                return new Coordinates(mejor.lat(), mejor.lng());
-            }
-        }
-
-        // 3) Último intento: agregar el territorio explícito a la consulta.
-        //    Sigue acotado al mismo bbox: un territorio mal transcrito no
-        //    debería poder escapar del área de cobertura tampoco.
-        if (territorio != null) {
-            for (String consulta : consultas) {
-                List<Candidato> candidatos = buscarNominatimLibre(consulta + ", " + territorio, bbox);
-                Candidato mejor = elegirMejor(candidatos, consulta, territorio, centroLat, centroLng);
-                if (mejor != null) {
-                    log.debug("Dirección resuelta agregando el territorio detectado.");
-                    return new Coordinates(mejor.lat(), mejor.lng());
-                }
+                log.debug("Dirección resuelta por Geoapify.");
+                return new Coordinates(mejor.lat(), mejor.lng(), mejor.nombre());
             }
         }
 
@@ -203,158 +150,59 @@ public class GeocoderService {
                 ? "" : endpoint.replaceAll("/+$", "");
     }
 
-    /** Convierte un centro + radio en km a un bbox "minLon,minLat,maxLon,maxLat" para Nominatim/Photon. */
-    private String bbox(double lat, double lon, double radioKm) {
-        double dLat = radioKm / KM_POR_GRADO_LAT;
-        double kmPorGradoLon = KM_POR_GRADO_LAT * Math.cos(Math.toRadians(lat));
-        double dLon = radioKm / Math.max(kmPorGradoLon, 1.0);
-        double minLon = lon - dLon, maxLon = lon + dLon;
-        double minLat = lat - dLat, maxLat = lat + dLat;
-        return minLon + "," + minLat + "," + maxLon + "," + maxLat;
-    }
-
-    /** Quita el tipo de vía ("Calle", "Avenida"...) y el número, dejando solo el nombre. */
-    private String limpiarNombreCalle(String address) {
-        String texto = address.replaceAll(
-                "(?i)^(calle|pasaje|avenida|av\\.?|sector|poblacion|villa|cerro|camino)\\s+", "");
-        texto = texto.replaceAll("(?i)\\s*#?\\s*\\d{1,5}$", "");
-        return texto.strip();
-    }
-
-    /** Búsqueda estructurada: le indicamos a Nominatim que "calle" es una vía, no texto libre. */
-    private List<Candidato> buscarNominatimEstructurado(String calle, String territorio, String bbox) {
-        if (nominatimBaseUrl.isBlank()) return List.of();
-        StringBuilder url = new StringBuilder(nominatimBaseUrl).append("/search?street=")
-                .append(URLEncoder.encode(calle, StandardCharsets.UTF_8))
-                .append("&country=").append(URLEncoder.encode(pais, StandardCharsets.UTF_8))
-                .append("&format=json&limit=5&addressdetails=1&countrycodes=cl");
-        if (territorio != null && !territorio.isBlank()) {
-            url.append("&city=").append(URLEncoder.encode(territorio, StandardCharsets.UTF_8));
-        }
-        if (bbox != null) url.append("&viewbox=").append(bbox).append("&bounded=1");
-        return ejecutarNominatim(url.toString(), "estructurada(" + calle + ")");
-    }
-
-    private List<Candidato> buscarNominatimLibre(String address, String bbox) {
-        if (nominatimBaseUrl.isBlank()) return List.of();
-        String consulta = normalizarConsulta(address);
-        if (consulta.isBlank()) return List.of();
-        StringBuilder url = new StringBuilder(nominatimBaseUrl).append("/search?q=")
-                .append(URLEncoder.encode(consulta + ", " + pais, StandardCharsets.UTF_8))
-                .append("&format=json&limit=5&addressdetails=1&countrycodes=cl");
-        if (bbox != null) url.append("&viewbox=").append(bbox).append("&bounded=1");
-        return ejecutarNominatim(url.toString(), "libre(" + consulta + ")");
-    }
-
-    private List<Candidato> ejecutarNominatim(String url, String etiquetaDebug) {
-        List<Candidato> cacheados = geocacheMemoria.get(url);
+    private List<Candidato> buscarGeoapify(String consulta, String territorio, double centroLat, double centroLng) {
+        if (geoapifyApiKey.isBlank() || geoapifyBaseUrl.isBlank()) return List.of();
+        String normalized = normalizarConsulta(consulta);
+        if (normalized.isBlank()) return List.of();
+        String texto = normalized + (territorio == null || territorio.isBlank() ? "" : ", " + territorio) + ", " + pais;
+        String cacheKey = String.join("|", texto, Double.toString(centroLat), Double.toString(centroLng), Double.toString(radioKm));
+        List<Candidato> cacheados = geocacheMemoria.get(cacheKey);
         if (cacheados != null) return cacheados;
-
-        respetarLimiteNominatim();
-        List<Candidato> resultado = new ArrayList<>();
         try {
-            URI uri = URI.create(url);
-            HttpRequest req = HttpRequest.newBuilder(uri)
-                    .header("User-Agent", userAgent)
-                    .timeout(Duration.ofSeconds(6)).GET().build();
-            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) {
-                log.warn("Nominatim respondió HTTP {}.", resp.statusCode());
-                return resultado;
-            }
-            JsonNode arr = mapper.readTree(resp.body());
-            if (arr.isArray()) {
-                for (JsonNode n : arr) {
-                    if (n.get("lat") == null || n.get("lon") == null) continue;
-                    JsonNode addr = n.get("address");
-                    String comuna = "";
-                    if (addr != null) {
-                        comuna = addr.path("city").asText("");
-                        if (comuna.isBlank()) comuna = addr.path("town").asText("");
-                        if (comuna.isBlank()) comuna = addr.path("suburb").asText("");
-                        if (comuna.isBlank()) comuna = addr.path("municipality").asText("");
-                        if (comuna.isBlank()) comuna = addr.path("county").asText("");
-                    }
-                    String nombre = n.path("display_name").asText("");
-                    String tipo = n.path("type").asText("");
-                    resultado.add(new Candidato(
-                            n.get("lat").asDouble(), n.get("lon").asDouble(), nombre, tipo, comuna));
-                }
-            }
-            if (resultado.isEmpty()) {
-                log.debug("Nominatim no devolvió resultados.");
-            }
-            geocacheMemoria.put(url, resultado);
-            guardarCache(geocacheMemoria);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.warn("Nominatim request was interrupted.");
-        } catch (IOException | IllegalArgumentException e) {
-            log.warn("Error consultando Nominatim: {}", e.getClass().getSimpleName());
-        }
-        return resultado;
-    }
-
-    /** Nominatim exige como máximo 1 solicitud por segundo por origen; respetamos eso aquí. */
-    private synchronized void respetarLimiteNominatim() {
-        long ahora = System.currentTimeMillis();
-        long espera = NOMINATIM_MIN_INTERVALO_MS - (ahora - ultimaLlamadaNominatim);
-        if (espera > 0) {
-            try {
-                Thread.sleep(espera);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-        ultimaLlamadaNominatim = System.currentTimeMillis();
-    }
-
-    private List<Candidato> buscarPhoton(String consulta, double centroLat, double centroLng, String bbox) {
-        List<Candidato> resultado = new ArrayList<>();
-        if (photonBaseUrl.isBlank()) return resultado;
-        try {
-            StringBuilder url = new StringBuilder(photonBaseUrl).append("/?q=")
-                    .append(URLEncoder.encode(normalizarConsulta(consulta), StandardCharsets.UTF_8))
-                    .append("&limit=10")
-                    .append("&lat=").append(centroLat).append("&lon=").append(centroLng);
-            // Sin bbox, Photon busca en TODO el mundo (esto era la causa real de
-            // resultados en otro continente cuando el texto no traía una comuna
-            // reconocible). Con bbox, solo devuelve resultados dentro del área.
-            if (bbox != null) url.append("&bbox=").append(bbox);
+            long radioMetros = Math.max(1000L, Math.round(radioKm * 1000));
+            String circulo = "circle:" + centroLng + "," + centroLat + "," + radioMetros;
+            StringBuilder url = new StringBuilder(geoapifyBaseUrl)
+                    .append("?text=").append(URLEncoder.encode(texto, StandardCharsets.UTF_8))
+                    .append("&apiKey=").append(URLEncoder.encode(geoapifyApiKey, StandardCharsets.UTF_8))
+                    .append("&format=json&limit=10")
+                    .append("&filter=").append(URLEncoder.encode(circulo, StandardCharsets.UTF_8))
+                    .append("&bias=").append(URLEncoder.encode("proximity:" + centroLng + "," + centroLat, StandardCharsets.UTF_8));
             URI uri = URI.create(url.toString());
             HttpRequest req = HttpRequest.newBuilder(uri)
                     .header("User-Agent", userAgent)
                     .timeout(Duration.ofSeconds(7)).GET().build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() != 200) {
-                log.warn("Photon respondió HTTP {}.", resp.statusCode());
-                return resultado;
+                log.warn("Geoapify respondió HTTP {}.", resp.statusCode());
+                return List.of();
             }
             JsonNode root = mapper.readTree(resp.body());
-            JsonNode features = root.get("features");
-            if (features == null || !features.isArray()) return resultado;
-            for (JsonNode f : features) {
-                JsonNode geom = f.get("geometry");
-                JsonNode coords = geom == null ? null : geom.get("coordinates");
-                JsonNode prop = f.get("properties");
-                if (coords == null || coords.size() < 2) continue;
-                double lon = coords.get(0).asDouble();
-                double lat = coords.get(1).asDouble();
-                String nombre = prop == null ? "" : prop.path("name").asText("");
-                String tipo = prop == null ? "" : prop.path("type").asText("");
-                String comuna = prop == null ? "" : prop.path("city").asText("");
-                if (comuna.isBlank() && prop != null) comuna = prop.path("district").asText("");
-                if (comuna.isBlank() && prop != null) comuna = prop.path("locality").asText("");
-                if (comuna.isBlank() && prop != null) comuna = prop.path("county").asText("");
-                resultado.add(new Candidato(lat, lon, nombre, tipo, comuna));
+            JsonNode results = root.get("results");
+            if (results == null || !results.isArray()) return List.of();
+            List<Candidato> candidatos = new ArrayList<>();
+            for (JsonNode r : results) {
+                JsonNode lat = r.get("lat");
+                JsonNode lon = r.get("lon");
+                if (lat == null || lon == null) continue;
+                String nombre = r.path("formatted").asText("");
+                String tipo = r.path("result_type").asText("");
+                String comuna = r.path("city").asText("");
+                if (comuna.isBlank()) comuna = r.path("suburb").asText("");
+                if (comuna.isBlank()) comuna = r.path("county").asText("");
+                if (comuna.isBlank()) comuna = r.path("state").asText("");
+                candidatos.add(new Candidato(lat.asDouble(), lon.asDouble(), nombre, tipo, comuna));
             }
+            geocacheMemoria.put(cacheKey, candidatos);
+            guardarCache(geocacheMemoria);
+            return candidatos;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.warn("Photon request was interrupted.");
+            log.warn("Geoapify request was interrupted.");
+            return List.of();
         } catch (IOException | IllegalArgumentException e) {
-            log.warn("Error consultando Photon: {}", e.getClass().getSimpleName());
+            log.warn("Error consultando Geoapify: {}", e.getClass().getSimpleName());
+            return List.of();
         }
-        return resultado;
     }
 
     private Candidato elegirMejor(List<Candidato> candidatos, String consulta, String territorio, double centroLat, double centroLng) {
@@ -388,8 +236,7 @@ public class GeocoderService {
                 mejor = c;
             }
         }
-        // Evita aceptar un candidato completamente ajeno al texto: antes esto
-        // solo se aplicaba a Photon, y Nominatim se aceptaba sin puntuar.
+        // Evita aceptar un candidato que no coincide suficientemente con el texto.
         return mejorPuntaje >= UMBRAL_ACEPTACION ? mejor : null;
     }
 

@@ -3,6 +3,7 @@ package cl.codes.controller;
 import cl.codes.controller.dto.CloseRequest;
 import cl.codes.controller.dto.CallResponse;
 import cl.codes.controller.dto.CreateLiveCallRequest;
+import cl.codes.controller.dto.UpdateCallRequest;
 import cl.codes.service.AuditLogService;
 import cl.codes.service.LiveCallService;
 import cl.codes.service.CallService;
@@ -17,6 +18,7 @@ import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.List;
 import java.util.Map;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 @RestController
 @RequestMapping("/api")
@@ -26,9 +28,8 @@ public class CallController {
     private final AuditLogService auditLogService;
     private final String mapTilesUrl;
     private final String routingUrl;
-    private final String asrWebsocketUrl;
-    private final String nominatimBaseUrl;
-    private final String photonBaseUrl;
+    private final boolean geoapifyConfigured;
+    private final boolean groqConfigured;
 
     public CallController(
             CallService service,
@@ -36,9 +37,8 @@ public class CallController {
             AuditLogService auditLogService,
             @Value("${CODES_MAP_TILES_URL:}") String mapTilesUrl,
             @Value("${CODES_ROUTING_URL:https://router.project-osrm.org}") String routingUrl,
-            @Value("${app.asr.websocket-url:ws://localhost:6006}") String asrWebsocketUrl,
-            @Value("${app.geocoder.nominatim-base-url:https://nominatim.openstreetmap.org}") String nominatimBaseUrl,
-            @Value("${app.geocoder.photon-base-url:https://photon.komoot.io/api}") String photonBaseUrl
+            @Value("${app.geoapify.api-key:}") String geoapifyApiKey,
+            @Value("${app.groq.api-key:}") String groqApiKey
     ) {
         this.service = service;
         this.enVivoService = enVivoService;
@@ -47,9 +47,8 @@ public class CallController {
                 ? "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
                 : mapTilesUrl.strip();
         this.routingUrl = routingUrl.strip();
-        this.asrWebsocketUrl = asrWebsocketUrl.strip();
-        this.nominatimBaseUrl = nominatimBaseUrl.strip();
-        this.photonBaseUrl = photonBaseUrl.strip();
+        this.geoapifyConfigured = !geoapifyApiKey.isBlank();
+        this.groqConfigured = !groqApiKey.isBlank();
     }
 
     @GetMapping("/llamadas/pending")
@@ -65,6 +64,32 @@ public class CallController {
     @GetMapping("/llamadas/closed")
     public List<CallResponse> closed(@RequestParam(defaultValue = "50") int limit, Authentication auth) {
         return service.getClosed(Math.max(1, Math.min(limit, 100)), auth).stream().map(CallResponse::de).toList();
+    }
+
+    @GetMapping("/llamadas/{id}")
+    public CallResponse getById(@PathVariable Long id, Authentication auth) {
+        return CallResponse.de(service.getById(id, auth));
+    }
+
+    @PutMapping("/llamadas/{id}")
+    @PreAuthorize("hasAnyRole('SUPERVISOR', 'ADMINISTRATOR')")
+    public CallResponse update(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateCallRequest requestBody,
+            Authentication auth,
+            HttpServletRequest request
+    ) {
+        var call = service.update(id, requestBody.operationalSummary(), requestBody.address(), auth);
+        auditLogService.registrar(auth.getName(), "update-call", "call", String.valueOf(id), request.getRemoteAddr(), "success");
+        return CallResponse.de(call);
+    }
+
+    @DeleteMapping("/llamadas/{id}")
+    @PreAuthorize("hasRole('ADMINISTRATOR')")
+    public ResponseEntity<Void> delete(@PathVariable Long id, Authentication auth, HttpServletRequest request) {
+        service.deletePending(id, auth);
+        auditLogService.registrar(auth.getName(), "archive-call", "call", String.valueOf(id), request.getRemoteAddr(), "success");
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/llamadas/{id}/assign")
@@ -94,7 +119,11 @@ public class CallController {
         String ip = request.getRemoteAddr();
         var call = enVivoService.create(datos.transcription(), audio, auth.getName(), ip, datos.latitudOperador(), datos.longitudOperador());
         auditLogService.registrar(auth.getName(), "create-call", "call", String.valueOf(call.getId()), ip, "success");
-        return ResponseEntity.ok(CallResponse.de(call));
+        var location = ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/api/llamadas/{id}")
+                .buildAndExpand(call.getId())
+                .toUri();
+        return ResponseEntity.created(location).body(CallResponse.de(call));
     }
 
     @GetMapping("/metrics")
@@ -113,9 +142,10 @@ public class CallController {
                 "mapProvider", mapTilesUrl.isBlank() ? "Esri World Imagery" : "Configured map provider",
                 "mapTilesUrl", mapTilesUrl,
                 "mapConfigured", !mapTilesUrl.isBlank(),
-                "geocodingConfigured", !nominatimBaseUrl.isBlank() || !photonBaseUrl.isBlank(),
+                "geocodingConfigured", geoapifyConfigured,
+                "transcriptionConfigured", groqConfigured,
                 "routingUrl", routingUrl,
-                "asrWebsocketUrl", asrWebsocketUrl
+                "transcriptionProvider", "groq-whisper"
         );
     }
 }

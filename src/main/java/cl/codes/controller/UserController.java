@@ -1,19 +1,24 @@
 package cl.codes.controller;
 
 import cl.codes.controller.dto.CreateUserRequest;
+import cl.codes.controller.dto.UpdateUserRequest;
 import cl.codes.controller.dto.UserResponse;
+import cl.codes.exception.ResourceNotFoundException;
 import cl.codes.model.User;
 import cl.codes.repository.UserRepository;
 import cl.codes.service.AuditLogService;
 import cl.codes.service.SecurityService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/users")
@@ -35,8 +40,13 @@ public class UserController {
         return repo.findAll().stream().map(UserResponse::de).toList();
     }
 
+    @GetMapping("/{id}")
+    public UserResponse getById(@PathVariable Long id) {
+        return UserResponse.de(get(id));
+    }
+
     @PostMapping
-    public UserResponse create(@Valid @RequestBody CreateUserRequest req, Authentication auth, HttpServletRequest request) {
+    public ResponseEntity<UserResponse> create(@Valid @RequestBody CreateUserRequest req, Authentication auth, HttpServletRequest request) {
         if (repo.existsByUsername(req.username())) {
             throw new IllegalStateException("A user with that username already exists");
         }
@@ -48,7 +58,58 @@ public class UserController {
         user.setInstitution(req.institution());
         User creado = repo.save(user);
         auditLogService.registrar(auth.getName(), "create-user", "user", creado.getUsername(), request.getRemoteAddr(), "success");
-        return UserResponse.de(creado);
+        var location = ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/api/users/{id}")
+                .buildAndExpand(creado.getId())
+                .toUri();
+        return ResponseEntity.created(location).body(UserResponse.de(creado));
+    }
+
+    @PutMapping("/{id}")
+    public UserResponse update(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateUserRequest req,
+            Authentication auth,
+            HttpServletRequest request
+    ) {
+        User user = get(id);
+        if (req.email() != null && !req.email().isBlank()
+                && repo.existsByEmailIgnoreCaseAndIdNot(req.email().strip(), id)) {
+            throw new IllegalStateException("An account with that email already exists");
+        }
+        if (user.isActive()
+                && "administrator".equalsIgnoreCase(user.getRole())
+                && !"administrator".equalsIgnoreCase(req.rol())
+                && repo.countByRoleIgnoreCaseAndActiveTrue("administrator") <= 1) {
+            throw new IllegalStateException("At least one active administrator must remain");
+        }
+
+        user.setRole(req.rol());
+        user.setInstitution(req.institution());
+        user.setFirstName(normalizeOptional(req.firstName()));
+        user.setLastName(normalizeOptional(req.lastName()));
+        user.setEmail(normalizeOptional(req.email()));
+        user.setSessionsValidFrom(LocalDateTime.now());
+        UserResponse resultado = UserResponse.de(repo.save(user));
+        auditLogService.registrar(auth.getName(), "update-user", "user", user.getUsername(), request.getRemoteAddr(), "success");
+        return resultado;
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id, Authentication auth, HttpServletRequest request) {
+        User user = get(id);
+        if (user.getUsername().equals(auth.getName())) {
+            throw new IllegalStateException("You cannot delete your own account");
+        }
+        if (user.isActive()
+                && "administrator".equalsIgnoreCase(user.getRole())
+                && repo.countByRoleIgnoreCaseAndActiveTrue("administrator") <= 1) {
+            throw new IllegalStateException("At least one active administrator must remain");
+        }
+        String username = user.getUsername();
+        repo.delete(user);
+        auditLogService.registrar(auth.getName(), "delete-user", "user", username, request.getRemoteAddr(), "success");
+        return ResponseEntity.noContent().build();
     }
 
     @PatchMapping("/{id}/disable")
@@ -120,6 +181,10 @@ public class UserController {
     }
 
     private User get(Long id) {
-        return repo.findById(id).orElseThrow(() -> new IllegalArgumentException("User not found"));
+        return repo.findById(Objects.requireNonNull(id)).orElseThrow(() -> new ResourceNotFoundException("User not found"));
+    }
+
+    private String normalizeOptional(String value) {
+        return value == null || value.isBlank() ? null : value.strip();
     }
 }

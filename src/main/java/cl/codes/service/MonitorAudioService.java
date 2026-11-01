@@ -37,7 +37,6 @@ public class MonitorAudioService {
     private final Path encryptedAudioFolder;
     private final TranscriptionService transcriptionService;
     private final GeocoderService geocoderService;
-    private final ChileStreetCorrectionService streetCorrection;
     private final SecurityService securityService;
     private final CallRepository repo;
     private final OperationalSummaryService operationalSummaryService;
@@ -48,7 +47,6 @@ public class MonitorAudioService {
             @Value("${app.audio-encriptado-dir}") String encryptedAudioDir,
             TranscriptionService transcriptionService,
             GeocoderService geocoderService,
-            ChileStreetCorrectionService streetCorrection,
             SecurityService securityService,
             CallRepository repo,
             OperationalSummaryService operationalSummaryService
@@ -57,7 +55,6 @@ public class MonitorAudioService {
         this.encryptedAudioFolder = Path.of(encryptedAudioDir);
         this.transcriptionService = transcriptionService;
         this.geocoderService = geocoderService;
-        this.streetCorrection = streetCorrection;
         this.securityService = securityService;
         this.repo = repo;
         this.operationalSummaryService = operationalSummaryService;
@@ -132,7 +129,7 @@ public class MonitorAudioService {
         log.info("New audio detected: {}", audioPath);
         String transcription;
         try {
-            transcription = streetCorrection.correct(transcriptionService.transcribe(audioPath));
+            transcription = transcriptionService.transcribe(audioPath);
         } catch (Exception e) {
             discardAudio(audioPath, "transcription could not be obtained", e);
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
@@ -149,6 +146,9 @@ public class MonitorAudioService {
 
         try {
             GeocoderService.Coordinates coords = geocoderService.geocode(classification.direccion(), transcription);
+            String address = coords.formattedAddress() != null && !coords.formattedAddress().isBlank()
+                    ? coords.formattedAddress()
+                    : classification.direccion();
 
             String marker = LocalDateTime.now().format(MARCA_TIEMPO);
             Path encryptedPath = encryptedAudioFolder.resolve(marker + "_" + audioPath.getFileName() + ".enc");
@@ -156,7 +156,7 @@ public class MonitorAudioService {
 
             Call call = new Call();
             call.setOriginalAudio(encryptedPath.toString());
-            call.setOperationalSummary(operationalSummaryService.generate(transcription, classification));
+            call.setOperationalSummary(operationalSummaryService.generate(transcription, classification, address));
             call.setTranscription(transcription);
             call.setPriority(classification.priority());
             call.setUrgentScore(classification.puntajes().getOrDefault("urgente", 0));
@@ -166,7 +166,7 @@ public class MonitorAudioService {
             call.setHighlightedWords(mapper.writeValueAsString(classification.highlightedWords()));
             call.setClassificationReasons(mapper.writeValueAsString(classification.motivos()));
             call.setSuggestedInstitutions(mapper.writeValueAsString(classification.institucionesSugeridas()));
-            call.setDetectedAddress(classification.direccion());
+            call.setDetectedAddress(address);
             call.setLatitude(coords.lat());
             call.setLongitude(coords.lng());
             call.setSourceIp("localhost");
@@ -190,5 +190,3 @@ public class MonitorAudioService {
         }
     }
 }
-
-

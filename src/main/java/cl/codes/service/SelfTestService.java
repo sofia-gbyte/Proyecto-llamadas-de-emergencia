@@ -33,25 +33,28 @@ public class SelfTestService {
     private static final Logger log = LoggerFactory.getLogger(SelfTestService.class);
 
     private final UserRepository userRepository;
-    private final AsrStreamingService asrStreamingService;
     private final Path dataDir;
     private final Path geocachePath;
     private final double espacioLibreMinimoGb;
+    private final boolean groqConfigured;
+    private final boolean geoapifyConfigured;
 
     private final AtomicReference<SelfTestResult> ultimoResultado = new AtomicReference<>();
 
     public SelfTestService(
             UserRepository userRepository,
-            AsrStreamingService asrStreamingService,
             @Value("${app.data-dir:./data}") String dataDir,
             @Value("${app.geocache-path:./data/geocache.json}") String geocachePath,
-            @Value("${app.selftest.min-free-space-gb:1.0}") double espacioLibreMinimoGb
+            @Value("${app.selftest.min-free-space-gb:1.0}") double espacioLibreMinimoGb,
+            @Value("${app.groq.api-key:}") String groqApiKey,
+            @Value("${app.geoapify.api-key:}") String geoapifyApiKey
     ) {
         this.userRepository = userRepository;
-        this.asrStreamingService = asrStreamingService;
         this.dataDir = Path.of(dataDir);
         this.geocachePath = Path.of(geocachePath);
         this.espacioLibreMinimoGb = espacioLibreMinimoGb;
+        this.groqConfigured = groqApiKey != null && !groqApiKey.isBlank();
+        this.geoapifyConfigured = geoapifyApiKey != null && !geoapifyApiKey.isBlank();
     }
 
     public record CheckResult(String nombre, boolean ok, String detalle) {}
@@ -104,10 +107,13 @@ public class SelfTestService {
             checks.add(new CheckResult("espacio_libre", false, "No se pudo calcular: " + e.getMessage()));
         }
 
-        // 4. ASR en vivo. No es crítico: CODES sigue operando con transcripción manual si esto falla.
-        boolean asrOk = asrStreamingService.estaDisponible();
-        checks.add(new CheckResult("asr_streaming", asrOk,
-                asrOk ? "ws://localhost:6006 responde" : "No responde; la transcripción manual sigue disponible"));
+        // 4. Servicios externos: solo se valida que sus claves estén configuradas.
+        checks.add(new CheckResult("groq_whisper", groqConfigured,
+                groqConfigured ? "Clave configurada; disponibilidad se valida al transcribir."
+                        : "Falta GROQ_API_KEY; la transcripción automática no está disponible."));
+        checks.add(new CheckResult("geoapify", geoapifyConfigured,
+                geoapifyConfigured ? "Clave configurada; disponibilidad se valida al geocodificar."
+                        : "Falta GEOAPIFY_API_KEY; la geocodificación automática no está disponible."));
 
         // 5. Carpeta de caché de geocodificación. Tampoco crítico.
         try {

@@ -1,17 +1,18 @@
 package cl.codes.config;
 
 import cl.codes.security.JwtAuthFilter;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -73,6 +74,19 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .exceptionHandling(errors -> errors
+                .authenticationEntryPoint((request, response, exception) -> {
+                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                    response.setCharacterEncoding(java.nio.charset.StandardCharsets.UTF_8.name());
+                    response.getWriter().write("{\"error\":\"Authentication required\"}");
+                })
+                .accessDeniedHandler((request, response, exception) -> {
+                    response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                    response.setCharacterEncoding(java.nio.charset.StandardCharsets.UTF_8.name());
+                    response.getWriter().write("{\"error\":\"No tienes permisos para realizar esta acción\"}");
+                }))
             .headers(headers -> headers
                 .cacheControl(cache -> {})
                 .contentTypeOptions(contentType -> {})
@@ -84,7 +98,7 @@ public class SecurityConfig {
             )
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // preflight CORS
-                .requestMatchers("/", "/index.html", "/styles.css", "/script.js", "/favicon.ico", "/webjars/**", "/error", "/api/auth/login", "/api/auth/register", "/api/auth/captcha-site-key", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/health", "/api/heartbeat", "/api/public-config").permitAll()
+                .requestMatchers("/", "/index.html", "/styles.css", "/console-redesign.css", "/script.js", "/favicon.ico", "/webjars/**", "/error", "/api/auth/login", "/api/auth/register", "/api/auth/captcha-site-key", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/health", "/api/heartbeat", "/api/public-config").permitAll()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
@@ -109,5 +123,3 @@ public class SecurityConfig {
         return source;
     }
 }
-
-

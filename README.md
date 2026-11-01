@@ -1,33 +1,42 @@
-# CODES — Sistema de llamadas de emergencia
+# CODES 1.0.0 — Sistema de llamadas de emergencia
 
-CODES es una aplicación web para apoyar la recepción, registro y gestión de llamadas de emergencia. El sistema permite trabajar con llamadas en vivo, transcripción local mediante ASR, clasificación inicial, geocodificación y seguimiento de los casos desde una interfaz web.
+CODES es una aplicación web para apoyar la recepción, registro y gestión de llamadas de emergencia. El sistema permite trabajar con llamadas en vivo, transcripción con Groq Whisper, clasificación inicial, geocodificación con Geoapify y seguimiento de los casos desde una interfaz web.
+
+**Versión del proyecto: `1.0.0`.** Consulta el [historial de cambios](CHANGELOG.md) para ver las novedades de esta versión y las notas de compatibilidad.
 
 El proyecto está orientado a uso local o dentro de una red interna controlada. **Aún no está listo para exponerse directamente a Internet.**
 
-> Leaflet se incluye dentro de la aplicación. El mapa base es **Esri World Imagery** (satélite); las rutas usan OSRM y la geocodificación Nominatim/Photon. Son servicios públicos sin SLA. Las direcciones y coordenadas de incidentes se envían a esos proveedores cuando se usan las funciones correspondientes. Ver [operación local](OPERACION_LOCAL.md) y el [inventario de licencias y servicios](THIRD_PARTY_LICENSES.md).
+> Leaflet se incluye dentro de la aplicación. El mapa base es **Esri World Imagery** (satélite); las rutas usan OSRM y la geocodificación usa Geoapify como proveedor principal. Las direcciones y coordenadas de incidentes se envían a esos servicios cuando se usan las funciones correspondientes. Ver [operación local](OPERACION_LOCAL.md) y el [inventario de licencias y servicios](THIRD_PARTY_LICENSES.md).
 
 ## Contenido
 
 - [Inicio rápido](#inicio-rápido)
+- [Arquitectura y decisiones](#arquitectura-y-decisiones)
+- [API REST y contratos](#api-rest-y-contratos)
 - [Mapa y servicios cartográficos](#mapa-y-servicios-cartográficos)
-- [ASR local](#llamadas-en-vivo-y-asr)
+- [Llamadas en vivo y transcripción](#llamadas-en-vivo-y-transcripción)
 - [Direcciones y datos OSM](#direcciones-y-geocodificación)
 - [Red y acceso desde otros equipos](#red-y-acceso-desde-otros-equipos)
 - [Desarrollo y pruebas](#desarrollo-y-pruebas)
 - [Producción](#antes-de-usarlo-en-producción)
 - [Licencias y asistencia de IA](THIRD_PARTY_LICENSES.md)
+- [Historial de cambios](CHANGELOG.md)
 
 ---
+
+> **Alcance de la versión 1.0.0:** versión funcional para demostración y uso local controlado. No implica que CODES esté preparado para su exposición directa a Internet ni para despachos de emergencia reales sin las revisiones operativas, legales, de privacidad y disponibilidad descritas en [operación local](OPERACION_LOCAL.md).
 
 ## Funcionalidades principales
 
 - Gestión de llamadas pendientes, en curso y cerradas.
+- CRUD de usuarios para administración y gestión de llamadas con aislamiento institucional.
+- Archivo lógico de llamadas pendientes no asignadas para preservar la trazabilidad; los casos en curso o cerrados no se eliminan.
 - Registro manual y recepción de llamadas en vivo.
-- Transcripción local mediante **sherpa-onnx**.
+- Transcripción de audio mediante **Groq Whisper**.
 - Extracción y corrección de direcciones a partir de la transcripción.
 - Geocodificación de direcciones.
 - Clasificación inicial de llamadas mediante lógica heurística.
-- Mapa basado en **Leaflet** (incluido dentro del JAR) con OpenStreetMap, OSRM, Nominatim y Photon públicos.
+- Mapa basado en **Leaflet** (incluido dentro del JAR), geocodificación con Geoapify y rutas con OSRM.
 - Usuarios con roles `operator`, `supervisor` y `administrator`.
 - Activación administrativa de cuentas registradas.
 - Aislamiento de llamadas y métricas por institución para usuarios no administradores.
@@ -35,7 +44,7 @@ El proyecto está orientado a uso local o dentro de una red interna controlada. 
 - Invalidación de sesiones JWT al cerrar sesión, cambiar contraseña, desactivar una cuenta o forzar el cierre de sesiones.
 - Limitación de intentos de autenticación y solicitudes de recuperación/registro.
 - Registro de eventos de auditoría en `logs/auditoria.log`.
-- Autochequeo interno de base de datos, disco, ASR y caché de geocodificación.
+- Autochequeo interno de base de datos, disco, claves de proveedores externos y caché de geocodificación.
 - Cifrado AES-256-GCM para los audios almacenados.
 - Base de datos H2 en archivo, sin necesidad de instalar un servidor de base de datos adicional.
 
@@ -52,8 +61,68 @@ El proyecto está orientado a uso local o dentro de una red interna controlada. 
 - JSON Web Token (JJWT)
 - Leaflet
 - Cloudflare Turnstile opcional (desactivado por defecto)
-- sherpa-onnx
-- Python, para las herramientas auxiliares de calles
+- Groq Whisper para transcripción
+- Geoapify para geocodificación
+
+## Arquitectura y decisiones
+
+CODES se implementa como un **monolito modular**: una aplicación Spring Boot sirve la interfaz web y la API REST, y organiza el código en controladores, servicios, repositorios y entidades. El controlador recibe y valida la petición; el servicio aplica reglas de institución y estado del caso; el repositorio usa Spring Data JPA e Hibernate; y H2 persiste los datos en `data/llamadas.mv.db`.
+
+Para este proyecto se eligió **Java 21 + Spring Boot** frente a **Python + FastAPI**. Se priorizaron tres criterios propios del caso: (1) seguridad y roles integrados para separar operadores, supervisores y administradores; (2) persistencia relacional y validación de contratos con poco código de infraestructura; y (3) facilidad para probar y ejecutar toda la solución como una unidad. Spring Boot resuelve el enrutamiento HTTP, inyección de dependencias, validación, seguridad y acceso JPA. El costo aceptado es una aplicación más pesada y con más configuración que una API pequeña en FastAPI.
+
+Se mantiene el monolito porque los flujos de registro, clasificación y despacho comparten datos y reglas, y el equipo puede desarrollar y desplegar una sola unidad sin operar varios servicios, redes y contratos distribuidos. Esto simplifica la instalación y las operaciones transaccionales. El costo aceptado es que las partes no escalan ni se despliegan independientemente; si el volumen o la disponibilidad lo exigieran, primero habría que migrar la persistencia a un servidor como PostgreSQL y definir límites de servicio.
+
+## API REST y contratos
+
+La API está orientada a los recursos `users` y `llamadas`. Las operaciones administrativas de usuarios requieren el rol `administrator`; el detalle de una llamada respeta el aislamiento institucional y las modificaciones operativas se reservan a supervisores y administradores.
+
+| Recurso | Operación | Ruta | Acceso / resultado |
+|---|---|---|---|
+| Usuarios | Crear | `POST /api/users` | Administrador; `201 Created` y cabecera `Location` |
+| Usuarios | Listar / consultar | `GET /api/users`, `GET /api/users/{id}` | Administrador; `200 OK` |
+| Usuarios | Actualizar perfil y rol | `PUT /api/users/{id}` | Administrador; `200 OK` |
+| Usuarios | Eliminar | `DELETE /api/users/{id}` | Administrador; `204 No Content`; no permite borrar la propia cuenta ni al último administrador activo |
+| Llamadas | Crear en vivo | `POST /api/llamadas/live` | Operador, supervisor o administrador; `201 Created` y `Location` |
+| Llamadas | Listar / consultar | `GET /api/llamadas/pending`, `/in-progress`, `/closed`, `GET /api/llamadas/{id}` | Autenticado; `200 OK`, filtrado por institución |
+| Llamadas | Corregir resumen y dirección | `PUT /api/llamadas/{id}` | Supervisor o administrador; `200 OK`; solo casos abiertos |
+| Llamadas | Retirar de operación | `DELETE /api/llamadas/{id}` | Administrador; `204 No Content`; archiva lógicamente solo llamadas pendientes sin asignar |
+
+Las peticiones JSON usan `Content-Type: application/json` y las operaciones protegidas requieren `Authorization: Bearer <JWT>`. La creación de llamadas en vivo usa `multipart/form-data`: la parte `datos` contiene la transcripción y coordenadas del operador, y `audio` es opcional.
+
+Ejemplos de contratos:
+
+```json
+POST /api/users
+{
+  "username": "operador01",
+  "password": "UnaClaveSegura!2026",
+  "rol": "operator",
+  "institution": "bomberos"
+}
+```
+
+```json
+PUT /api/users/12
+{
+  "rol": "supervisor",
+  "institution": "bomberos",
+  "firstName": "Ana",
+  "lastName": "Pérez",
+  "email": "ana@example.org"
+}
+```
+
+```json
+PUT /api/llamadas/34
+{
+  "operationalSummary": "Humo visible en vivienda de un piso.",
+  "address": "Av. Central 123"
+}
+```
+
+La creación de llamadas devuelve la representación `CallResponse` después de transcribir, clasificar y geocodificar. Los valores de prioridad y puntuaciones son resultados de clasificación; el `PUT` de llamada solo corrige el resumen operativo y la dirección para evitar alterar manualmente esa clasificación.
+
+Los errores siguen un contrato JSON: `400` para validación o datos inválidos, `401` para falta de autenticación, `403` para rol no autorizado, `404` para recurso inexistente o no visible por institución, `409` para conflictos de estado o unicidad, `413` para cargas demasiado grandes y `500` para errores inesperados (con una referencia de correlación). Las llamadas retiradas se conservan en H2 para no perder la trazabilidad; no aparecen en colas ni métricas operativas.
 
 ---
 
@@ -64,12 +133,9 @@ Para ejecutar CODES desde el código fuente:
 - JDK **21 o superior**
 - Maven
 - Windows si se quieren utilizar los scripts `.bat` y `.ps1` incluidos.
-- Python, solo para las herramientas relacionadas con el diccionario de calles.
-- Acceso a Internet para descargar el modelo ASR, consultar el mapa público y actualizar el diccionario de calles.
+- Acceso a Internet para Groq Whisper, Geoapify y los servicios cartográficos.
 
-El modelo de ASR no forma parte del ZIP liviano. Los scripts de `tools/asr` pueden instalarlo cuando sea necesario.
-
-Las llamadas en vivo limitan los archivos de audio a **15 MB por archivo** y **16 MB por petición**.
+Las llamadas en vivo se envían a Groq al detener y guardar la grabación. El límite de transcripción de Groq es **25 MB** por archivo.
 
 ---
 
@@ -83,20 +149,14 @@ La forma más sencilla de iniciar CODES es:
 CODES.bat
 ```
 
-El menú permite iniciar CODES con ASR, diagnosticar Java/Maven/ASR, ejecutar la limpieza y crear un respaldo local.
+El menú permite iniciar CODES, diagnosticar Java/Maven, ejecutar la limpieza y crear un respaldo local.
 
-Durante el inicio, el script comprueba Java y Maven, prepara las claves locales necesarias y ejecuta Spring Boot. Cuando corresponde, también intenta preparar/iniciar el ASR local.
+Durante el inicio, el script comprueba Java y Maven, carga las claves locales y ejecuta Spring Boot.
 
 Por defecto, la aplicación queda disponible en:
 
 ```text
 http://localhost:8000
-```
-
-El ASR local utiliza:
-
-```text
-ws://localhost:6006
 ```
 
 ### Inicio manual
@@ -119,16 +179,6 @@ Para ejecutar las pruebas:
 mvn test
 ```
 
-Si se necesita el ASR y todavía no está instalado:
-
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\tools\asr\install_windows.ps1
-.\tools\asr\start_asr_windows.ps1
-```
-
-El servicio ASR es local al equipo que ejecuta CODES. No se debe publicar directamente en la red.
-
 ---
 
 # Primer arranque y secretos
@@ -141,10 +191,11 @@ Las variables principales son:
 $env:CODES_JWT_SECRET="secreto-largo-y-aleatorio"
 $env:CODES_ENCRYPT_KEY="clave-base64-de-32-bytes"
 $env:CODES_ADMIN_USER="admin"
-$env:CODES_ADMIN_PASSWORD="una-password-segura"
+$env:CODES_ADMIN_PASSWORD="<tu-clave-segura>"
 ```
 
 La clave JWT y la clave de cifrado de audios son independientes. **No deben reutilizarse entre sí.**
+Para H2 local, el nombre de usuario predeterminado es `sa` y la contraseña queda vacía; se pueden externalizar con `CODES_DB_USERNAME` y `CODES_DB_PASSWORD`.
 
 ## Uso de `CODES.bat`
 
@@ -164,6 +215,23 @@ Ese archivo contiene secretos persistentes del entorno local.
 En una instalación nueva, el script genera una contraseña inicial aleatoria para el administrador y la muestra durante el primer arranque. Después de entrar al sistema conviene cambiarla.
 
 El bootstrap del administrador se ejecuta únicamente cuando todavía no existe ningún usuario. CODES no reemplaza la contraseña del administrador en cada arranque.
+
+## Claves de Groq y Geoapify
+
+Al iniciar mediante `CODES.bat`, edita el archivo local ignorado por Git:
+
+```text
+data\.codes-secrets.ps1
+```
+
+Agrega o completa estas líneas con las claves obtenidas en los paneles de cada proveedor:
+
+```powershell
+$env:GROQ_API_KEY = 'tu_clave_de_groq'
+$env:GEOAPIFY_API_KEY = 'tu_clave_de_geoapify'
+```
+
+Guarda el archivo y vuelve a iniciar `CODES.bat`. No pongas las claves en `application.properties`, en JavaScript ni en el navegador; nunca las compartas ni las subas al repositorio. Para iniciar desde una terminal sin el lanzador, exporta esas mismas variables de entorno antes de ejecutar Maven.
 
 ---
 
@@ -224,19 +292,7 @@ La configuración actual no implementa HTTPS directamente.
 
 Para una LAN pequeña y realmente controlada puede utilizarse HTTP si el tráfico hacia el servidor está restringido y no existe exposición directa a Internet. Si CODES sale de esa red, o si la red no puede considerarse confiable, debe colocarse un reverse proxy con HTTPS delante de la aplicación.
 
-El puerto del ASR:
-
-```text
-6006
-```
-
-debe mantenerse local. Actualmente el flujo utiliza:
-
-```text
-ws://localhost:6006
-```
-
-y no está preparado para publicar el WebSocket del ASR a otros equipos.
+El puerto web configurado para Spring Boot debe mantenerse dentro de la red autorizada o detrás del proxy HTTPS.
 
 ---
 
@@ -328,48 +384,29 @@ Sin SMTP configurado, la solicitud de recuperación no puede enviar el correo. E
 
 ---
 
-# Llamadas en vivo y ASR
+# Llamadas en vivo y transcripción
 
-El modo de llamada en vivo utiliza un servicio local basado en **sherpa-onnx**.
+El navegador graba el audio localmente; al pulsar **Detener y guardar**, lo envía al backend, que lo transcribe con **Groq Whisper**, clasifica el texto, geocodifica la dirección con Geoapify y almacena el audio cifrado.
 
 Flujo general:
 
 ```text
 Micrófono del navegador
         ↓
-WebSocket local
+Grabación de audio
         ↓
-sherpa-onnx
+Backend CODES → Groq Whisper
         ↓
 Transcripción
         ↓
 Extracción/corrección de dirección
         ↓
-Geocodificación
+Geoapify
         ↓
 Registro de la llamada
 ```
 
-El modelo configurado actualmente es:
-
-```text
-sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11
-```
-
-El modelo no se incluye en el ZIP liviano.
-
-El ASR se ejecuta localmente y el endpoint WebSocket actual es:
-
-```text
-ws://localhost:6006
-```
-
-El backend también dispone de procesamiento para audios completos almacenados, cuyos límites son:
-
-```text
-15 MB  máximo por archivo
-16 MB  máximo por petición
-```
+El servicio de transcripción acepta grabaciones de hasta **25 MB** por archivo. El audio se transmite a Groq al guardar y también se conserva cifrado en CODES después de crear correctamente el caso. Si Groq no está configurado o falla, el envío no crea el caso y la interfaz permite reintentar.
 
 La clasificación automática es heurística y debe considerarse una ayuda para el operador, no un mecanismo autónomo de despacho o decisión.
 
@@ -377,66 +414,23 @@ La clasificación automática es heurística y debe considerarse una ayuda para 
 
 # Direcciones y geocodificación
 
-Después de obtener la transcripción, CODES intenta identificar una dirección y corregir posibles errores producidos por el ASR.
-
-El diccionario local de calles se encuentra en:
-
-```text
-data/calles_chile.txt
-```
-
-Si el diccionario no está disponible, CODES puede conservar la transcripción sin aplicar esa corrección.
+Después de obtener la transcripción, CODES intenta identificar una dirección. No descarga ni utiliza un diccionario local de calles.
 
 La geocodificación se realiza mediante `GeocoderService`. El sistema aplica comprobaciones de similitud antes de aceptar un resultado.
 
 La ubicación GPS del operador no limita la búsqueda: un incidente puede estar lejos del dispositivo. El radio y el centro de búsqueda representan el área operativa configurada en `application.properties`.
 
-Por defecto, CODES consulta Nominatim y usa Photon como alternativa cuando la búsqueda no encuentra una coincidencia aceptable. Las consultas se limitan al centro y radio operativos configurados y se cachean localmente para evitar repetirlas. Ambas son APIs públicas: al geocodificar se envía la dirección del incidente al proveedor. Puedes cambiar sus endpoints con `CODES_NOMINATIM_BASE_URL` y `CODES_PHOTON_BASE_URL`; revisa las políticas y límites antes de utilizarlas.
+Geoapify es el único proveedor de geocodificación. Las búsquedas se limitan al centro y radio operativos configurados y se cachean localmente para evitar repetirlas. La dirección del incidente se envía a Geoapify; configura `GEOAPIFY_API_KEY` como se indica arriba.
 
 ## Mapa y servicios cartográficos
 
-El mapa base usa **Esri World Imagery**, un mapa satelital servido desde ArcGIS Online. No requiere cuenta, tarjeta ni clave API. La atribución mostrada se basa en los créditos del servicio: `© Esri — Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community`. Las rutas usan OSRM Demo; la geocodificación usa Nominatim con Photon como alternativa. Son servicios públicos de mejor esfuerzo, sin SLA ni garantía de disponibilidad; la interfaz muestra una advertencia.
+El mapa base usa **Esri World Imagery**, un mapa satelital servido desde ArcGIS Online. No requiere cuenta, tarjeta ni clave API. La atribución mostrada se basa en los créditos del servicio: `© Esri — Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community`. Las rutas usan OSRM Demo; la geocodificación usa Geoapify.
 
-Las imágenes requieren conexión a Internet y están sujetas a los [términos de Esri](https://www.esri.com/en-us/legal/terms/full-master-agreement). Al geocodificar, la dirección del incidente se envía a Nominatim y, si es necesario, a Photon; al pedir una ruta, las coordenadas del operador y del incidente se envían a OSRM. No uses estos endpoints públicos con incidentes reales o información sensible sin una revisión y autorización operativa/legal apropiada. Nominatim limita el uso público y exige respetar su política; evita cargas masivas, autocomplete y depender de estos servicios como única infraestructura de despacho crítico.
+Las imágenes requieren conexión a Internet y están sujetas a los [términos de Esri](https://www.esri.com/en-us/legal/terms/full-master-agreement). Al transcribir, el audio se envía a Groq; al geocodificar, la dirección se envía a Geoapify; al pedir una ruta, las coordenadas del operador y del incidente se envían a OSRM. No uses estos servicios con incidentes reales o información sensible sin revisar previamente sus términos, privacidad y tratamiento de datos.
 
-Puedes sustituir los endpoints mediante `CODES_MAP_TILES_URL`, `CODES_ROUTING_URL`, `CODES_NOMINATIM_BASE_URL` y `CODES_PHOTON_BASE_URL`. Las rutas deben ser compatibles con OSRM y las teselas con una plantilla URL válida para Leaflet.
+Puedes configurar `CODES_MAP_TILES_URL` y `CODES_ROUTING_URL`. Las rutas deben ser compatibles con OSRM y las teselas con una plantilla URL válida para Leaflet.
 
 ---
-
-# Diccionario de calles
-
-## Overpass / OpenStreetMap
-
-Para generar o ampliar el diccionario:
-
-```powershell
-python -m pip install requests
-python tools/streets/fetch_calles_overpass.py data/calles_chile.txt
-```
-
-Por defecto, la herramienta trabaja con la Región Metropolitana.
-
-Para otra región:
-
-```powershell
-python tools/streets/fetch_calles_overpass.py data/calles_chile.txt --region "Nombre de la región"
-```
-
-## Desde un PBF
-
-Si se dispone de un extracto de OpenStreetMap:
-
-```powershell
-python -m pip install osmium
-```
-
-Luego se puede descargar, por ejemplo, el PBF de Chile desde Geofabrik y procesarlo con:
-
-```powershell
-python tools/streets/extract_calles_chile.py .\map-data\chile-latest.osm.pbf .\data\calles_chile.txt
-```
-
-Asi se puede generar el diccionario desde el mismo PBF autohospedado sin llamar a Overpass. El archivo PBF es un insumo de trabajo; si los servicios propios se mantienen, conservarlo y actualizarlo junto con los datos de teselas/geocodificacion/rutas.
 
 ---
 
@@ -458,7 +452,6 @@ data/
 ├── audios_crudos/
 ├── audios_encriptados/
 ├── geocache.json
-├── calles_chile.txt
 └── .codes-secrets.ps1
 ```
 
@@ -513,7 +506,7 @@ El autochequeo revisa:
 - acceso a la base de datos;
 - escritura en disco;
 - espacio disponible;
-- disponibilidad del ASR local;
+- configuración de las claves de Groq Whisper y Geoapify;
 - acceso a la caché de geocodificación.
 
 El resultado puede consultarse como administrador:
@@ -531,7 +524,7 @@ OPERACION_LOCAL.md
 
 ---
 
-# API principal
+### Inventario de rutas
 
 Estas son las rutas principales actualmente implementadas:
 
@@ -548,6 +541,9 @@ GET/POST /api/auth/captcha-site-key
 
 GET    /api/users
 POST   /api/users
+GET    /api/users/{id}
+PUT    /api/users/{id}
+DELETE /api/users/{id}
 PATCH  /api/users/{id}/disable
 PATCH  /api/users/{id}/enable
 PATCH  /api/users/{id}/reset-password
@@ -556,6 +552,9 @@ PATCH  /api/users/{id}/close-sessions
 GET    /api/llamadas/pending
 GET    /api/llamadas/in-progress
 GET    /api/llamadas/closed
+GET    /api/llamadas/{id}
+PUT    /api/llamadas/{id}
+DELETE /api/llamadas/{id}
 POST   /api/llamadas/{id}/assign
 POST   /api/llamadas/{id}/close
 POST   /api/llamadas/live
@@ -566,7 +565,7 @@ GET    /api/admin/status
 POST   /api/admin/selftest
 ```
 
-Las operaciones protegidas requieren autenticación y, según el caso, un rol autorizado.
+Las operaciones protegidas requieren autenticación y, según el caso, un rol autorizado. `DELETE /api/llamadas/{id}` archiva únicamente casos todavía pendientes y sin asignar; los casos cerrados o en gestión se preservan como historial.
 
 ---
 
@@ -596,13 +595,16 @@ CODES_TURNSTILE_ENABLED
 
 CODES_MAP_TILES_URL
 CODES_ROUTING_URL
-CODES_NOMINATIM_BASE_URL
-CODES_PHOTON_BASE_URL
+GROQ_API_KEY
+GROQ_BASE_URL
+GROQ_MODEL
+GROQ_LANGUAGE
+GEOAPIFY_API_KEY
+GEOAPIFY_BASE_URL
 CODES_GEOCODER_CENTER_LAT
 CODES_GEOCODER_CENTER_LNG
 CODES_GEOCODER_RADIUS_KM
 CODES_GEOCODER_USER_AGENT
-CODES_ASR_WEBSOCKET_URL
 
 CODES_DATA_DIR
 
@@ -614,7 +616,7 @@ CODES_MAIL_FROM
 CODES_PUBLIC_BASE_URL
 ```
 
-Otros parámetros de operación, como el intervalo del autochequeo, mantenimiento, CORS, rutas de datos y configuración del ASR, se encuentran en `application.properties`.
+Otros parámetros de operación, como el intervalo del autochequeo, mantenimiento, CORS y rutas de datos, se encuentran en `application.properties`.
 
 ---
 
@@ -624,7 +626,8 @@ Otros parámetros de operación, como el intervalo del autochequeo, mantenimient
 CODES/
 ├── .github/
 ├── data/
-│   └── calles_chile.txt
+│   ├── llamadas.mv.db
+│   └── .codes-secrets.ps1
 ├── src/
 │   ├── main/
 │   │   ├── java/cl/codes/
@@ -643,8 +646,6 @@ CODES/
 │   │       └── application.properties
 │   └── test/
 ├── tools/
-│   ├── asr/
-│   └── streets/
 ├── CODES.bat
 ├── pom.xml
 ├── OPERACION_LOCAL.md
@@ -717,7 +718,7 @@ CODES maneja información potencialmente sensible. Antes de utilizarlo operativa
 - HTTPS si la red no es completamente controlada;
 - firewall y segmentación de red;
 - CORS;
-- protección del WebSocket del ASR;
+- protección de las claves y conexiones a proveedores externos;
 - respaldo de `CODES_ENCRYPT_KEY`;
 - copias de seguridad de la base de datos;
 - pruebas reales de restauración;
@@ -726,8 +727,8 @@ CODES maneja información potencialmente sensible. Antes de utilizarlo operativa
 - configuración de SMTP;
 - protección anti-abuso para login/registro (Turnstile o controles equivalentes);
 - límites y condiciones de los servicios públicos de mapas/geocodificación/rutas, o despliegue de instancias propias;
-- actualización y procedencia del modelo ASR;
-- monitoreo del servidor y del ASR;
+- revisión de los modelos y condiciones de Groq Whisper;
+- monitoreo del servidor y los proveedores externos;
 - pruebas de integración y seguridad.
 
 La configuración actual utiliza H2 con:
@@ -751,7 +752,7 @@ Entre ellas:
 - backups y restauración probada;
 - almacenamiento/monitoreo externo de auditoría;
 - migraciones formales de base de datos;
-- endurecimiento del WebSocket del ASR;
+- acuerdos y configuración segura de los proveedores externos;
 - monitoreo externo independiente.
 
 Además, el backend dispone de `POST /api/auth/logout`, pero el cierre de sesión debe utilizar ese endpoint para invalidar el JWT inmediatamente. El comportamiento visual del frontend no debe confundirse con la invalidación del token en servidor.
@@ -766,6 +767,6 @@ OPERACION_LOCAL.md
 
 # Licencias y producción
 
-Este repositorio no declara una licencia open source propia. Los componentes, el modelo ASR, los datos de OpenStreetMap y los servicios alojados tienen términos distintos. Revisar el [inventario de licencias y servicios](THIRD_PARTY_LICENSES.md) antes de distribuir.
+Este repositorio no declara una licencia open source propia. Los componentes, los datos de OpenStreetMap y los servicios alojados tienen términos distintos. Revisar el [inventario de licencias y servicios](THIRD_PARTY_LICENSES.md) antes de distribuir.
 
-Para exponer CODES a dispositivos por Internet todavía hacen falta, entre otras cosas, HTTPS/WSS, autenticación del WebSocket ASR, una base de datos de producción, almacenamiento y respaldo protegidos, y pruebas de seguridad. La guía de siguientes pasos está en [OPERACION_LOCAL.md](OPERACION_LOCAL.md).
+Para exponer CODES a dispositivos por Internet todavía hacen falta, entre otras cosas, HTTPS, protección adecuada de secretos y proveedores, una base de datos de producción, almacenamiento y respaldo protegidos, y pruebas de seguridad. La guía de siguientes pasos está en [OPERACION_LOCAL.md](OPERACION_LOCAL.md).

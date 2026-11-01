@@ -1,88 +1,123 @@
 package cl.codes.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
+import java.util.UUID;
 
 /**
- * Local fallback transcription for audio files received after the upload is complete.
+ * Speech-to-text using the Groq Whisper API.
  */
 @Service
 public class TranscriptionService {
 
-    private final String executable;
-    private final String encoder;
-    private final String decoder;
-    private final String joiner;
-    private final String tokens;
+    private final String apiKey;
+    private final String baseUrl;
+    private final String model;
     private final String language;
-    private final int threads;
+    private final HttpClient http = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(Duration.ofSeconds(10))
+            .build();
+    private final ObjectMapper mapper = new ObjectMapper();
 
     public TranscriptionService(
-            @Value("${app.asr.command:sherpa-onnx}") String executable,
-            @Value("${app.asr.encoder:}") String encoder,
-            @Value("${app.asr.decoder:}") String decoder,
-            @Value("${app.asr.joiner:}") String joiner,
-            @Value("${app.asr.tokens:}") String tokens,
-            @Value("${app.asr.idioma:es-ES}") String language,
-            @Value("${app.asr.hilos:2}") int threads
+            @Value("${app.groq.api-key:}") String apiKey,
+            @Value("${app.groq.base-url:https://api.groq.com/openai/v1}") String baseUrl,
+            @Value("${app.groq.model:whisper-large-v3-turbo}") String model,
+            @Value("${app.groq.language:es-CL}") String language
     ) {
-        this.executable = executable;
-        this.encoder = encoder;
-        this.decoder = decoder;
-        this.joiner = joiner;
-        this.tokens = tokens;
-        this.language = language;
-        this.threads = threads;
+        this.apiKey = apiKey == null ? "" : apiKey.strip();
+        this.baseUrl = baseUrl == null ? "https://api.groq.com/openai/v1" : baseUrl.replaceAll("/+$", "");
+        this.model = model == null || model.isBlank() ? "whisper-large-v3-turbo" : model.strip();
+        this.language = language == null || language.isBlank() ? "es-CL" : language.strip();
     }
 
     public String transcribe(Path audio) throws IOException, InterruptedException {
-        if (encoder.isBlank() || decoder.isBlank() || joiner.isBlank() || tokens.isBlank()) {
-            throw new IOException("Local ASR is not configured. Set app.asr.encoder/decoder/joiner/tokens.");
+        if (apiKey.isBlank()) {
+            throw new IOException("Groq API key is not configured. Set app.groq.api-key or GROQ_API_KEY.");
+        }
+        if (!Files.exists(audio)) {
+            throw new IOException("Audio file not found: " + audio);
+        }
+        if (Files.size(audio) > 25L * 1024 * 1024) {
+            throw new IOException("Groq transcription supports audio files up to 25 MB.");
         }
 
-        List<String> command = new ArrayList<>(List.of(
-                executable,
-                "--encoder=" + encoder,
-                "--decoder=" + decoder,
-                "--joiner=" + joiner,
-                "--tokens=" + tokens,
-                "--language=" + language,
-                "--num-threads=" + threads,
-                audio.toString()
-        ));
+        String boundary = "----GroqBoundary" + UUID.randomUUID();
+        String fileName = audio.getFileName() == null ? "audio.wav" : audio.getFileName().toString();
+        byte[] payload = buildMultipartBody(audio, fileName, boundary);
+        String url = baseUrl + "/audio/transcriptions";
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .timeout(Duration.ofSeconds(120))
+                .POST(HttpRequest.BodyPublishers.ofByteArray(payload))
+                .build();
 
-        Process process = new ProcessBuilder(command)
-                .redirectErrorStream(true)
-                .start();
-
-        boolean finished = process.waitFor(10, TimeUnit.MINUTES);
-        String output = new String(process.getInputStream().readAllBytes());
-        if (!finished) {
-            process.destroyForcibly();
-            throw new IOException("ASR transcription exceeded the maximum wait time");
-        }
-        if (process.exitValue() != 0) {
-            throw new IOException("sherpa-onnx failed: " + output);
+        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IOException("Groq transcription failed with HTTP " + response.statusCode() + ": " + response.body());
         }
 
-        String[] lines = output.lines()
-                .map(String::strip)
-                .filter(s -> !s.isBlank())
-                .toArray(String[]::new);
-        if (lines.length == 0) {
-            throw new IOException("sherpa-onnx did not return a transcription");
+        JsonNode json = mapper.readTree(response.body());
+        String text = json.path("text").asText("").trim();
+        if (text.isBlank()) {
+            throw new IOException("Groq did not return a transcript: " + response.body());
+        }
+        return text;
+    }
+
+    private byte[] buildMultipartBody(Path audioFile, String fileName, String boundary) throws IOException {
+        String requestLanguage = language;
+        if (requestLanguage != null && requestLanguage.startsWith("es-")) {
+            requestLanguage = "es";
         }
 
-        return lines[lines.length - 1].replaceFirst("^\\{\\s*\\\"text\\\"\\s*:\\s*\\\"", "")
-                .replaceFirst("\\\"\\s*[,}]\\s*$", "")
-                .strip();
+        byte[] fileBytes = Files.readAllBytes(audioFile);
+        String safeFileName = fileName.replaceAll("[^A-Za-z0-9._-]", "_");
+        String contentType = contentTypeFor(safeFileName);
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        bos.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+        bos.write(("Content-Disposition: form-data; name=\"file\"; filename=\"" + safeFileName + "\"\r\n").getBytes(StandardCharsets.UTF_8));
+        bos.write(("Content-Type: " + contentType + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+        bos.write(fileBytes);
+        bos.write("\r\n".getBytes(StandardCharsets.UTF_8));
+
+        bos.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+        bos.write("Content-Disposition: form-data; name=\"model\"\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+        bos.write(model.getBytes(StandardCharsets.UTF_8));
+        bos.write("\r\n".getBytes(StandardCharsets.UTF_8));
+
+        bos.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+        bos.write("Content-Disposition: form-data; name=\"language\"\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+        bos.write(requestLanguage.getBytes(StandardCharsets.UTF_8));
+        bos.write("\r\n".getBytes(StandardCharsets.UTF_8));
+
+        bos.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        return bos.toByteArray();
+    }
+
+    private String contentTypeFor(String fileName) {
+        String name = fileName.toLowerCase(java.util.Locale.ROOT);
+        if (name.endsWith(".webm")) return "audio/webm";
+        if (name.endsWith(".ogg")) return "audio/ogg";
+        if (name.endsWith(".mp3")) return "audio/mpeg";
+        if (name.endsWith(".m4a") || name.endsWith(".mp4")) return "audio/mp4";
+        if (name.endsWith(".aac")) return "audio/aac";
+        if (name.endsWith(".flac")) return "audio/flac";
+        return "audio/wav";
     }
 }
-
-

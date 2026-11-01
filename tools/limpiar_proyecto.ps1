@@ -12,8 +12,7 @@
     .\tools\limpiar_proyecto.ps1 -Borrar -Comprimir  # limpia y deja un .zip listo para enviar
 
   Para volver a tener todo funcionando después de limpiar:
-    - Modelo ASR:        .\tools\asr\install_windows.ps1
-    - Diccionario calles: python tools\streets\fetch_calles_overpass.py data\calles_chile.txt
+    - Servicios externos: configurar claves en data\.codes-secrets.ps1
     - Compilación (target/): se regenera solo al ejecutar INICIAR_CODES.bat
 
   NUNCA toca: la base de datos (data\llamadas.mv.db), el archivo de
@@ -24,7 +23,6 @@
 param(
     [switch]$Borrar,
     [switch]$Comprimir,
-    [switch]$IncluirDiccionarioCalles,
     [switch]$IncluirLogs
 )
 
@@ -64,8 +62,6 @@ function Test-PortOpen {
 # Cada elemento: ruta relativa + explicación de por qué es seguro borrarlo.
 $candidatos = @(
     @{ Ruta = 'target';                    Motivo = 'Compilado de Maven (se regenera al arrancar la app)' },
-    @{ Ruta = 'tools\asr\models';          Motivo = 'Modelo ASR descargado (se reinstala con install_windows.ps1)' },
-    @{ Ruta = 'tools\asr\asr.log';         Motivo = 'Log del motor de transcripción' },
     @{ Ruta = 'data\geocache.json';        Motivo = 'Caché de direcciones ya geocodificadas (se reconstruye sola)' },
     @{ Ruta = '.idea';                     Motivo = 'Configuración local de IntelliJ' },
     @{ Ruta = '.vscode';                   Motivo = 'Configuración local de VS Code' }
@@ -74,23 +70,7 @@ $candidatos = @(
 if ($IncluirLogs) {
     $candidatos += @{ Ruta = 'logs'; Motivo = 'Logs de auditoría (opt-in: puede ser útil conservarlos)' }
 }
-if ($IncluirDiccionarioCalles) {
-    $candidatos += @{ Ruta = 'data\calles_chile.txt'; Motivo = 'Diccionario de calles (opt-in: se regenera con fetch_calles_overpass.py)' }
-}
 
-# Patrones sueltos: archivos .tar.bz2 en tools\asr y cualquier .osm.pbf que haya quedado tirado.
-$patronesSueltos = @(
-    @{ Carpeta = 'tools\asr'; Filtro = '*.tar.bz2'; Motivo = 'Instalador ASR descargado' },
-    @{ Carpeta = '.';         Filtro = '*.osm.pbf'; Motivo = 'Extracto de OpenStreetMap usado para el diccionario de calles' }
-)
-foreach ($p in $patronesSueltos) {
-    if (Test-Path $p.Carpeta) {
-        Get-ChildItem -Path $p.Carpeta -Filter $p.Filtro -File -ErrorAction SilentlyContinue | ForEach-Object {
-            $candidatos += @{ Ruta = $_.FullName.Substring($root.Length + 1); Motivo = $p.Motivo }
-        }
-    }
-}
-# __pycache__ en cualquier profundidad (scripts de tools\streets).
 Get-ChildItem -Path $root -Recurse -Directory -Filter '__pycache__' -ErrorAction SilentlyContinue | ForEach-Object {
     $candidatos += @{ Ruta = $_.FullName.Substring($root.Length + 1); Motivo = 'Caché de bytecode de Python' }
 }
@@ -124,13 +104,12 @@ Write-Host ''
 if (-not $Borrar) {
     Write-Host 'Esto fue solo una vista previa (no se borró nada).' -ForegroundColor Cyan
     Write-Host 'Vuelve a ejecutar con -Borrar para limpiar de verdad.' -ForegroundColor Cyan
-    Write-Host 'Opciones extra: -IncluirLogs, -IncluirDiccionarioCalles, -Comprimir' -ForegroundColor DarkGray
+    Write-Host 'Opciones extra: -IncluirLogs, -Comprimir' -ForegroundColor DarkGray
     return
 }
 
 $activeServices = @()
 if (Test-PortOpen -Port 8000) { $activeServices += @{ Puerto = 8000; Etiqueta = 'CODES (puerto 8000)' } }
-if (Test-PortOpen -Port 6006) { $activeServices += @{ Puerto = 6006; Etiqueta = 'ASR (puerto 6006)' } }
 if ($activeServices.Count -gt 0) {
     $nombres = ($activeServices | ForEach-Object { $_.Etiqueta }) -join ', '
     Write-Host "Hay servicios activos: $nombres." -ForegroundColor Yellow
@@ -153,13 +132,12 @@ if ($activeServices.Count -gt 0) {
         Start-Sleep -Seconds 1
         $activeServices = @()
         if (Test-PortOpen -Port 8000) { $activeServices += 'CODES (puerto 8000)' }
-        if (Test-PortOpen -Port 6006) { $activeServices += 'ASR (puerto 6006)' }
     }
 }
 if ($activeServices.Count -gt 0) {
     $nombresRestantes = if ($activeServices[0] -is [string]) { $activeServices -join ', ' } else { ($activeServices | ForEach-Object { $_.Etiqueta }) -join ', ' }
     Write-Host "No se puede limpiar mientras hay servicios activos: $nombresRestantes." -ForegroundColor Red
-    Write-Host 'Cierra CODES y el ASR, y vuelve a ejecutar la limpieza.' -ForegroundColor Yellow
+    Write-Host 'Cierra CODES y vuelve a ejecutar la limpieza.' -ForegroundColor Yellow
     exit 1
 }
 

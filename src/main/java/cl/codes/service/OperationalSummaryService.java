@@ -8,14 +8,18 @@ import java.util.List;
 @Service
 public class OperationalSummaryService {
     public String generate(String texto, Classifier.ResultadoClasificacion c) {
+        return generate(texto, c, c.direccion());
+    }
+
+    public String generate(String texto, Classifier.ResultadoClasificacion c, String direccion) {
         String tipo = tipoEmergencia(c.highlightedWords());
-        String lugar = c.direccion();
+        String lugar = direccion;
         String limpio = texto == null ? "" : texto.replaceAll("\\s+", " ").trim();
         String fragmento = extraerSolicitud(limpio);
         StringBuilder s = new StringBuilder();
         if (!tipo.isBlank()) s.append(tipo); else s.append("Emergencia reportada");
         if (lugar != null && !lugar.isBlank()) s.append(" en ").append(lugar);
-        if (!fragmento.isBlank()) s.append(". ").append(fragmento.replaceAll("\\.$", ""));
+        if (!fragmento.isBlank()) s.append(". ").append(fragmento);
         else if (!limpio.isBlank()) s.append(". Se recibió una llamada de emergencia y se conserva la transcripción completa como respaldo.");
         return s.toString();
     }
@@ -36,6 +40,8 @@ public class OperationalSummaryService {
     private String extraerSolicitud(String t) {
         if (t.isBlank()) return "";
         String n = t.toLowerCase();
+        if (n.contains("bombero"))
+            return "Se solicita apoyo de Bomberos.";
         if (n.contains("patrulla") || n.contains("policia") || n.contains("carabinero"))
             return "Se solicita apoyo policial.";
         if (n.contains("urgencia") || n.contains("urgente") || n.contains("con mucha urgencia"))
@@ -46,5 +52,3 @@ public class OperationalSummaryService {
     }
 
 }
-
-

@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory=$true)][int]$ParentPid,
     [int[]]$ProcessIds = @(),
-    [int[]]$Ports = @(8000,6006)
+    [int[]]$Ports = @(8000)
 )
 $ErrorActionPreference='SilentlyContinue'
 function Stop-Tree([int]$Pid) {

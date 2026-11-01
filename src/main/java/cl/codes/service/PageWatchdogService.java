@@ -14,8 +14,8 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * CODES corre como un servidor local para un puesto de operador. Antes,
  * cerrar solo la pestaña del navegador (sin cerrar también la ventana de
- * CODES.bat) dejaba Spring Boot y el proceso ASR escuchando indefinidamente
- * en 8000/6006: molesto para la operadora, que cree haber "cerrado" CODES,
+ * CODES.bat) dejaba Spring Boot escuchando indefinidamente
+ * en 8000: molesto para la operadora, que cree haber "cerrado" CODES,
  * y riesgoso, porque es un sistema de llamadas de emergencia con puertos
  * abiertos sin que nadie los esté usando ni vigilando.
  *
@@ -23,8 +23,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * mientras la página siga abierta, en cualquier pestaña, incluso antes de
  * iniciar sesión. Si dejan de llegar avisos por más de {@code timeoutMs},
  * asumimos que la página se cerró y apagamos Spring Boot; el "finally" de
- * iniciar_codes_windows.ps1 detecta esa caída y libera el proceso ASR y
- * ambos puertos.
+ * iniciar_codes_windows.ps1 detecta esa caída y detiene Spring Boot.
  *
  * Antes del primer latido no se hace nada: si nadie ha abierto la página
  * todavía, no hay "cierre" que detectar.

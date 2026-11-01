@@ -2,6 +2,7 @@ package cl.codes.service;
 
 import cl.codes.model.Call;
 import cl.codes.model.User;
+import cl.codes.exception.ResourceNotFoundException;
 import cl.codes.repository.CallRepository;
 import cl.codes.repository.UserRepository;
 import org.springframework.security.core.Authentication;
@@ -12,24 +13,72 @@ import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Service
 public class CallService {
     private final CallRepository repo;
     private final UserRepository userRepo;
+    private final GeocoderService geocoder;
 
     private static final Map<String, Integer> PRIORITY_ORDER = Map.of(
             "URGENTE", 0, "ROJA", 1, "MEDIA", 2, "VERDE", 3
     );
 
-    public CallService(CallRepository repo, UserRepository userRepo) {
+    public CallService(CallRepository repo, UserRepository userRepo, GeocoderService geocoder) {
         this.repo = repo;
         this.userRepo = userRepo;
+        this.geocoder = geocoder;
+    }
+
+    public Call getById(Long id, Authentication auth) {
+        User user = currentUser(auth);
+        Call call = repo.findById(Objects.requireNonNull(id)).filter(existing -> !existing.isDeleted())
+                .orElseThrow(() -> new ResourceNotFoundException("Call not found"));
+        ensureSameInstitution(user, call);
+        return call;
+    }
+
+    public Call update(Long id, String operationalSummary, String address, Authentication auth) {
+        User user = currentUser(auth);
+        ensureNotPreview(user);
+        Call call = getById(id, auth);
+        if (call.getClosureDate() != null) {
+            throw new IllegalStateException("Closed calls cannot be edited");
+        }
+        String normalizedSummary = operationalSummary.strip();
+        String normalizedAddress = address == null || address.isBlank() ? null : address.strip();
+        if (!Objects.equals(normalizedAddress, call.getDetectedAddress())) {
+            GeocoderService.Coordinates coordinates = geocoder.geocode(normalizedAddress, normalizedSummary);
+            String resolvedAddress = coordinates.formattedAddress();
+            call.setDetectedAddress(resolvedAddress == null || resolvedAddress.isBlank()
+                    ? normalizedAddress
+                    : resolvedAddress);
+            call.setLatitude(coordinates.lat());
+            call.setLongitude(coordinates.lng());
+        }
+        call.setOperationalSummary(normalizedSummary);
+        return repo.save(call);
+    }
+
+    public void deletePending(Long id, Authentication auth) {
+        User user = currentUser(auth);
+        ensureNotPreview(user);
+        if (!isAdmin(user)) {
+            throw new org.springframework.security.access.AccessDeniedException("Only an administrator can remove a call");
+        }
+        Call call = repo.findById(Objects.requireNonNull(id)).orElseThrow(() -> new ResourceNotFoundException("Call not found"));
+        if (call.isDeleted()) return;
+        if (call.isAssigned() || call.getClosureDate() != null) {
+            throw new IllegalStateException("Only unassigned open calls can be removed");
+        }
+        call.setDeleted(true);
+        repo.save(call);
     }
 
     private User currentUser(Authentication auth) {
         if (auth == null || !auth.isAuthenticated()) throw new IllegalStateException("Authentication required");
-        return userRepo.findByUsername(auth.getName()).orElseThrow(() -> new IllegalArgumentException("User not found"));
+        return userRepo.findByUsername(auth.getName()).orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
     private boolean isAdmin(User user) { return "administrator".equalsIgnoreCase(user.getRole()); }
@@ -37,7 +86,7 @@ public class CallService {
     private void ensureSameInstitution(User user, Call call) {
         if (isAdmin(user)) return;
         if (!isVisibleToInstitution(user, call)) {
-            throw new IllegalArgumentException("Call not found");
+            throw new ResourceNotFoundException("Call not found");
         }
     }
 
@@ -50,31 +99,31 @@ public class CallService {
 
     public List<Call> getPending(Authentication auth) {
         User user = currentUser(auth);
-        List<Call> calls = isAdmin(user) ? new java.util.ArrayList<>(repo.findAll().stream().filter(c -> !c.isAssigned() && c.getClosureDate() == null).toList()) : mergeVisible(
-            repo.findByAssignedFalseAndInstitution(user.getInstitution()),
+        List<Call> calls = isAdmin(user) ? new java.util.ArrayList<>(repo.findAll().stream().filter(c -> !c.isDeleted() && !c.isAssigned() && c.getClosureDate() == null).toList()) : mergeVisible(
+            repo.findByAssignedFalseAndDeletedFalseAndInstitution(user.getInstitution()),
             repo.findPendingVisibleToInstitution(user.getInstitution()));
         return sorted(calls);
     }
 
     public List<Call> getInProgress(Authentication auth) {
         User user = currentUser(auth);
-        List<Call> calls = isAdmin(user) ? new java.util.ArrayList<>(repo.findAll().stream().filter(c -> c.isAssigned() && c.getClosureDate() == null).toList()) : mergeVisible(
-            repo.findByAssignedTrueAndClosureDateIsNullAndInstitution(user.getInstitution()),
+        List<Call> calls = isAdmin(user) ? new java.util.ArrayList<>(repo.findAll().stream().filter(c -> !c.isDeleted() && c.isAssigned() && c.getClosureDate() == null).toList()) : mergeVisible(
+            repo.findByAssignedTrueAndClosureDateIsNullAndDeletedFalseAndInstitution(user.getInstitution()),
             repo.findInProgressVisibleToInstitution(user.getInstitution()));
-        calls.sort(Comparator.comparing(Call::getAssignmentDate, Comparator.nullsLast(Comparator.reverseOrder())));
+        calls.sort(Comparator.comparing((Call call) -> call.getAssignmentDate(), Comparator.nullsLast(Comparator.reverseOrder())));
         return calls;
     }
 
     public List<Call> getClosed(int limit, Authentication auth) {
         User user = currentUser(auth);
-        List<Call> calls = isAdmin(user) ? repo.findAll().stream().filter(c -> c.getClosureDate() != null).sorted(Comparator.comparing(Call::getClosureDate, Comparator.nullsLast(Comparator.reverseOrder()))).toList() : mergeVisible(
-            repo.findByClosureDateIsNotNullAndInstitutionOrderByClosureDateDesc(user.getInstitution()),
+        List<Call> calls = isAdmin(user) ? repo.findAll().stream().filter(c -> !c.isDeleted() && c.getClosureDate() != null).sorted(Comparator.comparing((Call call) -> call.getClosureDate(), Comparator.nullsLast(Comparator.reverseOrder()))).toList() : mergeVisible(
+            repo.findByClosureDateIsNotNullAndDeletedFalseAndInstitutionOrderByClosureDateDesc(user.getInstitution()),
             repo.findClosedVisibleToInstitution(user.getInstitution()));
         return calls.size() > limit ? calls.subList(0, limit) : calls;
     }
 
     private List<Call> sorted(List<Call> calls) {
-        calls.sort(Comparator.<Call, Integer>comparing(call -> PRIORITY_ORDER.getOrDefault(call.getPriority(), 4)).thenComparing(Call::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())));
+        calls.sort(Comparator.<Call, Integer>comparing(call -> PRIORITY_ORDER.getOrDefault(call.getPriority(), 4)).thenComparing(call -> call.getCreatedAt(), Comparator.nullsLast(Comparator.naturalOrder())));
         return calls;
     }
 
@@ -95,8 +144,7 @@ public class CallService {
     public Call assign(Long id, Authentication auth) {
         User user = currentUser(auth);
         ensureNotPreview(user);
-        Call call = repo.findById(id).orElseThrow(() -> new IllegalArgumentException("Call not found"));
-        ensureSameInstitution(user, call);
+        Call call = getById(id, auth);
         if (call.isAssigned()) throw new IllegalStateException("This call was already assigned");
         if (call.getClosureDate() != null) throw new IllegalStateException("This call is already closed");
         call.setAssigned(true);
@@ -108,8 +156,7 @@ public class CallService {
     public Call close(Long id, String comment, Authentication auth) {
         User user = currentUser(auth);
         ensureNotPreview(user);
-        Call call = repo.findById(id).orElseThrow(() -> new IllegalArgumentException("Call not found"));
-        ensureSameInstitution(user, call);
+        Call call = getById(id, auth);
         if (!call.isAssigned()) throw new IllegalStateException("This case cannot be closed before assignment");
         if (call.getClosureDate() != null) throw new IllegalStateException("This case is already closed");
         boolean supervisorOrAdmin = "supervisor".equalsIgnoreCase(user.getRole()) || isAdmin(user);
@@ -127,11 +174,12 @@ public class CallService {
         long total, activeUrgentCalls, pending, inProgress;
         List<Call> withAssignment;
         if (isAdmin(user)) {
-            total = repo.count();
-            activeUrgentCalls = repo.findAll().stream().filter(c -> "URGENTE".equals(c.getPriority()) && c.getClosureDate() == null).count();
-            pending = repo.findAll().stream().filter(c -> !c.isAssigned() && c.getClosureDate() == null).count();
-            inProgress = repo.findAll().stream().filter(c -> c.isAssigned() && c.getClosureDate() == null).count();
-            withAssignment = repo.findByAssignmentDateIsNotNull();
+            var calls = repo.findAll().stream().filter(c -> !c.isDeleted()).toList();
+            total = repo.countByDeletedFalse();
+            activeUrgentCalls = calls.stream().filter(c -> "URGENTE".equals(c.getPriority()) && c.getClosureDate() == null).count();
+            pending = calls.stream().filter(c -> !c.isAssigned() && c.getClosureDate() == null).count();
+            inProgress = calls.stream().filter(c -> c.isAssigned() && c.getClosureDate() == null).count();
+            withAssignment = repo.findByAssignmentDateIsNotNullAndDeletedFalse();
         } else {
             total = repo.countVisibleToInstitution(institution);
             activeUrgentCalls = repo.countPriorityVisibleToInstitution("URGENTE", institution);

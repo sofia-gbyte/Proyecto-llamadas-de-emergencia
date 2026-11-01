@@ -6,8 +6,8 @@ let configuracionPublica = {
   mapTilesUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
   mapConfigured: true,
   geocodingConfigured: true,
+  transcriptionConfigured: false,
   routingUrl: 'https://router.project-osrm.org',
-  asrWebsocketUrl: 'ws://localhost:6006'
 };
 let capaBaseMapa = null;
 let errorConfiguracionMapa = '';
@@ -27,9 +27,10 @@ const configuracionPublicaPromise = fetch(`${API_URL}/public-config`)
       configurarCapaBaseMapa();
     }
     actualizarEstadoMapa();
-    if (typeof ASR_WS_URL !== 'undefined') ASR_WS_URL = configuracionPublica.asrWebsocketUrl;
     const notaAsr = $('live-nota');
-    if (notaAsr) notaAsr.textContent = `Servidor ASR: ${configuracionPublica.asrWebsocketUrl}`;
+    if (notaAsr) notaAsr.textContent = configuracionPublica.transcriptionConfigured
+      ? 'El audio se enviará al servidor para transcribirse con Groq al guardar.'
+      : 'Falta configurar GROQ_API_KEY en el servidor para habilitar la transcripción automática.';
   })
   .catch(error => {
     errorConfiguracionMapa = 'No se pudo cargar la configuración; se mantienen los servicios públicos predeterminados.';
@@ -48,6 +49,9 @@ let marcador = null;
 let marcadorDispositivo = null;
 let precisionDispositivo = null;
 let rutaIncidente = null;
+let rutaIncidenteKey = null;
+const rutasSolicitadas = new Set();
+const rutasCalculadas = new Map();
 let ubicacionActualOperador = null;
 let solicitudRutaId = 0;
 let llamadaSeleccionada = null;
@@ -107,6 +111,28 @@ function reiniciarCaptcha(tipo) {
   const id = captchaWidgets[tipo];
   if (window.turnstile && id !== null && id !== undefined) {
     try { window.turnstile.reset(id); } catch (_) { /* nada */ }
+  }
+}
+
+function dibujarRutaGuardada(ruta, ajustarVista) {
+  if (!mapa || !ruta || rutaIncidenteKey == null) return;
+  const latLngs = ruta.coordinates.map(([lng, lat]) => [lat, lng]);
+  rutaIncidente = L.polyline(latLngs, {
+    color: '#ffd166',
+    weight: 6,
+    opacity: 0.9,
+    lineCap: 'round',
+    lineJoin: 'round'
+  }).addTo(mapa);
+
+  const distancia = ruta.distance >= 1000
+    ? `${(ruta.distance / 1000).toFixed(1)} km`
+    : `${Math.round(ruta.distance)} m`;
+  const minutos = Math.max(1, Math.round(ruta.duration / 60));
+  const rutaEstado = $('ruta-estado');
+  if (rutaEstado) rutaEstado.textContent = `Ruta estimada · ${distancia} · ${minutos} min`;
+  if (ajustarVista) {
+    mapa.fitBounds(rutaIncidente.getBounds(), { padding: [40, 40], maxZoom: 16 });
   }
 }
 
@@ -421,6 +447,10 @@ function actualizarUsuarioUI() {
   }
 
   const esAdmin = rol === 'administrator';
+
+  if ($('riel-admin')) {
+    $('riel-admin').hidden = !esAdmin;
+  }
 
   if ($('admin-selector')) {
     $('admin-selector').classList.toggle(
@@ -749,6 +779,12 @@ async function cerrarSesion() {
   };
 
   llamadaSeleccionada = null;
+  rutasSolicitadas.clear();
+  rutasCalculadas.clear();
+  rutaIncidenteKey = null;
+  ubicacionActualOperador = null;
+  if (rutaIncidente && mapa) mapa.removeLayer(rutaIncidente);
+  rutaIncidente = null;
 
   actualizarUsuarioUI();
 
@@ -781,6 +817,9 @@ async function entrarConsola() {
   actualizarTodo();
 
   cambiarVista('info');
+
+  initMapa();
+  setTimeout(() => mapa?.invalidateSize(true), 60);
 
   await cargarCola();
 
@@ -842,10 +881,13 @@ function initMapa() {
     );
 
   configurarCapaBaseMapa();
+  $('btn-reintentar-ruta')?.addEventListener(
+    'click',
+    reintentarRutaSeleccionada
+  );
   $('btn-mi-ubicacion')?.addEventListener(
     'click',
-    mostrarUbicacionDispositivo,
-    { once: true }
+    mostrarUbicacionDispositivo
   );
 }
 
@@ -959,17 +1001,14 @@ function configurarCapaBaseMapa() {
 function actualizarEstadoMapa() {
   const estado = $('mapa-provider-estado');
   if (!estado) return;
-  const avisos = [
-    `Mapa: ${(proveedoresTeselasActivos[Math.max(indiceProveedorTeselas, 0)] || {}).name || 'Esri World Imagery'}${fallbackTeselasActivado ? ' (respaldo)' : ''}.`,
-    'Al geocodificar se envían direcciones al proveedor configurado; al pedir rutas se envían coordenadas al proveedor de rutas.'
-  ];
+  const avisos = [];
   if (!configuracionPublica.mapConfigured) avisos.push('Teselas no configuradas.');
   if (!configuracionPublica.geocodingConfigured) avisos.push('Geocodificación no configurada.');
   if (!configuracionPublica.routingUrl) avisos.push('Rutas no configuradas.');
   if (errorConfiguracionMapa) avisos.push(errorConfiguracionMapa);
   if (errorTeselasMapa) avisos.push(errorTeselasMapa);
   estado.textContent = avisos.join(' ');
-  estado.hidden = false;
+  estado.hidden = avisos.length === 0;
 }
 
 function mostrarUbicacionDispositivo() {
@@ -1034,15 +1073,29 @@ function mostrarUbicacionDispositivo() {
 
 async function dibujarRutaAlIncidente(l) {
   const rutaEstado = $('ruta-estado');
+  const botonReintentarRuta = $('btn-reintentar-ruta');
   const solicitud = ++solicitudRutaId;
+  if (botonReintentarRuta) botonReintentarRuta.hidden = true;
+  if (!l || l.latitude == null || l.longitude == null) {
+    if (rutaEstado) rutaEstado.textContent = 'Ruta no disponible: el incidente no tiene coordenadas.';
+    return;
+  }
+  const claveRuta = `${l.id}:${l.latitude}:${l.longitude}`;
 
   if (rutaIncidente && mapa) {
     mapa.removeLayer(rutaIncidente);
     rutaIncidente = null;
   }
+  rutaIncidenteKey = claveRuta;
 
-  if (!l || l.latitude == null || l.longitude == null) {
-    if (rutaEstado) rutaEstado.textContent = 'Ruta no disponible: el incidente no tiene coordenadas.';
+  const rutaGuardada = rutasCalculadas.get(claveRuta);
+  if (rutaGuardada) {
+    dibujarRutaGuardada(rutaGuardada, false);
+    return;
+  }
+  if (rutasSolicitadas.has(claveRuta)) {
+    if (rutaEstado) rutaEstado.textContent = 'El intento anterior de calcular la ruta falló.';
+    if (botonReintentarRuta) botonReintentarRuta.hidden = false;
     return;
   }
 
@@ -1055,7 +1108,8 @@ async function dibujarRutaAlIncidente(l) {
 
   const origen = ubicacionActualOperador;
   if (!origen) {
-    if (rutaEstado) rutaEstado.textContent = 'No se pudo obtener tu ubicación. Puedes usar “Usar mi ubicación”.';
+    if (rutaEstado) rutaEstado.textContent = 'No se pudo obtener tu ubicación. Puedes seleccionar “Ubicación actual”.';
+    if (botonReintentarRuta) botonReintentarRuta.hidden = false;
     return;
   }
 
@@ -1067,38 +1121,58 @@ async function dibujarRutaAlIncidente(l) {
       if (rutaEstado) rutaEstado.textContent = 'El servicio de rutas no está configurado.';
       return;
     }
-    let data;
+    rutasSolicitadas.add(claveRuta);
     const baseRuta = configuracionPublica.routingUrl.replace(/\/+$/, '');
     const url = `${baseRuta}/route/v1/driving/${encodeURIComponent(origen.lng)},${encodeURIComponent(origen.lat)};${encodeURIComponent(l.longitude)},${encodeURIComponent(l.latitude)}?overview=full&geometries=geojson`;
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    data = await resp.json();
-    if (solicitud !== solicitudRutaId) return;
+    const data = await resp.json();
+    if (data.code && data.code !== 'Ok') {
+      const mensajesRuta = {
+        NoRoute: 'El proveedor no encontró una ruta transitable entre tu ubicación y el incidente.',
+        NoSegment: 'La ubicación está demasiado lejos de una vía transitable para calcular la ruta.',
+        InvalidQuery: 'El proveedor rechazó las coordenadas enviadas para calcular la ruta.'
+      };
+      throw new Error(mensajesRuta[data.code] || `El proveedor de rutas respondió: ${data.code}.`);
+    }
 
     const route = data.routes?.[0] ?? data;
     const coordinates = route.geometry?.coordinates ?? route.coordinates;
-    if (!coordinates?.length) throw new Error('Sin ruta');
+    if (!Array.isArray(coordinates) || coordinates.length < 2) {
+      throw new Error('El proveedor no devolvió una ruta válida.');
+    }
+    if (!Number.isFinite(Number(route.distance)) || !Number.isFinite(Number(route.duration))) {
+      throw new Error('El proveedor devolvió una ruta sin distancia o duración válidas.');
+    }
 
-    const latLngs = coordinates.map(([lng, lat]) => [lat, lng]);
-    rutaIncidente = L.polyline(latLngs, {
-      color: '#ffd166',
-      weight: 6,
-      opacity: 0.9,
-      lineCap: 'round',
-      lineJoin: 'round'
-    }).addTo(mapa);
-
-    const distancia = route.distance >= 1000
-      ? `${(route.distance / 1000).toFixed(1)} km`
-      : `${Math.round(route.distance)} m`;
-    const minutos = Math.max(1, Math.round(route.duration / 60));
-
-    if (rutaEstado) rutaEstado.textContent = `Ruta estimada · ${distancia} · ${minutos} min`;
-    mapa.fitBounds(rutaIncidente.getBounds(), { padding: [40, 40], maxZoom: 16 });
+    const ruta = {
+      coordinates,
+      distance: route.distance,
+      duration: route.duration
+    };
+    rutasCalculadas.set(claveRuta, ruta);
+    if (solicitud !== solicitudRutaId) return;
+    dibujarRutaGuardada(ruta, true);
   } catch (error) {
     console.warn('No se pudo calcular la ruta al incidente:', error);
-    if (rutaEstado) rutaEstado.textContent = 'No se pudo calcular la ruta automáticamente.';
+    if (solicitud !== solicitudRutaId) return;
+    const mensaje = error instanceof TypeError
+      ? 'No se pudo conectar con el proveedor de rutas. Comprueba la conexión e inténtalo de nuevo.'
+      : error.message === 'HTTP 429'
+        ? 'El proveedor de rutas está temporalmente limitado. Inténtalo de nuevo más tarde.'
+        : error.message.startsWith('HTTP 5')
+          ? 'El proveedor de rutas no está disponible temporalmente.'
+          : error.message || 'No se pudo calcular la ruta.';
+    if (rutaEstado) rutaEstado.textContent = mensaje;
+    if (botonReintentarRuta) botonReintentarRuta.hidden = false;
   }
+}
+
+function reintentarRutaSeleccionada() {
+  if (!llamadaSeleccionada) return;
+  const claveRuta = `${llamadaSeleccionada.id}:${llamadaSeleccionada.latitude}:${llamadaSeleccionada.longitude}`;
+  rutasSolicitadas.delete(claveRuta);
+  dibujarRutaAlIncidente(llamadaSeleccionada);
 }
 
 function obtenerUbicacionParaRuta() {
@@ -1140,8 +1214,7 @@ function actualizarMapa(l) {
     $('mapa-direccion').textContent =
       'Selecciona una llamada para mostrar su ubicación.';
     if ($('ruta-estado')) $('ruta-estado').textContent = 'Selecciona un caso para calcular una ruta.';
-
-    $('btn-abrir-mapa').disabled = true;
+    if ($('btn-reintentar-ruta')) $('btn-reintentar-ruta').hidden = true;
 
     return;
   }
@@ -1153,26 +1226,6 @@ function actualizarMapa(l) {
     l.address ||
     l.addressDetectada ||
     'Dirección por determinar';
-
-  const btn =
-    $('btn-abrir-mapa');
-
-  btn.disabled = !(
-    l.latitude != null &&
-    l.longitude != null
-  );
-
-  btn.onclick = () => {
-    if (
-      l.latitude == null ||
-      l.longitude == null
-    ) {
-      return;
-    }
-
-    initMapa();
-    mapa.setView([l.latitude, l.longitude], Math.max(mapa.getZoom(), 15));
-  };
 
   if (
     l.latitude == null ||
@@ -1217,45 +1270,16 @@ function actualizarMapa(l) {
 }
 
 function cambiarVista(vista) {
-  vistaActual = vista;
-
-  document
-    .querySelectorAll(
-      '.detalle-menu-btn'
-    )
-    .forEach(b =>
-      b.classList.toggle(
-        'activo',
-        b.dataset.vista === vista
-      )
-    );
-
-  const mapaVisible =
-    vista === 'mapa';
+  vistaActual = 'info';
 
   $('mapa-container')
-    ?.classList.toggle(
-      'visible',
-      mapaVisible
-    );
+    ?.classList.add('visible');
 
   $('info-container')
-    ?.classList.toggle(
-      'hidden-view',
-      mapaVisible
-    );
+    ?.classList.remove('hidden-view');
 
-  if (mapaVisible) {
-    initMapa();
-
-    setTimeout(() => {
-      mapa?.invalidateSize(true);
-
-      actualizarMapa(
-        llamadaSeleccionada
-      );
-    }, 60);
-  }
+  initMapa();
+  setTimeout(() => mapa?.invalidateSize(true), 60);
 }
 
 
@@ -1335,9 +1359,7 @@ async function cargarCola() {
         llamadaSeleccionada
       );
 
-      actualizarMapa(
-        llamadaSeleccionada
-      );
+      if (!llamadaSeleccionada) actualizarMapa(null);
     }
 
     $('indicador-estado').className =
@@ -1576,7 +1598,29 @@ function renderizarLista() {
     return;
   }
 
-  c.innerHTML = lista
+  const terminoBusqueda = $('busqueda-incidentes')?.value
+    .trim()
+    .toLocaleLowerCase('es-CL') || '';
+  const listaFiltrada = terminoBusqueda
+    ? lista.filter(llamada => {
+        const buscarEn = [
+          llamada.id,
+          llamada.priority,
+          obtenerTituloOperativo(llamada),
+          llamada.address,
+          llamada.addressDetectada,
+          'Llamada en vivo'
+        ].filter(Boolean).join(' ').toLocaleLowerCase('es-CL');
+        return buscarEn.includes(terminoBusqueda);
+      })
+    : lista;
+
+  if (!listaFiltrada.length) {
+    c.innerHTML = '<p class="estado-vacio">No hay incidentes que coincidan con la búsqueda.</p>';
+    return;
+  }
+
+  c.innerHTML = listaFiltrada
     .map(l => {
 
       const prioridad =
@@ -1584,38 +1628,17 @@ function renderizarLista() {
           l.priority
         );
 
-      const palabras =
-        normalizarPalabrasDestacadas(
-          l.highlightedWords
-        );
-
-      const transcripcion =
-        limpiarTranscripcion(
-          l.transcription
-        );
-
-      const resumen =
-        l.operationalSummary ||
-        generarResumenLocal(l);
-
-      /*
-       * IMPORTANTE:
-       * La tarjeta muestra primero la transcripción real.
-       * El resumen queda para el detalle del caso.
-       */
-      const textoPrincipal =
-        transcripcion ||
-        resumen ||
-        'Sin información de la llamada.';
-
       const direccion =
         l.address ||
         l.addressDetectada ||
-        'Dirección por determinar';
+        'Ubicación no identificada';
 
       const seleccionada =
         llamadaSeleccionada?.id ===
         l.id;
+      const estadoCaso = obtenerEstadoCaso(l);
+      const tipoIncidente = obtenerTituloOperativo(l)
+        .replace(/\s+reportad[oa]$/i, '');
 
       const claseUrgencia =
         prioridad === 'URGENTE'
@@ -1637,108 +1660,28 @@ function renderizarLista() {
 
       return `
         <div
-          class="llamada-item ${
-            seleccionada
-              ? 'seleccionada'
-              : ''
-          } ${
-            prioridad === 'URGENTE'
-              ? 'urgente'
-              : ''
-          }"
+          class="llamada-item ${seleccionada ? 'seleccionada' : ''} prioridad-${prioridad.toLowerCase()} estado-${estadoCaso.clase}"
           data-id="${escapeHtml(l.id)}"
           role="button"
           tabindex="0"
+          aria-label="Caso #${escapeHtml(l.id)}, ${escapeHtml(prioridad)}, ${escapeHtml(tipoIncidente)}, ${escapeHtml(direccion)}, ${escapeHtml(estadoCaso.etiqueta)}"
         >
 
           <div class="llamada-header">
-
-            <span class="llamada-id">
-              Caso #${escapeHtml(l.id)}
-            </span>
-
-            <div class="llamada-badges">
-
-              <span
-                class="llamada-urgencia ${claseUrgencia}"
-              >
-                ${etiquetaPrioridad}
-              </span>
-
-            </div>
-
+            <span class="llamada-urgencia ${claseUrgencia}">${escapeHtml(etiquetaPrioridad)}</span>
+            <span class="llamada-id">#${escapeHtml(l.id)}</span>
           </div>
 
-          <div class="llamada-titulo">
-            ${escapeHtml(
-              obtenerTituloOperativo(l)
-            )}
+          <div class="llamada-titulo">${escapeHtml(capitalizarPrimeraLetra(tipoIncidente))}</div>
+          <div class="llamada-ubicacion">
+            <span class="llamada-ubicacion-label">Ubicación</span>
+            <span class="ubicacion" title="${escapeHtml(direccion)}">${escapeHtml(direccion)}</span>
           </div>
-
-          <div class="llamada-categoria">
-            Llamada en vivo
+          <div class="llamada-meta">
+            <span>Llamada en vivo</span>
+            <time>${escapeHtml(formatearFecha(l.createdAt))}</time>
           </div>
-
-          <div
-            class="llamada-desc"
-            title="${escapeHtml(
-              textoPrincipal
-            )}"
-          >
-            ${escapeHtml(
-              truncar(
-                textoPrincipal,
-                160
-              )
-            )}
-          </div>
-
-          <div class="llamada-footer">
-
-            <span class="ubicacion">
-              📍 ${escapeHtml(
-                direccion
-              )}
-            </span>
-
-            <span>
-              🕐 ${escapeHtml(
-                formatearFecha(
-                  l.createdAt
-                )
-              )}
-            </span>
-
-          </div>
-
-          ${
-            palabras.length
-              ? `
-                <div
-                  class="llamada-palabras"
-                  style="
-                    display:flex;
-                    gap:.25rem;
-                    flex-wrap:wrap;
-                    margin-top:.35rem;
-                  "
-                >
-                  ${palabras
-                    .slice(0, 4)
-                    .map(
-                      palabra => `
-                        <span class="palabra">
-                          ${escapeHtml(
-                            palabra
-                          )}
-                        </span>
-                      `
-                    )
-                    .join('')}
-                </div>
-              `
-              : ''
-          }
+          <span class="llamada-estado ${estadoCaso.clase}">${escapeHtml(estadoCaso.etiqueta)}</span>
 
         </div>
       `;
@@ -1784,6 +1727,16 @@ function renderizarLista() {
         }
       );
     });
+}
+
+function obtenerEstadoCaso(llamada) {
+  if (llamada.closureDate || colaActual === 'cerradas') {
+    return { etiqueta: 'Cerrado', clase: 'cerrado' };
+  }
+  if (llamada.assigned || colaActual === 'en-curso') {
+    return { etiqueta: 'En curso', clase: 'en-curso' };
+  }
+  return { etiqueta: 'Sin asignar', clase: 'sin-asignar' };
 }
 
 function formatearFecha(iso) {
@@ -1888,294 +1841,125 @@ function generarResumenLocal(l) {
 }
 
 function renderizarDetalle(l) {
-  const c =
-    $('info-container');
-
+  const c = $('info-container');
   if (!c) return;
-
   if (!l) {
-    c.innerHTML = `
-      <p class="estado-vacio">
-        Selecciona una llamada de la cola para ver el detalle.
-      </p>
-    `;
-
+    c.innerHTML = '<p class="estado-vacio">Selecciona una llamada para consultar sus detalles.</p>';
     return;
   }
 
-  const prioridad =
-    clasePrioridad(
-      l.priority
-    );
-
-  const puedeAsignar =
-    colaActual === 'pendientes' &&
-    !vistaPreviaSoloLectura;
-
-  const puedeCerrar =
-    colaActual === 'en-curso' &&
-    !vistaPreviaSoloLectura;
-
-  const resumen =
-    l.operationalSummary ||
-    generarResumenLocal(l);
-
-  const transcripcion =
-    limpiarTranscripcion(
-      l.transcription
-    );
-
-  const ubicacionEstado =
-    l.latitude != null &&
-    l.longitude != null
-      ? 'Ubicación disponible'
-      : 'Ubicación por determinar';
-
-  const palabras =
-    normalizarPalabrasDestacadas(
-      l.highlightedWords
-    );
-
-  const razones =
-    normalizarPalabrasDestacadas(
-      l.classificationReasons
-    );
-
-  const instituciones =
-    normalizarPalabrasDestacadas(
-      l.suggestedInstitutions
-    );
-
-  const direccion =
-    l.address ||
-    l.addressDetectada ||
-    'Dirección por determinar';
+  const prioridad = clasePrioridad(l.priority);
+  const prioridadCss = ({
+    URGENTE: 'urgente',
+    ROJA: 'roja',
+    MEDIA: 'media',
+    VERDE: 'verde'
+  })[prioridad] || 'verde';
+  const puedeAsignar = colaActual === 'pendientes' && !vistaPreviaSoloLectura;
+  const puedeCerrar = colaActual === 'en-curso' && !vistaPreviaSoloLectura;
+  const resumen = l.operationalSummary || generarResumenLocal(l);
+  const transcripcion = limpiarTranscripcion(l.transcription);
+  const tieneUbicacionConfirmada = l.latitude != null &&
+    l.longitude != null &&
+    Number.isFinite(Number(l.latitude)) &&
+    Number.isFinite(Number(l.longitude)) &&
+    Math.abs(Number(l.latitude)) <= 90 &&
+    Math.abs(Number(l.longitude)) <= 180;
+  const palabras = normalizarPalabrasDestacadas(l.highlightedWords);
+  const razones = normalizarPalabrasDestacadas(l.classificationReasons);
+  const instituciones = normalizarPalabrasDestacadas(l.suggestedInstitutions);
+  const direccion = l.address || l.addressDetectada || 'Ubicación no identificada';
+  const estadoCaso = obtenerEstadoCaso(l);
+  const tipoEmergencia = obtenerTituloOperativo(l).replace(/\s+reportad[oa]$/i, '');
 
   c.innerHTML = `
-    <div class="detalle-contenido">
-
-      <div class="detalle-cabecera">
-
-        <span class="badge ${escapeHtml(
-          prioridad
-        )}">
-          ${escapeHtml(
-            prioridad
-          )}
-        </span>
-
-        <span class="detalle-direccion">
-          ${escapeHtml(
-            direccion
-          )}
-        </span>
-
-      </div>
-
-      <div class="detalle-id">
-        Caso #${escapeHtml(l.id)}
-        · ${escapeHtml(
-          formatearFecha(
-            l.createdAt
-          )
-        )}
-        ${
-          l.assignedOperator
-            ? ` · asignado a ${escapeHtml(
-                l.assignedOperator
-              )}`
-            : ''
-        }
-      </div>
-
-      <div class="detalle-grid">
-
-        <div>
-          <span class="detalle-label">
-            Ubicación
+    <article class="detalle-contenido">
+      <header class="detalle-cabecera">
+        <div class="detalle-caso-id">
+          <strong>Caso #${escapeHtml(l.id)}</strong>
+          <span>${escapeHtml(formatearFecha(l.createdAt))}</span>
+          ${l.assignedOperator ? `<span>Asignado a ${escapeHtml(l.assignedOperator)}</span>` : ''}
+        </div>
+        <div class="detalle-cabecera-badges">
+          <span class="detalle-prioridad ${prioridadCss}">
+            <span class="detalle-prioridad-punto" aria-hidden="true"></span>
+            ${escapeHtml(capitalizarPrimeraLetra(prioridad.toLocaleLowerCase('es-CL')))}
           </span>
-
-          <strong>
-            ${escapeHtml(
-              ubicacionEstado
-            )}
-          </strong>
+          <span class="detalle-tipo-emergencia">${escapeHtml(capitalizarPrimeraLetra(tipoEmergencia))}</span>
         </div>
+      </header>
 
+      <section class="detalle-ubicacion" aria-label="Ubicación del incidente">
         <div>
-          <span class="detalle-label">
-            Estado
-          </span>
-
-          <strong>
-            ${
-              colaActual === 'pendientes'
-                ? 'Sin asignar'
-                : colaActual === 'en-curso'
-                  ? 'En curso'
-                  : 'Cerrada'
-            }
-          </strong>
+          <span class="detalle-etiqueta">Ubicación</span>
+          <h1>${escapeHtml(direccion)}</h1>
         </div>
-
-      </div>
-
-      <section class="detalle-resumen">
-
-        <div class="detalle-seccion-titulo">
-          Resumen operativo
-        </div>
-
-        <p>
-          ${escapeHtml(
-            resumen
-          )}
-        </p>
-
+        <span class="detalle-ubicacion-estado ${tieneUbicacionConfirmada ? 'confirmada' : 'no-identificada'}">
+          ${tieneUbicacionConfirmada ? 'Confirmada' : 'No identificada'}
+        </span>
       </section>
 
-      <details class="detalle-transcripcion-bloque">
+      <section class="detalle-estado-linea">
+        <span class="detalle-etiqueta">Estado</span>
+        <span class="detalle-estado ${estadoCaso.clase}">${escapeHtml(estadoCaso.etiqueta)}</span>
+      </section>
 
-        <summary>
-          Ver transcripción completa
-        </summary>
+      <section class="detalle-resumen">
+        <h2 class="detalle-seccion-titulo">Resumen operativo</h2>
+        <p>${escapeHtml(capitalizarPrimeraLetra(resumen))}</p>
+      </section>
 
-        <div class="detalle-transcripcion">
-          ${escapeHtml(
-            transcripcion ||
-            '(sin transcripción)'
-          )}
+      <section class="detalle-clasificacion" aria-label="Clasificación automática">
+        <div class="detalle-evidencia">
+          <h2 class="detalle-seccion-titulo">Motivos detectados</h2>
+          <div class="detalle-evidencia-valores">
+            ${palabras.length
+              ? palabras.map(p => `<span class="detalle-chip">${escapeHtml(capitalizarPrimeraLetra(p))}</span>`).join('')
+              : '<span class="detalle-vacio">Sin motivos detectados</span>'}
+          </div>
+          ${razones.length
+            ? `<p class="detalle-justificacion">${escapeHtml(razones.map(capitalizarPrimeraLetra).join(' · '))}</p>`
+            : ''}
         </div>
+        <div class="detalle-evidencia">
+          <h2 class="detalle-seccion-titulo">Respuesta sugerida <span class="detalle-sugerencia-label">Sugerencia del sistema</span></h2>
+          <div class="detalle-evidencia-valores">
+            ${instituciones.length
+              ? instituciones.map(i => `<span class="detalle-chip">${escapeHtml(capitalizarPrimeraLetra(etiquetaInstitucion(i)))}</span>`).join('')
+              : '<span class="detalle-vacio">Sin institución sugerida</span>'}
+          </div>
+        </div>
+      </section>
 
-      </details>
+      <section class="detalle-relato">
+        <div class="detalle-relato-cabecera">
+          <h2 class="detalle-seccion-titulo">Relato de la llamada</h2>
+          <span class="detalle-transcripcion-meta">Transcripción ASR · Llamada en vivo</span>
+        </div>
+        <p class="detalle-transcripcion">${escapeHtml(transcripcion || 'Transcripción no disponible.')}</p>
+      </section>
 
-      <div class="detalle-meta">
-
-        <strong>
-          Motivos detectados:
-        </strong>
-
-        ${
-          palabras.length
-            ? palabras
-                .map(
-                  palabra =>
-                    `<span class="palabra">${escapeHtml(
-                      palabra
-                    )}</span>`
-                )
-                .join(' ')
-            : '<span class="palabra">Sin palabras clave detectadas</span>'
-        }
-
-      </div>
-
-      <div class="detalle-meta">
-        <strong>Respuesta sugerida:</strong>
-        ${
-          instituciones.length
-            ? instituciones
-                .map(i => `<span class="palabra">${escapeHtml(etiquetaInstitucion(i))}</span>`)
-                .join(' ')
-            : '<span class="palabra">Sin institución sugerida automáticamente</span>'
-        }
-      </div>
-
-      <div class="detalle-meta">
-        <strong>Explicación de prioridad:</strong>
-        ${
-          razones.length
-            ? razones
-                .map(r => `<span class="palabra">${escapeHtml(r)}</span>`)
-                .join(' ')
-            : '<span class="palabra">Sin motivos registrados</span>'
-        }
-      </div>
-
-      ${
-        l.closureComment
-          ? `
-            <div class="detalle-meta">
-              Resolución:
-              ${escapeHtml(
-                l.closureComment
-              )}
-            </div>
-          `
-          : ''
-      }
+      ${l.closureComment ? `
+        <section class="detalle-resolucion">
+          <span class="detalle-etiqueta">Resolución</span>
+          <p>${escapeHtml(capitalizarPrimeraLetra(l.closureComment))}</p>
+        </section>
+      ` : ''}
 
       <div class="detalle-acciones">
-
-        ${
-          puedeAsignar
-            ? `
-              <button
-                class="btn-accion primario"
-                id="accion-asignar"
-              >
-                Tomar caso
-              </button>
-            `
-            : ''
-        }
-
-        ${
-          puedeCerrar
-            ? `
-              <button
-                class="btn-accion primario"
-                id="accion-cerrar"
-              >
-                Cerrar caso
-              </button>
-            `
-            : ''
-        }
-
-        ${
-          l.latitude != null &&
-          l.longitude != null
-            ? `
-              <button
-                class="btn-accion secundario"
-                id="accion-mapa"
-              >
-                🗺 Ver mapa
-              </button>
-            `
-            : ''
-        }
-
+        ${puedeAsignar ? '<button class="btn-accion primario accion-principal" id="accion-asignar">Tomar caso</button>' : ''}
+        ${puedeCerrar ? '<button class="btn-accion primario" id="accion-cerrar">Cerrar caso</button>' : ''}
       </div>
-
-    </div>
+    </article>
   `;
 
-  $('accion-asignar')
-    ?.addEventListener(
-      'click',
-      () =>
-        asignarCaso(l.id)
-    );
+  $('accion-asignar')?.addEventListener('click', () => asignarCaso(l.id));
+  $('accion-cerrar')?.addEventListener('click', () => abrirModalCerrar(l.id));
+}
 
-  $('accion-cerrar')
-    ?.addEventListener(
-      'click',
-      () =>
-        abrirModalCerrar(
-          l.id
-        )
-    );
-
-  $('accion-mapa')
-    ?.addEventListener(
-      'click',
-      () =>
-        cambiarVista(
-          'mapa'
-        )
-    );
+function capitalizarPrimeraLetra(valor) {
+  const texto = String(valor ?? '').trim();
+  return texto ? texto.charAt(0).toLocaleUpperCase('es-CL') + texto.slice(1) : texto;
 }
 
 
@@ -2505,7 +2289,7 @@ async function cargarUsuarios() {
 
 function renderizarUsuarios(usuarios) {
   $('usuarios-total').textContent =
-    `Total: ${usuarios.length} usuarios`;
+    `${usuarios.length} ${usuarios.length === 1 ? 'usuario' : 'usuarios'}`;
 
   if (!usuarios.length) {
     $('lista-usuarios').innerHTML =
@@ -2521,122 +2305,51 @@ function renderizarUsuarios(usuarios) {
   $('lista-usuarios').innerHTML =
     usuarios
       .map(
-        u => `
-          <div class="usuario-card">
+        u => {
+          const estado = u.active
+            ? { texto: 'Activo', clase: 'activo' }
+            : { texto: 'Inactivo', clase: 'inactivo' };
+          const institucion = u.institution
+            ? etiquetaInstitucion(u.institution)
+            : 'Administración general';
+          const esUsuarioActual = u.username === sesion.username;
 
-            <div class="info">
-
-              <div>
-
-                <div class="nombre">
-                  ${escapeHtml(
-                    u.fullName ||
-                    u.username
-                  )}
+          return `
+            <article class="usuario-card">
+              <div class="usuario-identidad">
+                <span class="usuario-avatar" aria-hidden="true">${escapeHtml(
+                  String(u.fullName || u.username).trim().charAt(0).toLocaleUpperCase('es-CL') || 'U'
+                )}</span>
+                <div class="usuario-identidad-texto">
+                  <h3 class="nombre">${escapeHtml(u.fullName || u.username)}</h3>
+                  <p class="usuario">@${escapeHtml(u.username)}</p>
+                  ${u.email ? `<p class="usuario-email">${escapeHtml(u.email)}</p>` : ''}
                 </div>
-
-                <div class="usuario">
-                  @${escapeHtml(
-                    u.username
-                  )}
-                  ${
-                    u.email
-                      ? ` · ${escapeHtml(
-                          u.email
-                        )}`
-                      : ''
-                  }
-                </div>
-
               </div>
 
-              <span class="rol-tag">
-                ${escapeHtml(
-                  etiquetaRol(u.role)
-                )}
-              </span>
+              <div class="usuario-etiquetas" aria-label="Rol, institución y estado">
+                <span class="usuario-etiqueta rol">${escapeHtml(etiquetaRol(u.role))}</span>
+                <span class="usuario-etiqueta institucion">${escapeHtml(institucion)}</span>
+                <span class="usuario-etiqueta estado ${estado.clase}">
+                  <span aria-hidden="true"></span>${estado.texto}
+                </span>
+                ${u.testAccount
+                  ? '<span class="usuario-etiqueta prueba" title="Cuenta de solo lectura usada para vista previa">Cuenta de vista previa</span>'
+                  : ''}
+                ${esUsuarioActual ? '<span class="usuario-etiqueta actual">Tu cuenta</span>' : ''}
+              </div>
 
-              ${
-                u.institution
-                  ? `
-                    <span class="usuario-estado">
-                      ${escapeHtml(
-                        u.institution
-                      )}
-                    </span>
-                  `
-                  : ''
-              }
-
-              ${
-                u.testAccount
-                  ? `
-                    <span class="usuario-estado" title="Cuenta sintética de solo lectura usada por el modo vista previa; no tiene contraseña utilizable.">
-                      ◎ vista previa
-                    </span>
-                  `
-                  : ''
-              }
-
-              <span class="usuario-estado">
-                ${
-                  u.active
-                    ? '● activo'
-                    : '● pendiente'
-                }
-              </span>
-
-            </div>
-
-            <div class="acciones">
-
-              ${
-                u.active
-                  ? `
-                    <button
-                      class="btn-accion peligro"
-                      data-accion="desactivar"
-                      data-id="${u.id}"
-                      ${
-                        u.username ===
-                        sesion.username
-                          ? 'disabled'
-                          : ''
-                      }
-                    >
-                      Desactivar
-                    </button>
-                  `
-                  : `
-                    <button
-                      class="btn-accion primario"
-                      data-accion="activar"
-                      data-id="${u.id}"
-                    >
-                      Activar
-                    </button>
-                  `
-              }
-
-              ${
-                u.testAccount
+              <div class="acciones" aria-label="Acciones de usuario">
+                ${u.active
+                  ? `<button class="btn-accion peligro" data-accion="desactivar" data-id="${u.id}" ${esUsuarioActual ? 'disabled title="No puedes desactivar tu propia cuenta"' : ''}>Desactivar cuenta</button>`
+                  : `<button class="btn-accion primario" data-accion="activar" data-id="${u.id}">Activar cuenta</button>`}
+                ${u.testAccount
                   ? ''
-                  : `
-                    <button
-                      class="btn-accion secundario"
-                      data-accion="reset-clave"
-                      data-id="${u.id}"
-                      title="Genera una contraseña temporal para este usuario"
-                    >
-                      Restablecer clave
-                    </button>
-                  `
-              }
-
-            </div>
-
-          </div>
-        `
+                  : `<button class="btn-accion secundario" data-accion="reset-clave" data-id="${u.id}" title="Genera una contraseña temporal para este usuario">Restablecer contraseña</button>`}
+              </div>
+            </article>
+          `;
+        }
       )
       .join('');
 
@@ -2731,6 +2444,11 @@ async function cambiarEstadoUsuario(
 }
 
 function cambiarAdminTab(tab) {
+  if (tab === 'usuarios' && sesion?.role !== 'administrator') {
+    adminTabActual = 'incidentes';
+    return;
+  }
+
   adminTabActual =
     tab;
 
@@ -2813,17 +2531,11 @@ function actualizarTodo() {
 
 
 // ======================================================
-// LLAMADA EN VIVO / SHERPA-ONNX
+// LLAMADA EN VIVO / TRANSCRIPCIÓN EN NUBE
 // ======================================================
 
-let ASR_WS_URL = configuracionPublica.asrWebsocketUrl;
-
 let live = {
-  ws: null,
   stream: null,
-  audioContext: null,
-  source: null,
-  processor: null,
   mediaRecorder: null,
   chunks: [],
   transcript: '',
@@ -2914,8 +2626,10 @@ function abrirLive() {
     'Listo'
   );
 
-  $('live-asr').textContent =
-    'ASR: desconectado';
+  $('live-provider').textContent =
+    configuracionPublica.transcriptionConfigured
+      ? 'Groq Whisper configurado'
+      : 'Falta configurar Groq';
 
   setLiveTranscript(
     'Presiona “Iniciar micrófono” para comenzar…'
@@ -2928,13 +2642,15 @@ function abrirLive() {
     true;
 
   $('live-nota').textContent =
-    'Necesitas tener el servidor ASR en ws://localhost:6006.';
+    configuracionPublica.transcriptionConfigured
+      ? 'La transcripción se procesa en el servidor con Groq Whisper al guardar la grabación.'
+      : 'Falta configurar GROQ_API_KEY en el servidor para crear llamadas desde audio.';
 }
 
 function cerrarLive() {
-  if (live.startedAt) {
+  if (live.startedAt || live.stopping) {
     mostrarAlerta(
-      'Detén y guarda la llamada antes de cerrar esta ventana.',
+      'Espera a que termine la grabación o el guardado antes de cerrar esta ventana.',
       'error'
     );
 
@@ -2987,78 +2703,6 @@ function obtenerUbicacionOperador() {
   );
 }
 
-function downsampleBuffer(
-  buffer,
-  inputRate,
-  outputRate = 16000
-) {
-  if (
-    inputRate ===
-    outputRate
-  ) {
-    return buffer;
-  }
-
-  const ratio =
-    inputRate /
-    outputRate;
-
-  const newLength =
-    Math.round(
-      buffer.length /
-        ratio
-    );
-
-  const result =
-    new Float32Array(
-      newLength
-    );
-
-  let offsetResult = 0;
-  let offsetBuffer = 0;
-
-  while (
-    offsetResult <
-    result.length
-  ) {
-    const nextOffsetBuffer =
-      Math.round(
-        (offsetResult + 1) *
-          ratio
-      );
-
-    let accum = 0;
-    let count = 0;
-
-    for (
-      let i =
-        offsetBuffer;
-      i <
-        nextOffsetBuffer &&
-      i <
-        buffer.length;
-      i++
-    ) {
-      accum +=
-        buffer[i];
-
-      count++;
-    }
-
-    result[offsetResult] =
-      count
-        ? accum / count
-        : 0;
-
-    offsetResult++;
-
-    offsetBuffer =
-      nextOffsetBuffer;
-  }
-
-  return result;
-}
-
 async function iniciarLive() {
   if (
     live.startedAt ||
@@ -3092,6 +2736,9 @@ async function iniciarLive() {
     false;
 
   try {
+    if (!window.MediaRecorder || !navigator.mediaDevices?.getUserMedia) {
+      throw new Error('Este navegador no permite grabar audio.');
+    }
 
     live.stream =
       await navigator.mediaDevices.getUserMedia(
@@ -3105,39 +2752,6 @@ async function iniciarLive() {
         }
       );
 
-    /*
-     * Ubicación del operador:
-     * solamente se utiliza como contexto
-     * para ordenar candidatos geográficos.
-     *
-     * NO reemplaza la ubicación de la emergencia
-     * y NO se guarda como ubicación del incidente.
-     */
-    live.ubicacionOperador =
-      await obtenerUbicacionOperador();
-
-    if (
-      live.ubicacionOperador
-    ) {
-
-      $('live-nota').textContent =
-        'Micrófono conectado · ubicación cercana disponible para mejorar la búsqueda en el mapa.';
-
-    } else {
-
-      $('live-nota').textContent =
-        'Micrófono conectado · sin ubicación del equipo; la búsqueda del mapa seguirá funcionando.';
-    }
-
-    /*
-     * La grabación del audio (lo que se guarda como
-     * evidencia del caso) NO debe depender de que el
-     * ASR se conecte. Si sherpa-onnx está caído o
-     * inestable, igual queremos quedarnos con el audio
-     * para poder transcribirlo o revisarlo después.
-     * Por eso el MediaRecorder arranca apenas tenemos
-     * el micrófono, no dentro del onopen del WebSocket.
-     */
     const mimeGrabacion =
       MediaRecorder.isTypeSupported(
         'audio/webm;codecs=opus'
@@ -3179,193 +2793,34 @@ async function iniciarLive() {
         250
       );
 
-    live.ws =
-      new WebSocket(
-        ASR_WS_URL
-      );
+    /*
+     * La ubicación del operador es contexto opcional para el mapa; la
+     * grabación ya está activa y no espera el permiso de geolocalización.
+     */
+    live.ubicacionOperador =
+      await obtenerUbicacionOperador();
 
-    live.ws.binaryType =
-      'arraybuffer';
+    $('live-nota').textContent =
+      live.ubicacionOperador
+        ? 'Micrófono conectado · ubicación del equipo disponible como contexto del mapa.'
+        : 'Micrófono conectado · sin ubicación del equipo; la búsqueda del mapa seguirá funcionando.';
 
-    live.ws.onopen =
-      async () => {
+    setLiveStatus(
+      'GRABANDO',
+      'activo'
+    );
 
-        try {
+    $('live-provider').textContent =
+      'Audio se transcribirá con Groq al guardar';
 
-          live.audioContext =
-            new (
-              window.AudioContext ||
-              window.webkitAudioContext
-            )();
+    setLiveTranscript(
+      'Grabando audio… la transcripción aparecerá al detener y guardar.'
+    );
 
-          await live.audioContext.resume();
-
-          live.source =
-            live.audioContext.createMediaStreamSource(
-              live.stream
-            );
-
-          live.processor =
-            live.audioContext.createScriptProcessor(
-              4096,
-              1,
-              1
-            );
-
-          live.processor.onaudioprocess =
-            event => {
-
-              if (
-                !live.ws ||
-                live.ws.readyState !==
-                  WebSocket.OPEN ||
-                live.stopping
-              ) {
-                return;
-              }
-
-              const input =
-                event.inputBuffer.getChannelData(
-                  0
-                );
-
-              const samples =
-                downsampleBuffer(
-                  input,
-                  live.audioContext.sampleRate,
-                  16000
-                );
-
-              if (
-                samples.length
-              ) {
-                live.ws.send(
-                  samples.buffer
-                );
-              }
-            };
-
-          live.source.connect(
-            live.processor
-          );
-
-          /*
-           * Nodo silencioso para mantener
-           * activo el procesamiento sin
-           * reproducir la voz por los parlantes.
-           */
-          const silencioso =
-            live.audioContext.createGain();
-
-          silencioso.gain.value =
-            0;
-
-          live.processor.connect(
-            silencioso
-          );
-
-          silencioso.connect(
-            live.audioContext.destination
-          );
-
-          setLiveStatus(
-            'EN VIVO',
-            'activo'
-          );
-
-          $('live-asr').textContent =
-            'ASR: conectado · 16 kHz';
-
-          setLiveTranscript(
-            'Escuchando…'
-          );
-
-          registrarEvento(
-            'Llamada en vivo iniciada.',
-            'admin'
-          );
-
-        } catch (err) {
-
-          detenerLive(
-            false
-          );
-
-          throw err;
-        }
-      };
-
-    live.ws.onmessage =
-      event => {
-
-        const bruto =
-          String(
-            event.data || ''
-          ).trim();
-
-        if (
-          !bruto ||
-          bruto === 'Done!'
-        ) {
-          return;
-        }
-
-        const texto =
-          limpiarTranscripcion(
-            bruto
-          );
-
-        if (!texto) {
-          return;
-        }
-
-        /*
-         * Sherpa puede enviar JSON
-         * con información técnica.
-         *
-         * La interfaz solo muestra
-         * el texto humano.
-         */
-        live.transcript =
-          texto;
-
-        setLiveTranscript(
-          texto
-        );
-      };
-
-    live.ws.onerror =
-      () => {
-
-        setLiveStatus(
-          'ASR sin conexión',
-          'error'
-        );
-
-        $('live-asr').textContent =
-          'ASR: error';
-
-        $('live-nota').textContent =
-          `No se pudo conectar a ${ASR_WS_URL}. Revisa el servicio ASR.`;
-      };
-
-    live.ws.onclose =
-      () => {
-
-        if (
-          !live.stopping &&
-          live.startedAt
-        ) {
-
-          setLiveStatus(
-            'ASR desconectado',
-            'error'
-          );
-
-          $('live-asr').textContent =
-            'ASR: desconectado';
-        }
-      };
+    registrarEvento(
+      'Grabación de llamada iniciada.',
+      'admin'
+    );
 
   } catch (err) {
 
@@ -3385,10 +2840,11 @@ async function iniciarLive() {
       true;
 
     const mensaje =
-      err?.name ===
-      'NotAllowedError'
+      err?.name === 'NotAllowedError'
         ? 'El navegador bloqueó el micrófono.'
-        : 'No se pudo iniciar la llamada en vivo.';
+        : err instanceof Error
+          ? err.message
+          : 'No se pudo iniciar la grabación.';
 
     $('live-nota').textContent =
       mensaje;
@@ -3427,30 +2883,6 @@ async function detenerLive(
 
   live.timer =
     null;
-
-  if (
-    live.processor
-  ) {
-    live.processor.disconnect();
-
-    live.processor.onaudioprocess =
-      null;
-  }
-
-  if (
-    live.source
-  ) {
-    live.source.disconnect();
-  }
-
-  if (
-    live.audioContext
-  ) {
-
-    try {
-      await live.audioContext.close();
-    } catch {}
-  }
 
   let grabacionPromise =
     Promise.resolve();
@@ -3499,38 +2931,6 @@ async function detenerLive(
 
   await grabacionPromise;
 
-  const socketAsr = live.ws;
-  if (
-    socketAsr &&
-    socketAsr.readyState ===
-      WebSocket.OPEN
-  ) {
-    await new Promise(resolve => {
-      let resuelto = false;
-      const resolver = () => {
-        if (resuelto) return;
-        resuelto = true;
-        clearTimeout(temporizador);
-        resolve();
-      };
-      const mensajeAnterior = socketAsr.onmessage;
-      const temporizador = setTimeout(resolver, 3000);
-
-      socketAsr.onmessage = event => {
-        mensajeAnterior?.(event);
-        if (String(event.data || '').trim() === 'Done!') {
-          resolver();
-        }
-      };
-
-      socketAsr.send('Done');
-    });
-
-    if (socketAsr.readyState === WebSocket.OPEN) {
-      socketAsr.close();
-    }
-  }
-
   const transcript =
     limpiarTranscripcion(
       live.transcript
@@ -3539,8 +2939,10 @@ async function detenerLive(
   live.startedAt =
     null;
 
-  $('live-asr').textContent =
-    'ASR: detenido';
+  $('live-provider').textContent =
+    guardar
+      ? 'Enviando audio a Groq Whisper…'
+      : 'Grabación detenida';
 
   setLiveStatus(
     guardar
@@ -3553,11 +2955,7 @@ async function detenerLive(
     live = {
       ...live,
 
-      ws: null,
       stream: null,
-      audioContext: null,
-      source: null,
-      processor: null,
       mediaRecorder: null,
       chunks: [],
       transcript: '',
@@ -3572,27 +2970,6 @@ async function detenerLive(
     return;
   }
 
-  if (!transcript) {
-
-    setLiveStatus(
-      'Sin texto',
-      'error'
-    );
-
-    mostrarAlerta(
-      'No se obtuvo transcripción. Revisa el servidor ASR y vuelve a intentar.',
-      'error'
-    );
-
-    $('live-iniciar').disabled =
-      false;
-
-    live.stopping =
-      false;
-
-    return;
-  }
-
   try {
 
     const form =
@@ -3602,8 +2979,7 @@ async function detenerLive(
       new Blob(
         [
           JSON.stringify({
-            transcription:
-              transcript,
+            transcription: '',
 
             latitudOperador:
               live
@@ -3663,8 +3039,11 @@ async function detenerLive(
     }
 
     const audioAdjunto = form.get('audio');
-    if (audioAdjunto instanceof Blob && audioAdjunto.size > 50 * 1024 * 1024) {
-      throw new Error('La grabación supera los 50 MB. Detén la llamada y vuelve a intentarlo.');
+    if (!(audioAdjunto instanceof Blob) || audioAdjunto.size === 0) {
+      throw new Error('No se pudo preparar el audio. Inicia el micrófono y vuelve a grabar.');
+    }
+    if (audioAdjunto.size > 25 * 1024 * 1024) {
+      throw new Error('La grabación supera el límite de 25 MB de Groq. Detén antes y vuelve a intentarlo.');
     }
 
     const r =
@@ -3691,7 +3070,7 @@ async function detenerLive(
       'activo'
     );
 
-    $('live-asr').textContent =
+    $('live-provider').textContent =
       `Caso #${d.id} · ${
         d.priority ||
         'clasificando'
@@ -3750,8 +3129,8 @@ async function detenerLive(
       'error'
     );
 
-    $('live-asr').textContent =
-      'ASR: transcripción disponible';
+    $('live-provider').textContent =
+      'Audio conservado para reintentar';
 
     mostrarAlerta(
       e.message ||
@@ -3760,13 +3139,15 @@ async function detenerLive(
     );
 
     setLiveTranscript(
-      transcript
+      transcript || 'Grabación lista. Puedes reintentar el envío.'
     );
 
     $('live-detener').textContent =
       'Reintentar guardado';
 
     $('live-detener').disabled =
+      false;
+    $('live-iniciar').disabled =
       false;
 
     live.stopping =
@@ -3776,11 +3157,7 @@ async function detenerLive(
   live = {
     ...live,
 
-    ws: null,
     stream: null,
-    audioContext: null,
-    source: null,
-    processor: null,
     mediaRecorder: null,
     chunks: guardarFallido ? live.chunks : [],
     transcript: guardarFallido ? live.transcript : '',
@@ -3964,20 +3341,7 @@ __alCargarDom(
           )
       );
 
-    document
-      .querySelectorAll(
-        '.detalle-menu-btn'
-      )
-      .forEach(
-        b =>
-          b.addEventListener(
-            'click',
-            () =>
-              cambiarVista(
-                b.dataset.vista
-              )
-          )
-      );
+    $('busqueda-incidentes')?.addEventListener('input', renderizarLista);
 
     document
       .querySelectorAll(
@@ -4012,18 +3376,7 @@ __alCargarDom(
     window.addEventListener(
       'resize',
       () => {
-
-        if (
-          vistaActual ===
-          'mapa'
-        ) {
-          setTimeout(
-            () =>
-              mapa?.invalidateSize(),
-            100
-          );
-        }
-
+        setTimeout(() => mapa?.invalidateSize(true), 100);
       }
     );
 
@@ -4150,8 +3503,8 @@ document.getElementById('btn-cambiar-clave')?.addEventListener('click', cambiarC
 /* ===== LATIDO DE PÁGINA (ver PageWatchdogService) =====
    Mientras esta pestaña siga abierta (haya o no sesión iniciada), avisamos
    al servidor cada pocos segundos. Si deja de recibir avisos, asume que
-   cerraron la página y se apaga solo, liberando el ASR y los puertos
-   8000/6006. Se manda con keepalive para que el último aviso salga incluso
+   cerraron la página y se apaga solo, liberando el puerto
+   8000. Se manda con keepalive para que el último aviso salga incluso
    si el navegador ya está cerrando la pestaña. */
 (function iniciarLatidoDePagina() {
   const INTERVALO_MS = 5000;

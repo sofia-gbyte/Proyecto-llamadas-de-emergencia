@@ -8,38 +8,39 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 
 public interface CallRepository extends JpaRepository<Call, Long> {
-    List<Call> findByAssignedFalseAndInstitution(String institution);
-    List<Call> findByAssignedTrueAndClosureDateIsNullAndInstitution(String institution);
-    List<Call> findByClosureDateIsNotNullAndInstitutionOrderByClosureDateDesc(String institution);
-    long countByInstitution(String institution);
-    long countByPriorityAndClosureDateIsNullAndInstitution(String priority, String institution);
-    long countByAssignedFalseAndInstitution(String institution);
-    long countByAssignedTrueAndClosureDateIsNullAndInstitution(String institution);
-    List<Call> findByAssignmentDateIsNotNullAndInstitution(String institution);
-    List<Call> findByAssignmentDateIsNotNull();
-    List<Call> findByInstitutionIsNullAndCreatedByUserIsNotNull();
+    List<Call> findByAssignedFalseAndDeletedFalseAndInstitution(String institution);
+    List<Call> findByAssignedTrueAndClosureDateIsNullAndDeletedFalseAndInstitution(String institution);
+    List<Call> findByClosureDateIsNotNullAndDeletedFalseAndInstitutionOrderByClosureDateDesc(String institution);
+    long countByInstitutionAndDeletedFalse(String institution);
+    long countByPriorityAndClosureDateIsNullAndInstitutionAndDeletedFalse(String priority, String institution);
+    long countByAssignedFalseAndInstitutionAndDeletedFalse(String institution);
+    long countByAssignedTrueAndClosureDateIsNullAndInstitutionAndDeletedFalse(String institution);
+    long countByDeletedFalse();
+    List<Call> findByAssignmentDateIsNotNullAndDeletedFalseAndInstitution(String institution);
+    List<Call> findByAssignmentDateIsNotNullAndDeletedFalse();
+    List<Call> findByInstitutionIsNullAndCreatedByUserIsNotNullAndDeletedFalse();
 
-    @Query("select c from Call c where c.assigned = false and (lower(c.institution) = lower(:institution) or c.suggestedInstitutions like concat('%', :institution, '%'))" )
+    @Query("select c from Call c where c.deleted = false and c.assigned = false and (lower(c.institution) = lower(:institution) or c.suggestedInstitutions like concat('%', :institution, '%'))" )
     List<Call> findPendingVisibleToInstitution(@Param("institution") String institution);
 
-    @Query("select c from Call c where c.assigned = true and c.closureDate is null and (lower(c.institution) = lower(:institution) or c.suggestedInstitutions like concat('%', :institution, '%'))" )
+    @Query("select c from Call c where c.deleted = false and c.assigned = true and c.closureDate is null and (lower(c.institution) = lower(:institution) or c.suggestedInstitutions like concat('%', :institution, '%'))" )
     List<Call> findInProgressVisibleToInstitution(@Param("institution") String institution);
 
-    @Query("select c from Call c where c.closureDate is not null and (lower(c.institution) = lower(:institution) or c.suggestedInstitutions like concat('%', :institution, '%')) order by c.closureDate desc")
+    @Query("select c from Call c where c.deleted = false and c.closureDate is not null and (lower(c.institution) = lower(:institution) or c.suggestedInstitutions like concat('%', :institution, '%')) order by c.closureDate desc")
     List<Call> findClosedVisibleToInstitution(@Param("institution") String institution);
 
-    @Query("select count(c) from Call c where lower(c.institution) = lower(:institution) or c.suggestedInstitutions like concat('%', :institution, '%')")
+    @Query("select count(c) from Call c where c.deleted = false and (lower(c.institution) = lower(:institution) or c.suggestedInstitutions like concat('%', :institution, '%'))")
     long countVisibleToInstitution(@Param("institution") String institution);
 
-    @Query("select count(c) from Call c where c.priority = :priority and c.closureDate is null and (lower(c.institution) = lower(:institution) or c.suggestedInstitutions like concat('%', :institution, '%'))" )
+    @Query("select count(c) from Call c where c.deleted = false and c.priority = :priority and c.closureDate is null and (lower(c.institution) = lower(:institution) or c.suggestedInstitutions like concat('%', :institution, '%'))" )
     long countPriorityVisibleToInstitution(@Param("priority") String priority, @Param("institution") String institution);
 
-    @Query("select count(c) from Call c where c.assigned = false and c.closureDate is null and (lower(c.institution) = lower(:institution) or c.suggestedInstitutions like concat('%', :institution, '%'))" )
+    @Query("select count(c) from Call c where c.deleted = false and c.assigned = false and c.closureDate is null and (lower(c.institution) = lower(:institution) or c.suggestedInstitutions like concat('%', :institution, '%'))" )
     long countPendingVisibleToInstitution(@Param("institution") String institution);
 
-    @Query("select count(c) from Call c where c.assigned = true and c.closureDate is null and (lower(c.institution) = lower(:institution) or c.suggestedInstitutions like concat('%', :institution, '%'))" )
+    @Query("select count(c) from Call c where c.deleted = false and c.assigned = true and c.closureDate is null and (lower(c.institution) = lower(:institution) or c.suggestedInstitutions like concat('%', :institution, '%'))" )
     long countInProgressVisibleToInstitution(@Param("institution") String institution);
 
-    @Query("select c from Call c where c.assignmentDate is not null and (lower(c.institution) = lower(:institution) or c.suggestedInstitutions like concat('%', :institution, '%'))" )
+    @Query("select c from Call c where c.deleted = false and c.assignmentDate is not null and (lower(c.institution) = lower(:institution) or c.suggestedInstitutions like concat('%', :institution, '%'))" )
     List<Call> findAssignedVisibleToInstitution(@Param("institution") String institution);
 }

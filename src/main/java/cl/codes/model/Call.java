@@ -59,6 +59,9 @@ public class Call {
 
     private boolean assigned = false;
 
+    @Column(name = "deleted", nullable = false, columnDefinition = "boolean default false")
+    private boolean deleted = false;
+
     @Column(name = "assigned_operator", length = 50)
     private String assignedOperator;
 
@@ -132,6 +135,9 @@ public class Call {
     public boolean isAssigned() { return assigned; }
     public void setAssigned(boolean assigned) { this.assigned = assigned; }
 
+    public boolean isDeleted() { return deleted; }
+    public void setDeleted(boolean deleted) { this.deleted = deleted; }
+
     public String getAssignedOperator() { return assignedOperator; }
     public void setAssignedOperator(String assignedOperator) { this.assignedOperator = assignedOperator; }
 
@@ -153,5 +159,4 @@ public class Call {
     public String getCreatedByUser() { return createdByUser; }
     public void setCreatedByUser(String createdByUser) { this.createdByUser = createdByUser; }
 }
-
 

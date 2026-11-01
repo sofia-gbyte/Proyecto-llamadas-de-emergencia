@@ -25,16 +25,19 @@ import static org.mockito.Mockito.*;
 class CallServiceTest {
     @Mock CallRepository callRepository;
     @Mock UserRepository userRepository;
+    @Mock GeocoderService geocoder;
 
     private CallService service;
     private Authentication operatorAuth;
     private Authentication otherAuth;
+    private Authentication adminAuth;
 
     @BeforeEach
     void setUp() {
-        service = new CallService(callRepository, userRepository);
+        service = new CallService(callRepository, userRepository, geocoder);
         operatorAuth = new UsernamePasswordAuthenticationToken("ana", null, List.of(new SimpleGrantedAuthority("ROLE_OPERATOR")));
         otherAuth = new UsernamePasswordAuthenticationToken("beatriz", null, List.of(new SimpleGrantedAuthority("ROLE_SUPERVISOR")));
+        adminAuth = new UsernamePasswordAuthenticationToken("admin", null, List.of(new SimpleGrantedAuthority("ROLE_ADMINISTRATOR")));
     }
 
     private User user(String username, String role, String institution) {
@@ -44,10 +47,10 @@ class CallServiceTest {
     @Test
     void pendingIsFilteredByInstitution() {
         when(userRepository.findByUsername("ana")).thenReturn(Optional.of(user("ana", "operator", "bomberos")));
-        when(callRepository.findByAssignedFalseAndInstitution("bomberos")).thenReturn(new java.util.ArrayList<>());
+        when(callRepository.findByAssignedFalseAndDeletedFalseAndInstitution("bomberos")).thenReturn(new java.util.ArrayList<>());
         assertTrue(service.getPending(operatorAuth).isEmpty());
-        verify(callRepository).findByAssignedFalseAndInstitution("bomberos");
-        verify(callRepository, never()).findByAssignedFalseAndInstitution("carabineros");
+        verify(callRepository).findByAssignedFalseAndDeletedFalseAndInstitution("bomberos");
+        verify(callRepository, never()).findByAssignedFalseAndDeletedFalseAndInstitution("carabineros");
     }
 
     @Test
@@ -86,5 +89,59 @@ class CallServiceTest {
         when(callRepository.findById(10L)).thenReturn(Optional.of(call));
         when(callRepository.save(call)).thenReturn(call);
         assertDoesNotThrow(() -> service.close(10L, "supervisión", otherAuth));
+    }
+
+    @Test
+    void supervisorCanCorrectOpenCallDetailsWithinInstitution() {
+        Call call = new Call();
+        call.setInstitution("bomberos");
+        when(userRepository.findByUsername("beatriz")).thenReturn(Optional.of(user("beatriz", "supervisor", "bomberos")));
+        when(callRepository.findById(11L)).thenReturn(Optional.of(call));
+        when(geocoder.geocode("Av. Central 123", "Incendio confirmado"))
+                .thenReturn(new GeocoderService.Coordinates(-33.44, -70.66, "Av. Central 123"));
+        when(callRepository.save(call)).thenReturn(call);
+
+        assertSame(call, service.update(11L, "Incendio confirmado", "Av. Central 123", otherAuth));
+
+        assertEquals("Incendio confirmado", call.getOperationalSummary());
+        assertEquals("Av. Central 123", call.getDetectedAddress());
+        assertEquals(-33.44, call.getLatitude());
+        assertEquals(-70.66, call.getLongitude());
+    }
+
+    @Test
+    void closedCallCannotBeEdited() {
+        Call call = new Call();
+        call.setInstitution("bomberos");
+        call.setClosureDate(java.time.LocalDateTime.now());
+        when(userRepository.findByUsername("beatriz")).thenReturn(Optional.of(user("beatriz", "supervisor", "bomberos")));
+        when(callRepository.findById(12L)).thenReturn(Optional.of(call));
+
+        assertThrows(IllegalStateException.class, () -> service.update(12L, "Corrección", null, otherAuth));
+        verify(callRepository, never()).save(any());
+    }
+
+    @Test
+    void administratorCanArchiveOnlyAnUnassignedOpenCall() {
+        Call call = new Call();
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(user("admin", "administrator", null)));
+        when(callRepository.findById(13L)).thenReturn(Optional.of(call));
+        when(callRepository.save(call)).thenReturn(call);
+
+        service.deletePending(13L, adminAuth);
+
+        assertTrue(call.isDeleted());
+        verify(callRepository).save(call);
+    }
+
+    @Test
+    void assignedCallCannotBeArchived() {
+        Call call = new Call();
+        call.setAssigned(true);
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(user("admin", "administrator", null)));
+        when(callRepository.findById(14L)).thenReturn(Optional.of(call));
+
+        assertThrows(IllegalStateException.class, () -> service.deletePending(14L, adminAuth));
+        verify(callRepository, never()).save(any());
     }
 }
