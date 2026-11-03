@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Properties;
+import java.util.Map;
 import java.util.Set;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -21,8 +22,18 @@ public final class LocalSecretBootstrap {
     private static final Set<String> ALLOWED_LOCAL_SETTINGS = Set.of(
             "CODES_JWT_SECRET", "CODES_ENCRYPT_KEY", "CODES_ADMIN_USER", "CODES_ADMIN_PASSWORD",
             "CODES_ALTCHA_SECRET", "CODES_ALTCHA_ENABLED", "CODES_DB_USERNAME", "CODES_DB_PASSWORD",
+            "CODES_EXTERNAL_SERVICES_ENABLED",
             "GROQ_API_KEY", "GEOAPIFY_API_KEY", "CODES_SMTP_HOST", "CODES_SMTP_PORT",
-            "CODES_SMTP_USERNAME", "CODES_SMTP_PASSWORD", "CODES_MAIL_FROM", "CODES_PUBLIC_BASE_URL"
+            "CODES_SMTP_USERNAME", "CODES_SMTP_PASSWORD", "CODES_MAIL_FROM", "CODES_PUBLIC_BASE_URL",
+            "CODES_MAP_TILES_URL", "CODES_MAP_ATTRIBUTION", "CODES_ROUTING_URL",
+            "GROQ_BASE_URL", "GROQ_MODEL", "GROQ_LANGUAGE", "GEOAPIFY_BASE_URL"
+    );
+    private static final Set<String> EDITABLE_PROVIDER_SETTINGS = Set.of(
+            "CODES_EXTERNAL_SERVICES_ENABLED", "GROQ_API_KEY", "GEOAPIFY_API_KEY",
+            "CODES_SMTP_HOST", "CODES_SMTP_PORT", "CODES_SMTP_USERNAME", "CODES_SMTP_PASSWORD",
+            "CODES_MAIL_FROM", "CODES_PUBLIC_BASE_URL", "CODES_MAP_TILES_URL",
+            "CODES_MAP_ATTRIBUTION", "CODES_ROUTING_URL", "GROQ_BASE_URL", "GROQ_MODEL",
+            "GROQ_LANGUAGE", "GEOAPIFY_BASE_URL"
     );
 
     private LocalSecretBootstrap() {
@@ -49,10 +60,9 @@ public final class LocalSecretBootstrap {
             try {
                 Path dataDir = dataDirectory();
                 Map<String, String> secrets = new LinkedHashMap<>();
-                readProperties(dataDir.resolve(".codes-secrets.properties"))
-                        .forEach((key, value) -> secrets.put(String.valueOf(key), String.valueOf(value)));
                 Path powershellFile = dataDir.resolve(".codes-secrets.ps1");
                 if (Files.exists(powershellFile)) {
+                    LocalFilePermissions.restrict(powershellFile, false);
                     Matcher matcher = Pattern.compile(
                             "(?m)^\\s*\\$env:([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*'((?:[^']|'')*)'\\s*$"
                     ).matcher(Files.readString(powershellFile, StandardCharsets.UTF_8).replace("\uFEFF", ""));
@@ -60,6 +70,10 @@ public final class LocalSecretBootstrap {
                         secrets.put(matcher.group(1), matcher.group(2).replace("''", "'"));
                     }
                 }
+                Path propertiesFile = dataDir.resolve(".codes-secrets.properties");
+                readProperties(propertiesFile)
+                        .forEach((key, value) -> secrets.put(String.valueOf(key), String.valueOf(value)));
+                if (Files.exists(propertiesFile)) LocalFilePermissions.restrict(propertiesFile, false);
                 secrets.forEach((name, value) -> {
                     if (ALLOWED_LOCAL_SETTINGS.contains(name)
                             && !value.isBlank()
@@ -71,6 +85,50 @@ public final class LocalSecretBootstrap {
             } catch (IOException e) {
                 throw new IllegalStateException("No se pudieron cargar los secretos locales de CODES.", e);
             }
+        }
+    }
+
+    public static String getLocalSetting(String name) {
+        requireEditableProviderSetting(name);
+        String value = System.getenv(name);
+        if (value == null || value.isBlank()) value = System.getProperty(name);
+        if (value != null && !value.isBlank()) return value;
+        synchronized (LOCK) {
+            try {
+                Path dataDir = dataDirectory();
+                Path propertiesFile = dataDir.resolve(".codes-secrets.properties");
+                String persisted = readProperties(propertiesFile).getProperty(name);
+                if (persisted != null) return persisted;
+                return readPowerShellValue(dataDir.resolve(".codes-secrets.ps1"), name);
+            } catch (IOException e) {
+                throw new IllegalStateException("No se pudo leer la configuración local de CODES.", e);
+            }
+        }
+    }
+
+    public static void saveLocalSettings(Map<String, String> settings) {
+        synchronized (LOCK) {
+            for (String name : settings.keySet()) requireEditableProviderSetting(name);
+            try {
+                Path dataDir = dataDirectory();
+                Files.createDirectories(dataDir);
+                LocalFilePermissions.restrict(dataDir, true);
+                Path propertiesFile = dataDir.resolve(".codes-secrets.properties");
+                Properties properties = readProperties(propertiesFile);
+                for (Map.Entry<String, String> setting : settings.entrySet()) {
+                    if (setting.getValue() == null) properties.remove(setting.getKey());
+                    else properties.setProperty(setting.getKey(), setting.getValue());
+                }
+                writePropertiesAtomically(propertiesFile, properties);
+            } catch (IOException e) {
+                throw new IllegalStateException("No se pudo guardar la configuración local de CODES.", e);
+            }
+        }
+    }
+
+    private static void requireEditableProviderSetting(String name) {
+        if (!EDITABLE_PROVIDER_SETTINGS.contains(name)) {
+            throw new IllegalArgumentException("La opción no se puede editar desde la configuración local.");
         }
     }
 
@@ -97,6 +155,7 @@ public final class LocalSecretBootstrap {
                 sb.append(line).append(System.lineSeparator());
                 Files.writeString(secretFile, sb.toString(), StandardCharsets.UTF_8);
             }
+            LocalFilePermissions.restrict(secretFile, false);
         } catch (IOException e) {
             throw new IllegalStateException("No se pudo guardar el secreto local en el directorio de datos de CODES.", e);
         }
@@ -107,6 +166,7 @@ public final class LocalSecretBootstrap {
             Path dataDir = dataDirectory();
             Path propertiesFile = dataDir.resolve(".codes-secrets.properties");
             String value = readProperties(propertiesFile).getProperty(envVarName);
+            if (Files.exists(propertiesFile)) LocalFilePermissions.restrict(propertiesFile, false);
             if (value != null && !value.isBlank()) return value;
 
             Path powershellFile = dataDir.resolve(".codes-secrets.ps1");
@@ -150,11 +210,13 @@ public final class LocalSecretBootstrap {
             try (var writer = Files.newBufferedWriter(temporaryFile, StandardCharsets.UTF_8)) {
                 properties.store(writer, "CODES local secrets; do not share or commit this file");
             }
+            LocalFilePermissions.restrict(temporaryFile, false);
             try {
                 Files.move(temporaryFile, propertiesFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             } catch (AtomicMoveNotSupportedException e) {
                 Files.move(temporaryFile, propertiesFile, StandardCopyOption.REPLACE_EXISTING);
             }
+            LocalFilePermissions.restrict(propertiesFile, false);
         } finally {
             Files.deleteIfExists(temporaryFile);
         }

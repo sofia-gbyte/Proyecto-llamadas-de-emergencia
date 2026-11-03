@@ -4,6 +4,8 @@ import cl.codes.model.PasswordResetToken;
 import cl.codes.model.User;
 import cl.codes.repository.PasswordResetTokenRepository;
 import cl.codes.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -19,6 +21,7 @@ import java.util.HexFormat;
 
 @Service
 public class PasswordResetService {
+    private static final Logger log = LoggerFactory.getLogger(PasswordResetService.class);
     private final UserRepository userRepository;
     private final PasswordResetTokenRepository tokenRepository;
     private final PasswordEncoder passwordEncoder;
@@ -26,21 +29,28 @@ public class PasswordResetService {
     private final SecureRandom random = new SecureRandom();
     private final String publicBaseUrl;
     private final String fromAddress;
+    private final boolean externalServicesEnabled;
 
     public PasswordResetService(UserRepository userRepository, PasswordResetTokenRepository tokenRepository,
                                 PasswordEncoder passwordEncoder, JavaMailSender mailSender,
                                 @Value("${app.public-base-url:http://localhost:8000}") String publicBaseUrl,
-                                @Value("${app.mail-from:${spring.mail.username:}}") String fromAddress) {
+                                @Value("${app.mail-from:${spring.mail.username:}}") String fromAddress,
+                                @Value("${app.external-services.enabled:false}") boolean externalServicesEnabled) {
         this.userRepository = userRepository;
         this.tokenRepository = tokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.mailSender = mailSender;
         this.publicBaseUrl = publicBaseUrl.replaceAll("/$", "");
         this.fromAddress = fromAddress;
+        this.externalServicesEnabled = externalServicesEnabled;
     }
 
     @Transactional
     public void requestReset(String email) {
+        if (!externalServicesEnabled) {
+            log.info("Password recovery email skipped because external providers are disabled.");
+            return;
+        }
         tokenRepository.deleteByExpiresAtBefore(LocalDateTime.now());
         User user = userRepository.findByEmailIgnoreCase(email.strip()).orElse(null);
         if (user == null || !user.isActive() || user.getEmail() == null) return;

@@ -95,6 +95,27 @@ class GeocoderServiceTest {
                 "CODES-test/1.0",
                 "",
                 "http://127.0.0.1:" + server.getAddress().getPort() + "/v1/geocode/search",
+                true,
+                -33.4489,
+                -70.6693,
+                30
+        );
+
+        GeocoderService.Coordinates result = service.geocode("Avenida Manuel Montt #1234");
+
+        assertFalse(result.isPresent());
+        assertNull(lastRequest.get());
+    }
+
+    @Test
+    void doesNotContactProviderWhenExternalServicesAreDisabled() {
+        GeocoderService service = new GeocoderService(
+                tempDir.resolve("geocache.json").toString(),
+                "Chile",
+                "CODES-test/1.0",
+                "test-key",
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/v1/geocode/search",
+                false,
                 -33.4489,
                 -70.6693,
                 30
@@ -123,6 +144,7 @@ class GeocoderServiceTest {
                 "CODES-test/1.0",
                 "test-key",
                 "http://127.0.0.1:" + server.getAddress().getPort() + "/v1/geocode/search",
+                true,
                 -33.4489,
                 -70.6693,
                 30

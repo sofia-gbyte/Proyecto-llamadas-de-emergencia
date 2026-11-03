@@ -1,5 +1,6 @@
 package cl.codes.controller;
 
+import cl.codes.exception.ExternalServiceException;
 import cl.codes.exception.ResourceNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,6 +47,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
     }
 
+    @ExceptionHandler(ExternalServiceException.class)
+    public ResponseEntity<?> handleExternalServiceError(ExternalServiceException e) {
+        log.warn("External service request failed: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("error", e.getMessage()));
+    }
+
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<?> handleIntegrityConflict(DataIntegrityViolationException e) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
@@ -56,7 +63,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<?> handleFileTooLarge(MaxUploadSizeExceededException e) {
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(Map.of(
-                "error", "La grabación supera el tamaño máximo permitido (50 MB)."
+                "error", "La solicitud supera el tamaño máximo permitido de 50 MB."
         ));
     }
 
@@ -106,7 +113,15 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<?> handleUnexpectedError(Exception e) {
         String correlationId = UUID.randomUUID().toString().substring(0, 8);
-        log.error("Error inesperado [{}]: {}", correlationId, e.toString(), e);
+        Throwable rootCause = e;
+        int causeDepth = 0;
+        while (rootCause.getCause() != null && rootCause.getCause() != rootCause && causeDepth++ < 32) {
+            rootCause = rootCause.getCause();
+        }
+        // Do not log exception messages or stack traces here: lower-level
+        // exceptions can contain paths, request values, or provider details.
+        log.error("Error inesperado [{}]: exceptionType={}, causeType={}",
+                correlationId, e.getClass().getName(), rootCause.getClass().getName());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
                 "error", "No fue posible completar la operación. Intenta nuevamente.",
                 "referencia", correlationId

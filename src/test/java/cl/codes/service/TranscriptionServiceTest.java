@@ -75,24 +75,94 @@ class TranscriptionServiceTest {
     }
 
     @Test
-    void doesNotExposeProviderErrorBodyInException() throws Exception {
+    void doesNotSendAudioWhenExternalServicesAreDisabled() throws Exception {
         Path audio = tempDir.resolve("recording.webm");
         Files.writeString(audio, "fake webm audio");
-        responseStatus.set(500);
+        TranscriptionService service = service("test-key", false);
+
+        IOException error = assertThrows(IOException.class, () -> service.transcribe(audio));
+
+        assertTrue(error.getMessage().contains("desactivada"));
+        assertNull(authorization.get());
+        assertNull(requestBody.get());
+    }
+
+    @Test
+    void explainsInvalidGroqApiKeyWithoutExposingProviderResponse() throws Exception {
+        Path audio = tempDir.resolve("recording.webm");
+        Files.writeString(audio, "fake webm audio");
+        responseStatus.set(401);
         responseBody.set("{\"error\":\"sensitive-provider-response\"}");
 
         IOException error = assertThrows(IOException.class, () -> service("test-key").transcribe(audio));
 
-        assertTrue(error.getMessage().contains("500"));
+        assertTrue(error.getMessage().contains("GROQ_API_KEY"));
         assertFalse(error.getMessage().contains("sensitive-provider-response"));
     }
 
+    @Test
+    void explainsQuotaLimitWithoutExposingProviderResponse() throws Exception {
+        Path audio = tempDir.resolve("recording.webm");
+        Files.writeString(audio, "fake webm audio");
+        responseStatus.set(429);
+        responseBody.set("{\"error\":\"sensitive-provider-response\"}");
+
+        IOException error = assertThrows(IOException.class, () -> service("test-key").transcribe(audio));
+
+        assertTrue(error.getMessage().contains("cuota"));
+        assertFalse(error.getMessage().contains("sensitive-provider-response"));
+    }
+
+    @Test
+    void explainsTemporaryProviderFailuresWithoutExposingProviderResponse() throws Exception {
+        Path audio = tempDir.resolve("recording.webm");
+        Files.writeString(audio, "fake webm audio");
+        responseStatus.set(503);
+        responseBody.set("{\"error\":\"sensitive-provider-response\"}");
+
+        IOException error = assertThrows(IOException.class, () -> service("test-key").transcribe(audio));
+
+        assertTrue(error.getMessage().contains("temporal"));
+        assertTrue(error.getMessage().contains("503"));
+        assertFalse(error.getMessage().contains("sensitive-provider-response"));
+    }
+
+    @Test
+    void explainsUnsupportedAudioWithoutExposingProviderResponse() throws Exception {
+        Path audio = tempDir.resolve("recording.webm");
+        Files.writeString(audio, "fake webm audio");
+        responseStatus.set(422);
+        responseBody.set("{\"error\":\"sensitive-provider-response\"}");
+
+        IOException error = assertThrows(IOException.class, () -> service("test-key").transcribe(audio));
+
+        assertTrue(error.getMessage().contains("formato de audio"));
+        assertFalse(error.getMessage().contains("sensitive-provider-response"));
+    }
+
+    @Test
+    void rejectsMalformedProviderResponseWithoutExposingItsBody() throws Exception {
+        Path audio = tempDir.resolve("recording.webm");
+        Files.writeString(audio, "fake webm audio");
+        responseBody.set("provider-secret-body");
+
+        IOException error = assertThrows(IOException.class, () -> service("test-key").transcribe(audio));
+
+        assertTrue(error.getMessage().contains("formato inesperado"));
+        assertFalse(error.getMessage().contains("provider-secret-body"));
+    }
+
     private TranscriptionService service(String apiKey) {
+        return service(apiKey, true);
+    }
+
+    private TranscriptionService service(String apiKey, boolean externalServicesEnabled) {
         return new TranscriptionService(
                 apiKey,
                 "http://127.0.0.1:" + server.getAddress().getPort() + "/openai/v1",
                 "whisper-large-v3-turbo",
-                "es-CL"
+                "es-CL",
+                externalServicesEnabled
         );
     }
 }

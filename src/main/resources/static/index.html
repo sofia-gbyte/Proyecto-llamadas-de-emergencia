@@ -6,6 +6,7 @@
 <title>CODES · Centro de Operaciones y Despacho de Emergencias</title>
 <link rel="stylesheet" href="styles.css" />
 <link rel="stylesheet" href="console-redesign.css?v=20261101-web-desktop-7" />
+<link rel="stylesheet" href="/webjars/leaflet/1.9.4/leaflet.css" />
 </head>
 <body>
 
@@ -50,7 +51,7 @@
             <form class="auth-form auth-recovery" id="form-recuperar" hidden>
                 <div class="auth-recovery-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m3.5 7 8.5 6 8.5-6"/></svg></div>
                 <h2>Recuperar contraseña</h2>
-                <p class="auth-recovery-copy">Ingresa el correo asociado a tu cuenta. Si existe una cuenta activa, te enviaremos un enlace seguro para crear una nueva contraseña.</p>
+                <p class="auth-recovery-copy">Ingresa el correo asociado a tu cuenta. Si el administrador habilitó el correo y existe una cuenta activa, se enviará un enlace seguro para crear una nueva contraseña.</p>
                 <div class="campo">
                     <label for="recovery-email">Correo</label>
                     <input id="recovery-email" type="email" placeholder="ana@codes.cl" required autocomplete="email" />
@@ -380,38 +381,8 @@ window.altchaReadyPromise = import('/vendor/altcha/altcha.min.js')
     );
   });
 
-/* Carga Leaflet local primero y usa CDN solo como respaldo; luego arranca script.js. */
-(function () {
-  var providers = [
-    { css: '/webjars/leaflet/1.9.4/leaflet.css', js: '/webjars/leaflet/1.9.4/leaflet.js' },
-    { css: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', js: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js' },
-    { css: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css', js: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js' },
-    { css: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css', js: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js' }
-  ];
-  function initializeApp() {
-    var s = document.createElement('script');
-    s.src = 'script.js?v=20261102-altcha-argon2id-1';
-    document.body.appendChild(s);
-  }
-  function tryProvider(i) {
-    if (window.L) return initializeApp();
-    if (i >= providers.length) {
-      console.error('No se pudo cargar Leaflet desde ninguna fuente.');
-      return initializeApp();
-    }
-    var provider = providers[i];
-    var css = document.createElement('link');
-    css.rel = 'stylesheet';
-    css.href = provider.css;
-    document.head.appendChild(css);
-    var js = document.createElement('script');
-    js.src = provider.js;
-    js.onload = function () { if (window.L) initializeApp(); else { css.remove(); tryProvider(i + 1); } };
-    js.onerror = function () { css.remove(); js.remove(); tryProvider(i + 1); };
-    document.body.appendChild(js);
-  }
-  tryProvider(0);
-})();
 </script>
+<script src="/webjars/leaflet/1.9.4/leaflet.js"></script>
+<script src="script.js?v=1.1.0"></script>
 </body>
 </html>

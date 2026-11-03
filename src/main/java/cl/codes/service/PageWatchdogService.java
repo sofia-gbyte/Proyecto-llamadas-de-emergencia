@@ -12,9 +12,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * CODES corre como un servidor local para un puesto de operador. Antes,
- * cerrar solo la pestaña del navegador (sin cerrar también la ventana de
- * CODES.bat) dejaba Spring Boot escuchando indefinidamente
+ * CODES corre como un servidor local para un puesto de operador. Cerrar
+ * solo la pestaña del navegador dejaba Spring Boot escuchando indefinidamente
  * en 8000: molesto para la operadora, que cree haber "cerrado" CODES,
  * y riesgoso, porque es un sistema de llamadas de emergencia con puertos
  * abiertos sin que nadie los esté usando ni vigilando.

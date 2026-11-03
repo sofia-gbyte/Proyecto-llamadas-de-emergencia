@@ -89,7 +89,7 @@ public class LiveCallService {
             String transcript = cleanTranscription(sourceTranscript);
             Classifier.ClassificationResult classification = Classifier.classifyCall(transcript);
             if (!Classifier.hasOperationalInformation(classification)) {
-                throw new IllegalArgumentException("The transcription has insufficient operational information.");
+                throw new IllegalArgumentException("La transcripción no contiene información suficiente para crear un caso. Conserva el audio, revisa el micrófono o registra la llamada manualmente.");
             }
             GeocoderService.Coordinates coords = geocoder.geocode(classification.address(), transcript, operatorLatitude, operatorLongitude);
             String address = coords.formattedAddress() != null && !coords.formattedAddress().isBlank()
@@ -140,13 +140,13 @@ public class LiveCallService {
     }
 
     private void validateAudio(MultipartFile audio) {
-        final long maxBytes = 50L * 1024 * 1024;
-        if (audio.getSize() > maxBytes) throw new IllegalArgumentException("Audio exceeds the 50 MB limit");
+        final long maxBytes = 25_000_000L;
+        if (audio.getSize() > maxBytes) throw new IllegalArgumentException("Groq admite audios de hasta 25 MB. Detén la grabación antes y vuelve a intentarlo.");
         String contentType = audio.getContentType() == null ? "" : audio.getContentType().toLowerCase().split(";", 2)[0].trim();
         String name = audio.getOriginalFilename() == null ? "" : audio.getOriginalFilename().toLowerCase();
         boolean mimeOk = contentType.equals("audio/webm") || contentType.equals("audio/ogg") || contentType.equals("audio/wav") || contentType.equals("audio/x-wav") || contentType.equals("audio/mpeg") || contentType.equals("audio/mp4") || contentType.equals("audio/aac");
         boolean extOk = name.endsWith(".webm") || name.endsWith(".ogg") || name.endsWith(".wav") || name.endsWith(".mp3") || name.endsWith(".m4a") || name.endsWith(".aac");
-        if (!mimeOk || !extOk) throw new IllegalArgumentException("Unsupported audio type");
+        if (!mimeOk || !extOk) throw new IllegalArgumentException("El formato de audio no es compatible. Usa WebM, OGG, WAV, MP3, M4A o AAC.");
     }
 
     private String cleanTranscription(String value) {

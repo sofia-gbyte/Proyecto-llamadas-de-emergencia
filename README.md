@@ -1,12 +1,12 @@
-# CODES 1.0.2 — Sistema de llamadas de emergencia
+# CODES 1.1.0 — Sistema de llamadas de emergencia
 
 CODES es una aplicación web para apoyar la recepción, registro y gestión de llamadas de emergencia. El sistema permite trabajar con llamadas en vivo, transcripción con Groq Whisper, clasificación inicial, geocodificación con Geoapify y seguimiento de los casos desde una interfaz web.
 
-**Versión del proyecto: `1.0.2`.** Consulta el [historial de cambios](CHANGELOG.md) para ver las novedades de esta versión y las notas de compatibilidad.
+**Versión del proyecto: `1.1.0`.** Consulta el [historial de cambios](CHANGELOG.md) para ver las novedades de esta versión y las notas de compatibilidad.
 
-El proyecto está orientado a uso local o dentro de una red interna controlada. **Aún no está listo para exponerse directamente a Internet.**
+La aplicación se limita a uso local en el mismo equipo. No admite acceso desde una LAN ni exposición a Internet.
 
-> Leaflet se incluye dentro de la aplicación. El mapa base es **Esri World Imagery** (satélite); las rutas usan OSRM y la geocodificación usa Geoapify como proveedor principal. Las direcciones y coordenadas de incidentes se envían a esos servicios cuando se usan las funciones correspondientes. Ver [operación local](OPERACION_LOCAL.md) y el [inventario de licencias y servicios](THIRD_PARTY_LICENSES.md).
+> Leaflet se incluye dentro de la aplicación. Por privacidad, las integraciones externas (mapas, rutas, geocodificación, transcripción y correo) están desactivadas por defecto; no se envían datos a terceros a menos que un administrador habilite explícitamente los proveedores. Ver [operación local](OPERACION_LOCAL.md) y el [inventario de licencias y servicios](THIRD_PARTY_LICENSES.md).
 
 ## Contenido
 
@@ -24,7 +24,7 @@ El proyecto está orientado a uso local o dentro de una red interna controlada. 
 
 ---
 
-> **Alcance de la versión 1.0.2:** versión funcional para demostración y uso local controlado. No implica que CODES esté preparado para su exposición directa a Internet ni para despachos de emergencia reales sin las revisiones operativas, legales, de privacidad y disponibilidad descritas en [operación local](OPERACION_LOCAL.md).
+> **Alcance de la versión 1.1.0:** versión para pruebas locales de baja capacidad, con datos sintéticos y servicios externos aprobados por el operador. No implica que CODES esté preparado para su exposición a Internet ni para despachos reales sin las revisiones operativas, legales, de privacidad y disponibilidad descritas en [operación local](OPERACION_LOCAL.md).
 
 ## Funcionalidades principales
 
@@ -44,7 +44,7 @@ El proyecto está orientado a uso local o dentro de una red interna controlada. 
 - Cambio y recuperación de contraseña.
 - Invalidación de sesiones JWT al cerrar sesión, cambiar contraseña, desactivar una cuenta o forzar el cierre de sesiones.
 - Limitación de intentos de autenticación y solicitudes de recuperación/registro.
-- Registro de eventos de auditoría en `logs/auditoria.log`.
+- Registro de eventos de auditoría en `logs/auditoria.log` (app-image: `<directorio de datos>/logs/auditoria.log`).
 - Autochequeo interno de base de datos, disco, claves de proveedores externos y caché de geocodificación.
 - Cifrado AES-256-GCM para los audios almacenados.
 - Base de datos H2 en archivo, sin necesidad de instalar un servidor de base de datos adicional.
@@ -54,7 +54,7 @@ El proyecto está orientado a uso local o dentro de una red interna controlada. 
 ## Tecnologías
 
 - **Java 21 o superior**
-- **Spring Boot 3.3.4**
+- **Spring Boot 4.0.9**
 - Spring Web
 - Spring Security
 - Spring Data JPA / Hibernate
@@ -142,7 +142,7 @@ Para ejecutar CODES desde el código fuente:
 
 - JDK **21 o superior**
 - Maven
-- Windows si se quieren utilizar los scripts `.bat` y `.ps1` incluidos.
+- Windows si se quieren utilizar los scripts de mantenimiento `.ps1` incluidos.
 - Acceso a Internet para Groq Whisper, Geoapify y los servicios cartográficos.
 
 Las llamadas en vivo se envían a Groq al detener y guardar la grabación. El límite de transcripción de Groq es **25 MB** por archivo.
@@ -153,20 +153,18 @@ Las llamadas en vivo se envían a Groq al detener y guardar la grabación. El l�
 
 ## Windows
 
-La forma más sencilla de iniciar CODES es:
+Para usar el app-image validado de esta entrega, inicia:
 
 ```text
-CODES.bat
+dist\CODES\CODES.exe
 ```
 
-El menú permite iniciar CODES, diagnosticar Java/Maven, ejecutar la limpieza y crear un respaldo local.
-
-Durante el inicio, el script comprueba Java y Maven, carga las claves locales y ejecuta Spring Boot.
+El menú del EXE inicia/detiene CODES, diagnostica la configuración local, crea respaldos y limpia archivos regenerables. Conserva toda la carpeta `CODES` y su subdirectorio `runtime`; el EXE no es autónomo. El app-image incluye Java y es el único punto de entrada para usuarios. Para construir otro paquete desde el código fuente, consulta [App-image para Windows](#app-image-para-windows).
 
 Por defecto, la aplicación queda disponible en:
 
 ```text
-http://localhost:8000
+http://127.0.0.1:8000
 ```
 
 ### Inicio manual
@@ -195,6 +193,8 @@ mvn test
 
 CODES necesita secretos para firmar los JWT y cifrar los audios.
 
+Por privacidad, las integraciones con terceros están **desactivadas por defecto**. En este modo no se envían audios, direcciones, coordenadas ni correos a proveedores externos. Para configurarlas en Windows, abre `CODES.exe`, elige **2. Configurar integraciones y API**, agrega las claves/endpoints y habilita los proveedores solo después de aprobar esos flujos. Groq recibe audio, Geoapify direcciones, los proveedores de mapa/rutas coordenadas y SMTP envía correos de recuperación. Esri (mapa satelital) y OSRM (rutas) ya tienen endpoints predeterminados y no requieren una API key propia. Al guardar, cierra y vuelve a abrir el EXE para aplicar los cambios. También se admite la configuración por variables de entorno.
+
 Las variables principales son:
 
 ```powershell
@@ -207,53 +207,47 @@ $env:CODES_ADMIN_PASSWORD="<tu-clave-segura>"
 La clave JWT y la clave de cifrado de audios son independientes. **No deben reutilizarse entre sí.**
 Para H2 local, el nombre de usuario predeterminado es `sa` y la contraseña queda vacía; se pueden externalizar con `CODES_DB_USERNAME` y `CODES_DB_PASSWORD`.
 
-## Uso de `CODES.bat`
+## Inicio de CODES en Windows
 
-Cuando se inicia mediante los scripts de Windows, CODES puede crear o reutilizar:
+El punto de entrada para usuarios es `dist\CODES\CODES.exe`, incluido en el app-image. Su menú usa el logo de CODES y agrupa las acciones por propósito: iniciar el sistema, configurar servicios, revisar diagnóstico y administrar datos/respaldos. No copies ni distribuyas solo el EXE: conserva la carpeta completa con `runtime`. El menú no incluye una acción que pueda borrar todos los casos y audios. Se retiró el lanzador por lotes; los scripts `.ps1` de compilación y mantenimiento no forman parte del paquete entregable.
+
+El app-image puede crear o reutilizar estos archivos locales:
 
 ```text
-data\.codes-secrets.ps1
+%LOCALAPPDATA%\CODES\data\.codes-secrets.ps1
+%LOCALAPPDATA%\CODES\data\.codes-secrets.properties
 ```
 
-Ese archivo contiene secretos persistentes del entorno local. El arranque directo del app-image también puede leer asignaciones simples entre comillas sin ejecutar el script; cuando CODES genera valores, los persiste además en `data\.codes-secrets.properties`.
+La base H2, audios, caché, auditoría y secretos se guardan siempre bajo `%LOCALAPPDATA%\CODES\data`, fuera de la instalación y compartidos por todas las versiones del app-image. Si el directorio ya existe, CODES lo reutiliza y conserva sus archivos; solo lo crea en el primer arranque si no está presente. Sin `LOCALAPPDATA`, usa `%USERPROFILE%\.codes\data`. `CODES_DATA_DIR` puede seleccionar explícitamente otra ruta persistente. CODES comprueba que la carpeta pueda escribirse y que esté fuera de la instalación. Hibernate actualiza el esquema al iniciar; respalda los datos antes de actualizar y no abras una base actualizada con una versión anterior sin restaurar el respaldo. El EXE conserva los archivos al actualizar y restringe los permisos al usuario actual cuando el sistema de archivos lo permite. El EXE lee asignaciones simples entre comillas del archivo `.ps1` sin ejecutarlo; la opción **Configurar integraciones y API** guarda ajustes y claves en `.codes-secrets.properties` de forma atómica, con permisos restringidos al usuario actual cuando Windows lo permite. Si un mismo ajuste existe en ambos archivos, `.properties` tiene prioridad. Las claves de API nunca se muestran en la interfaz; deja el campo vacío para conservar la clave guardada.
 
 - No debe subirse al repositorio.
 - No debe compartirse.
-- Ambos archivos contienen secretos en texto plano y deben incluirse solo en mecanismos de respaldo cifrados y de acceso restringido.
+- Ambos archivos contienen secretos en texto plano: restringe su acceso y protege los respaldos con cifrado.
 - La pérdida de `CODES_ENCRYPT_KEY` puede impedir recuperar los audios cifrados.
 
-En una instalación nueva, el script genera una contraseña inicial aleatoria para el administrador y la muestra durante el primer arranque. Después de entrar al sistema conviene cambiarla.
+En una instalación nueva, CODES genera una contraseña inicial aleatoria para el administrador y la persiste en los archivos locales de secretos. Consúltala de forma local y protegida; no compartas esos archivos. Después de entrar al sistema conviene cambiarla.
 
 El bootstrap del administrador se ejecuta únicamente cuando todavía no existe ningún usuario. CODES no reemplaza la contraseña del administrador en cada arranque.
 
-## Claves de Groq y Geoapify
+## Configuración de APIs y mapa
 
-Al iniciar mediante `CODES.bat`, edita el archivo local ignorado por Git:
+En Windows, abre `CODES.exe` y elige **2. Configurar integraciones y API**. La ventana separa mapa/geocodificación, transcripción y correo. Introduce las claves en los campos enmascarados: `GEOAPIFY_API_KEY` para geocodificación, `GROQ_API_KEY` para transcripción y credenciales SMTP para recuperación de contraseña. El mapa satelital Esri y las rutas OSRM tienen endpoints predeterminados; puedes sustituirlos por URLs HTTPS de servicios aprobados. Las URLs de teselas deben incluir `{z}`, `{x}` y `{y}`. No se requiere una API key de Esri para el endpoint predeterminado.
 
-```text
-data\.codes-secrets.ps1
-```
+La casilla de activación es global: habilitarla permite que cualquier servicio externo configurado envíe los datos correspondientes. Guarda y cierra CODES; vuelve a abrirlo para cargar los ajustes. El diagnóstico local muestra si las claves existen sin revelar su contenido ni contactar proveedores. Nunca pongas claves en `application.properties`, JavaScript o en el navegador, ni las publiques.
 
-Agrega o completa estas líneas con las claves obtenidas en los paneles de cada proveedor:
-
-```powershell
-$env:GROQ_API_KEY = 'tu_clave_de_groq'
-$env:GEOAPIFY_API_KEY = 'tu_clave_de_geoapify'
-```
-
-Guarda el archivo y vuelve a iniciar `CODES.bat`. No pongas las claves en `application.properties`, en JavaScript ni en el navegador; nunca las compartas ni las subas al repositorio. Para iniciar desde una terminal sin el lanzador, exporta esas mismas variables de entorno antes de ejecutar Maven.
+Las claves se guardan en `%LOCALAPPDATA%\CODES\data\.codes-secrets.properties` (o en el directorio indicado por `CODES_DATA_DIR`) con escritura atómica y ACL restringida cuando Windows lo permite. Permanecen en texto plano en disco; protege la cuenta de Windows y los respaldos. Variables de entorno configuradas para el proceso prevalecen sobre los valores guardados desde la interfaz.
 
 ## App-image para Windows
 
-Con JDK 21 o superior, Maven y `jpackage` disponibles en el `PATH`, crea el app-image autocontenido ejecutando:
+Para construir o actualizar el app-image desde el código fuente se necesita Windows, JDK 21 o superior (incluyendo `jpackage`) y Maven; esos son requisitos de compilación, no de ejecución del usuario. Ejecuta desde PowerShell conforme a la política de ejecución aprobada para el equipo:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\package_codes_windows.ps1
+.\tools\package_codes_windows.ps1 -ReplaceExisting
 ```
 
-El ejecutable queda en `dist\CODES\CODES.exe` y el runtime Java queda dentro de `dist\CODES\runtime`; se debe distribuir la carpeta completa, no solo el `.exe`. La app-image validada de la versión 1.0.2 también se incluye en `dist\release-1.0.2\CODES`. El ejecutable incorpora el icono de Windows de `tools\assets\CODES.ico`. Cuando Spring Boot termina de iniciar y el servidor está listo, el app-image abre `http://127.0.0.1:8000` en el navegador predeterminado (primero con la API de escritorio de Java y, si no está disponible, mediante el manejador de URL del sistema operativo). CODES guarda la base H2, audios cifrados, caché y secretos en `%LOCALAPPDATA%\CODES\data` (o en `CODES_DATA_DIR` si se define externamente). El usuario inicial y su contraseña generada se conservan en los archivos locales de secretos de esa carpeta. Las claves de Groq y Geoapify se pueden agregar como asignaciones simples a `.codes-secrets.ps1`; CODES las lee sin ejecutar el archivo. No incluyas archivos de datos o secretos al distribuir el app-image.
+Si PowerShell bloquea el script, no uses `ExecutionPolicy Bypass` ni reduzcas la política de seguridad; solicita el procedimiento autorizado al administrador del equipo. El ejecutable de una compilación nueva queda en `dist\CODES\CODES.exe`, y el runtime Java en `dist\CODES\runtime`. Distribuye la carpeta completa, no solo el `.exe`; el usuario final no necesita scripts de compilación o mantenimiento. Al iniciar el sistema desde el menú, el EXE abre `http://127.0.0.1:8000` cuando el servidor está listo. La base H2, los audios, la caché y los secretos se guardan fuera del paquete en `%LOCALAPPDATA%\CODES\data` (o en `CODES_DATA_DIR` si se define). No incluyas archivos de datos o secretos al distribuir el app-image.
 
-Para crear una copia de prueba sin sobrescribir un app-image existente, indica otro directorio padre; por ejemplo, `powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\package_codes_windows.ps1 -DestinationDirectory dist\phase2` genera `dist\phase2\CODES`. La app-image es una carpeta completa y no un `CODES.exe` autónomo: el usuario final puede iniciar el ejecutable incluido sin abrir PowerShell, Maven ni configurar Java, pero debe conservar y distribuir junto con él todo el directorio, incluido `runtime`.
+El script genera `package-manifest.json` con la lista de archivos, tamaños y SHA-256, además de `SHA256SUMS.txt`. Una segunda compilación puede usar otro destino (`-DestinationDirectory dist\phase2`) o reemplazar un app-image previo creado por el mismo script con `-ReplaceExisting`. El paquete se inspecciona para rechazar scripts y datos locales. Para usar CODES, el usuario final solo abre `CODES.exe`; no necesita ejecutar scripts, instalar Maven/Java ni configurar Java. La app-image es una carpeta autocontenida para distribución, no un EXE independiente: conserva su carpeta completa y el subdirectorio `runtime`.
 
 El app-image no es un instalador firmado ni convierte CODES en un sistema listo para exposición a Internet o despacho real. La operación sigue sujeta a las advertencias de seguridad, privacidad y disponibilidad de este README.
 
@@ -261,52 +255,23 @@ El app-image no es un instalador firmado ni convierte CODES en un sistema listo 
 
 # Verificación anti-bots (ALTCHA)
 
-Login y registro usan ALTCHA v2 autoalojado con Argon2id (1 iteración, 8 MiB y paralelismo 1); el widget, worker y traducción española se sirven desde archivos locales de CODES. Cada desafío está firmado, vence en cinco minutos y queda ligado a su propósito (login o registro). No se envían datos a un proveedor de CAPTCHA. `CODES.bat` genera y conserva `CODES_ALTCHA_SECRET` en `data\.codes-secrets.ps1`; al ejecutar Spring Boot directamente, define una clave aleatoria de al menos 32 bytes. ALTCHA está activo por defecto y puede desactivarse explícitamente con `CODES_ALTCHA_ENABLED=false`.
+Login y registro usan ALTCHA v2 autoalojado con Argon2id (1 iteración, 8 MiB y paralelismo 1); el widget, worker y traducción española se sirven desde archivos locales de CODES. Cada desafío está firmado, vence en cinco minutos y queda ligado a su propósito (login o registro). No se envían datos a un proveedor de CAPTCHA. El app-image genera y conserva `CODES_ALTCHA_SECRET` en los archivos locales de secretos bajo `%LOCALAPPDATA%\CODES\data`; ALTCHA está activo por defecto y puede desactivarse explícitamente con `CODES_ALTCHA_ENABLED=false`.
 
-El uso de cada desafío se registra en H2 con una restricción única, por lo que el rechazo de repeticiones sobrevive reinicios y es atómico. La verificación Argon2id limita a dos sus cálculos simultáneos para acotar memoria del servidor. Argon2id encarece el cálculo automatizado y dificulta la aceleración con GPU, pero CAPTCHA no demuestra que un cliente sea humano ni elimina bots sofisticados. Mantén controles anti-abuso adicionales. El widget oficial requiere un contexto seguro: HTTPS en la LAN (HTTP solo en `localhost`).
+El uso de cada desafío se registra en H2 con una restricción única, por lo que el rechazo de repeticiones sobrevive reinicios y es atómico. La verificación Argon2id limita a dos sus cálculos simultáneos para acotar memoria del servidor. Argon2id encarece el cálculo automatizado y dificulta la aceleración con GPU, pero CAPTCHA no demuestra que un cliente sea humano ni elimina bots sofisticados. Mantén controles anti-abuso adicionales. El uso local se realiza en `localhost`.
 
 ---
 
-# Red y acceso desde otros equipos
+# Red local y acceso
 
-Por defecto, Spring Boot escucha solamente en:
+El ejecutable está limitado deliberadamente a conexiones desde el mismo equipo:
 
 ```text
 127.0.0.1:8000
 ```
 
-Por lo tanto, CODES no queda disponible para otros equipos de la red automáticamente.
+La aplicación rechaza una dirección `server.address` que no sea loopback y fuerza la escucha en `127.0.0.1`. No configures `CODES_SERVER_ADDRESS` para una IP de LAN, no abras puertos del firewall y no publiques el servicio mediante un proxy. La configuración de red multi-equipo no forma parte de este ejecutable.
 
-Para utilizarlo desde una LAN se puede definir:
-
-```powershell
-$env:CODES_SERVER_ADDRESS="IP_PRIVADA_DEL_SERVIDOR"
-$env:CODES_SERVER_PORT="8000"
-```
-
-y configurar el firewall para permitir únicamente el tráfico necesario.
-
-También hay que ajustar:
-
-```text
-app.cors-allowed-origins
-```
-
-para incluir exclusivamente los orígenes reales que utilizarán los equipos de la sala. **No se debe utilizar `*`.**
-
-Ejemplo:
-
-```text
-app.cors-allowed-origins=https://codes.example.internal
-```
-
-## HTTP y HTTPS
-
-La configuración actual no implementa HTTPS directamente.
-
-Para la autenticación ALTCHA, los navegadores requieren HTTPS desde otros equipos; HTTP solo funciona en `localhost`. Coloca Caddy o Nginx con un certificado confiable delante de Spring Boot y conserva el puerto 8000 inaccesible desde la red. HTTPS protege también contraseñas y tokens durante el transporte.
-
-El puerto web configurado para Spring Boot debe mantenerse dentro de la red autorizada o detrás del proxy HTTPS.
+Para una prueba local sin servicios de terceros, inicia desde el EXE, utiliza la interfaz en `http://127.0.0.1:8000` y crea una llamada con transcripción manual; omite geocodificación, transcripción remota, mapa/rutas y correo. No uses datos reales sensibles. Las fallas de inicio muestran pasos de recuperación sin mostrar secretos; si aparece una referencia local, revisa los registros bajo el directorio de datos y comparte únicamente los tipos de error, nunca su contenido sensible.
 
 ---
 
@@ -466,13 +431,15 @@ data/
 ├── audios_crudos/
 ├── audios_encriptados/
 ├── geocache.json
+├── logs/
+│   └── auditoria.log
 └── .codes-secrets.ps1
 ```
 
-Los logs de auditoría se almacenan en:
+En el app-image de Windows, estos archivos y los registros de auditoría se guardan bajo `%LOCALAPPDATA%\CODES\data` (o `CODES_DATA_DIR`):
 
 ```text
-logs/auditoria.log
+<directorio de datos>/logs/auditoria.log
 ```
 
 Las rutas y parámetros principales se configuran en:
@@ -502,6 +469,7 @@ Los eventos relevantes de seguridad y operación se registran en:
 ```text
 logs/auditoria.log
 ```
+En el app-image de Windows, están en `<directorio de datos>/logs/auditoria.log`, fuera de la carpeta de instalación.
 
 Entre los eventos registrados se incluyen login, logout mediante el endpoint, registro de usuarios, cambios y recuperación de contraseña, operaciones administrativas y operaciones sobre llamadas.
 
@@ -630,7 +598,7 @@ CODES_MAIL_FROM
 CODES_PUBLIC_BASE_URL
 ```
 
-Otros parámetros de operación, como el intervalo del autochequeo, mantenimiento, CORS y rutas de datos, se encuentran en `application.properties`.
+`CODES_SERVER_ADDRESS` solo admite direcciones loopback; CODES siempre fuerza `127.0.0.1`. El `CODES_DATA_DIR` del app-image debe apuntar a almacenamiento persistente fuera de la carpeta de instalación. Otros parámetros de operación, como el intervalo del autochequeo y mantenimiento, se encuentran en `application.properties`.
 
 ---
 
@@ -660,7 +628,6 @@ CODES/
 │   │       └── application.properties
 │   └── test/
 ├── tools/
-├── CODES.bat
 ├── pom.xml
 ├── OPERACION_LOCAL.md
 ├── README.md
@@ -723,27 +690,17 @@ El repositorio contiene pruebas automatizadas, pero una compilación o ejecució
 
 ---
 
-# Antes de usarlo en producción
+# Uso local y preparación operativa
 
-CODES maneja información potencialmente sensible. Antes de utilizarlo operativamente conviene revisar, como mínimo:
+El app-image `1.1.0` está preparado para pruebas locales de baja capacidad, no certificado como sistema de producción para datos personales reales ni para despacho de emergencias. El EXE inicia una interfaz local y el servidor se limita a `127.0.0.1`; no habilites acceso LAN/Internet, redirección de puertos ni reglas de firewall para exponerlo. Las integraciones externas están desactivadas por defecto y la interfaz no contacta a proveedores si no se habilitan. Las actualizaciones mantienen una única ubicación de distribución, `dist\CODES`; reemplazar la carpeta del app-image no reemplaza los datos persistidos bajo `%LOCALAPPDATA%\CODES\data`.
 
-- secretos y rotación de claves;
-- contraseña inicial del administrador;
-- HTTPS si la red no es completamente controlada;
-- firewall y segmentación de red;
-- CORS;
-- protección de las claves y conexiones a proveedores externos;
-- respaldo de `CODES_ENCRYPT_KEY`;
-- copias de seguridad de la base de datos;
-- pruebas reales de restauración;
-- política de retención y eliminación de llamadas y audios;
-- protección y rotación de logs;
-- configuración de SMTP;
-- protección anti-abuso para login/registro (ALTCHA, límites del servidor y controles del proxy);
-- límites y condiciones de los servicios públicos de mapas/geocodificación/rutas, o despliegue de instancias propias;
-- revisión de los modelos y condiciones de Groq Whisper;
-- monitoreo del servidor y los proveedores externos;
-- pruebas de integración y seguridad.
+Antes de una prueba, configura un usuario Windows dedicado con acceso restringido al equipo, conserva el paquete íntegro y verifica el manifiesto/hash desde un canal confiable. El EXE de esta entrega no está firmado digitalmente; los hashes detectan cambios solo si el manifiesto llega por un canal confiable y no autentican al editor.
+
+**No uses datos personales reales en esta versión sin una aprobación explícita de privacidad y seguridad.** La base H2 y los archivos de secretos se guardan en texto plano; solo los audios se cifran con AES-256-GCM. Las ACL locales no equivalen a cifrado en reposo y no protegen contra administradores del equipo, malware o acceso físico. Si un administrador habilita las integraciones externas, Groq recibe los audios, Geoapify las direcciones, OSRM las coordenadas de ruta y el proveedor de mapas las coordenadas visibles. Usa datos sintéticos hasta completar las revisiones requeridas.
+
+Para un uso operativo con datos sensibles todavía se requiere, como mínimo, definir e implementar cifrado en reposo para H2 y secretos, protección y recuperación de claves, política de retención/eliminación, restauración probada de respaldos, control de acceso del sistema operativo, distribución firmada y revisión de privacidad/legal de cada flujo externo. La app no sustituye un sistema de despacho certificado ni el criterio de un operador.
+
+La entrega se validó con 84 pruebas Maven aprobadas; el app-image incluye su runtime y el manifiesto del paquete fue verificado, sin scripts ni datos locales. La validación no es una certificación de seguridad ni reemplaza pruebas en el equipo de destino.
 
 La configuración actual utiliza H2 con:
 
@@ -761,13 +718,13 @@ El proyecto tiene varias medidas de seguridad y operación implementadas, pero t
 
 Entre ellas:
 
-- HTTPS/reverse proxy;
-- política formal de retención;
-- backups y restauración probada;
-- almacenamiento/monitoreo externo de auditoría;
-- migraciones formales de base de datos;
-- acuerdos y configuración segura de los proveedores externos;
-- monitoreo externo independiente.
+- cifrado en reposo de la base H2 y de los secretos, con gestión y recuperación de claves;
+- firma del ejecutable y canal autenticado de distribución;
+- política formal de retención y eliminación;
+- respaldos cifrados y restauración probada;
+- acuerdos y configuración segura de los proveedores externos, o modo sin transmisión de datos;
+- migraciones formales de base de datos si se amplía el alcance;
+- revisión legal, de privacidad y de seguridad independiente.
 
 Además, el backend dispone de `POST /api/auth/logout`, pero el cierre de sesión debe utilizar ese endpoint para invalidar el JWT inmediatamente. El comportamiento visual del frontend no debe confundirse con la invalidación del token en servidor.
 
@@ -783,4 +740,4 @@ OPERACION_LOCAL.md
 
 Este repositorio no declara una licencia open source propia. Los componentes, los datos de OpenStreetMap y los servicios alojados tienen términos distintos. Revisar el [inventario de licencias y servicios](THIRD_PARTY_LICENSES.md) antes de distribuir.
 
-Para exponer CODES a dispositivos por Internet todavía hacen falta, entre otras cosas, HTTPS, protección adecuada de secretos y proveedores, una base de datos de producción, almacenamiento y respaldo protegidos, y pruebas de seguridad. La guía de siguientes pasos está en [OPERACION_LOCAL.md](OPERACION_LOCAL.md).
+El app-image descrito aquí no admite acceso desde otros equipos. Una futura variante multi-equipo requeriría cambios de arquitectura, HTTPS, protección adecuada de secretos y proveedores, una base de datos de producción, almacenamiento y respaldo protegidos, y pruebas de seguridad independientes. Esta documentación no describe una configuración para exponer el servicio.

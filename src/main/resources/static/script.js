@@ -2,17 +2,18 @@
 const API_URL = '/api';
 const REFRESH_INTERVAL_MS = 8000;
 let publicConfiguration = {
-  mapProvider: 'Esri World Imagery',
-  mapTilesUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-  mapConfigured: true,
-  geocodingConfigured: true,
+  externalServicesEnabled: false,
+  mapProvider: 'Disabled',
+  mapTilesUrl: '',
+  mapAttribution: '',
+  mapConfigured: false,
+  geocodingConfigured: false,
   transcriptionConfigured: false,
-  routingUrl: 'https://router.project-osrm.org',
+  routingUrl: '',
 };
 let baseMapLayer = null;
 let mapConfigurationError = '';
 let tileLoadError = '';
-let tileFallbackEnabled = false;
 let captchaRequired = false;
 const publicConfigurationPromise = fetch(`${API_URL}/public-config`)
   .then(resp => {
@@ -21,21 +22,33 @@ const publicConfigurationPromise = fetch(`${API_URL}/public-config`)
   })
   .then(config => {
     const previousTiles = publicConfiguration.mapTilesUrl;
+    const previousExternalServicesEnabled = publicConfiguration.externalServicesEnabled;
     publicConfiguration = { ...publicConfiguration, ...config };
     mapConfigurationError = '';
-    if (map && publicConfiguration.mapTilesUrl !== previousTiles) {
+    if (map && (publicConfiguration.mapTilesUrl !== previousTiles
+      || publicConfiguration.externalServicesEnabled !== previousExternalServicesEnabled)) {
       configureBaseMapLayer();
     }
     updateMapStatus();
     const asrNote = $('live-nota');
-    if (asrNote) asrNote.textContent = publicConfiguration.transcriptionConfigured
+    if (asrNote) asrNote.textContent = !publicConfiguration.externalServicesEnabled
+      ? 'Integraciones externas desactivadas; usa transcripción manual para no enviar audio a terceros.'
+      : publicConfiguration.transcriptionConfigured
       ? 'El audio se enviará al servidor para transcribirse con Groq al guardar.'
       : 'Falta configurar GROQ_API_KEY en el servidor para habilitar la transcripción automática.';
   })
   .catch(error => {
-    mapConfigurationError = 'No se pudo cargar la configuración; se mantienen los servicios públicos predeterminados.';
+    publicConfiguration.externalServicesEnabled = false;
+    publicConfiguration.mapTilesUrl = '';
+    publicConfiguration.mapAttribution = '';
+    publicConfiguration.mapConfigured = false;
+    publicConfiguration.geocodingConfigured = false;
+    publicConfiguration.transcriptionConfigured = false;
+    publicConfiguration.routingUrl = '';
+    mapConfigurationError = 'No se pudo cargar la configuración; por seguridad no se contactan proveedores externos.';
+    if (map) configureBaseMapLayer();
     updateMapStatus();
-    console.error('No se pudo cargar la configuración pública del mapa.', error);
+    console.error('No se pudo cargar la configuración local de CODES.', error);
   });
 
 let session = null;
@@ -486,6 +499,12 @@ async function requestPasswordRecovery(e) {
   const success = $('recovery-success');
   error.hidden = true; success.hidden = true;
   try {
+    await publicConfigurationPromise;
+    if (!publicConfiguration.externalServicesEnabled) {
+      error.textContent = 'La recuperación por correo está desactivada. Contacta al administrador local para restablecer el acceso.';
+      error.hidden = false;
+      return;
+    }
     const resp = await fetch(`${API_URL}/auth/forgot-password`, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ email: $('recovery-email').value.trim() })
@@ -904,120 +923,49 @@ function initializeMap() {
   );
 }
 
-const tileProviders = [
-  {
-    name: 'Esri World Imagery',
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
-    maxZoom: 19
-  },
-  {
-    name: 'OpenStreetMap',
-    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>',
-    maxZoom: 19
-  },
-  {
-    name: 'Carto',
-    url: 'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
-    attribution: '&copy; OpenStreetMap contributors &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener noreferrer">CARTO</a>',
-    maxZoom: 20
-  },
-  {
-    name: 'Esri World Street Map',
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'Tiles &copy; Esri',
-    maxZoom: 19
-  }
-];
-let tileProviderIndex = -1;
-let tileTimer = null;
-
-function activateTileProvider(index, message = '') {
-  if (!map || index < 0 || index >= activeTileProviders.length) {
-    tileLoadError = 'No se pudieron cargar los mapas base. Comprueba la conexión a Internet o el acceso a los proveedores de mapas.';
+function configureBaseMapLayer() {
+  if (!map) return;
+  if (baseMapLayer) map.removeLayer(baseMapLayer);
+  baseMapLayer = null;
+  if (!publicConfiguration.externalServicesEnabled) {
+    tileLoadError = '';
     updateMapStatus();
     return;
   }
-  if (tileTimer) clearTimeout(tileTimer);
-  tileProviderIndex = index;
-  const provider = activeTileProviders[index];
-  const previousLayer = baseMapLayer;
-  const nextLayer = L.tileLayer(provider.url, {
-    attribution: provider.attribution,
-    maxZoom: provider.maxZoom,
+  const tileUrl = (publicConfiguration.mapTilesUrl || '').trim();
+  if (!tileUrl || !['{z}', '{x}', '{y}'].every(token => tileUrl.includes(token))) {
+    tileLoadError = 'La URL del proveedor de mapas no está configurada correctamente.';
+    updateMapStatus();
+    return;
+  }
+  const layer = L.tileLayer(tileUrl, {
+    attribution: publicConfiguration.mapAttribution || '&copy; Proveedor de mapas configurado',
+    maxZoom: 22,
     updateWhenIdle: true,
     keepBuffer: 2
   });
-  let tileLoaded = false;
-  nextLayer.on('tileload', () => {
-    tileLoaded = true;
+  layer.on('tileload', () => {
     tileLoadError = '';
-    tileFallbackEnabled = index > 0;
     updateMapStatus();
-    if (previousLayer && map.hasLayer(previousLayer)) map.removeLayer(previousLayer);
   });
-  nextLayer.on('tileerror', () => {
-    if (!tileLoaded && tileProviderIndex === index) {
-      if (tileTimer) clearTimeout(tileTimer);
-      tileTimer = setTimeout(() => {
-        if (!tileLoaded && tileProviderIndex === index) activateTileProvider(index + 1, provider.name);
-      }, 1800);
-    }
+  layer.on('tileerror', () => {
+    tileLoadError = `El proveedor de mapas configurado (${publicConfiguration.mapProvider}) no responde.`;
+    updateMapStatus();
   });
-  baseMapLayer = nextLayer.addTo(map);
-  tileLoadError = message ? `${message} no responde; probando ${provider.name}…` : '';
-  updateMapStatus();
-  tileTimer = setTimeout(() => {
-    if (!tileLoaded && tileProviderIndex === index) activateTileProvider(index + 1, provider.name);
-  }, 7000);
-}
-
-function createBaseLayer(url) {
-  // Preserve a configured tile URL as the first choice, then fall back to public providers.
-  const configured = (url || '').trim();
-  if (configured && !configured.includes('{z}') || configured && !configured.includes('{x}') || configured && !configured.includes('{y}')) {
-    console.warn('Configured map tile URL is missing a required {z}/{x}/{y} placeholder; using public fallback providers.');
-  }
-  const customProvider = configured && ['{z}', '{x}', '{y}'].every(token => configured.includes(token))
-    ? [{ name: 'Configured provider', url: configured, attribution: '&copy; Map data provider', maxZoom: 22 }]
-    : [];
-  const allProviders = [...customProvider, ...tileProviders];
-  // Keep the shared fallback list aligned with the active map instance.
-  if (customProvider.length) {
-    activeTileProviders = allProviders;
-  } else {
-    activeTileProviders = tileProviders;
-  }
-  activateTileProvider(0);
-  return baseMapLayer;
-}
-let activeTileProviders = tileProviders;
-
-function configureBaseMapLayer() {
-  if (!map) return;
-  tileFallbackEnabled = false;
-  tileProviderIndex = -1;
-  if (tileTimer) clearTimeout(tileTimer);
-  if (baseMapLayer) map.removeLayer(baseMapLayer);
-  baseMapLayer = null;
-  let tileUrl = (publicConfiguration.mapTilesUrl || '').trim();
-  // El servidor antiguo devolvía OpenStreetMap como "configurado" por defecto: se ignora para usar Esri Imagery.
-  if (tileUrl.includes('tile.openstreetmap.org')) tileUrl = '';
-  const customProvider = tileUrl && ['{z}', '{x}', '{y}'].every(token => tileUrl.includes(token))
-    ? [{ name: 'Configured provider', url: tileUrl, attribution: '&copy; Map data provider', maxZoom: 22 }]
-    : [];
-  activeTileProviders = [...customProvider, ...tileProviders];
-  activateTileProvider(0);
+  baseMapLayer = layer.addTo(map);
 }
 
 function updateMapStatus() {
   const status = $('mapa-provider-estado');
   if (!status) return;
   const avisos = [];
-  if (!publicConfiguration.mapConfigured) avisos.push('Teselas no configuradas.');
-  if (!publicConfiguration.geocodingConfigured) avisos.push('Geocodificación no configurada.');
-  if (!publicConfiguration.routingUrl) avisos.push('Rutas no configuradas.');
+  if (!publicConfiguration.externalServicesEnabled) {
+    avisos.push('Integraciones externas desactivadas; no se consultan proveedores de mapas, rutas ni geocodificación.');
+  } else {
+    if (!publicConfiguration.mapConfigured) avisos.push('Teselas no configuradas.');
+    if (!publicConfiguration.geocodingConfigured) avisos.push('Geocodificación no configurada.');
+    if (!publicConfiguration.routingUrl) avisos.push('Rutas no configuradas.');
+  }
   if (mapConfigurationError) avisos.push(mapConfigurationError);
   if (tileLoadError) avisos.push(tileLoadError);
   status.textContent = avisos.join(' ');
@@ -1301,7 +1249,7 @@ function changeView(viewName) {
 // ======================================================
 
 async function loadQueue() {
-  if (!session) return;
+  if (!session) return false;
 
   try {
     const routes = {
@@ -1375,8 +1323,10 @@ async function loadQueue() {
       if (!selectedCall) updateMap(null);
     }
 
+    return true;
   } catch (e) {
     if (e.message !== 'No autenticado') console.error('No se pudieron cargar las llamadas.', e);
+    return false;
   }
 }
 
@@ -2718,7 +2668,9 @@ function openLive() {
   );
 
   $('live-provider').textContent =
-    publicConfiguration.transcriptionConfigured
+    !publicConfiguration.externalServicesEnabled
+      ? 'Integraciones externas desactivadas'
+      : publicConfiguration.transcriptionConfigured
       ? 'Groq Whisper configurado'
       : 'Falta configurar Groq';
 
@@ -2733,7 +2685,9 @@ function openLive() {
     true;
 
   $('live-nota').textContent =
-    publicConfiguration.transcriptionConfigured
+    !publicConfiguration.externalServicesEnabled
+      ? 'Integraciones externas desactivadas; usa transcripción manual para no enviar audio a terceros.'
+      : publicConfiguration.transcriptionConfigured
       ? 'La transcripción se procesa en el servidor con Groq Whisper al guardar la grabación.'
       : 'Falta configurar GROQ_API_KEY en el servidor para crear llamadas desde audio.';
 }
@@ -2959,9 +2913,6 @@ async function stopLiveCall(
   live.stopping =
     true;
 
-  let saveFailed =
-    false;
-
   $('live-iniciar').disabled =
     guardar;
 
@@ -3061,6 +3012,8 @@ async function stopLiveCall(
     return;
   }
 
+  let d = null;
+  let savedCallId = null;
   try {
 
     const form =
@@ -3133,88 +3086,29 @@ async function stopLiveCall(
     if (!(attachedAudio instanceof Blob) || attachedAudio.size === 0) {
       throw new Error('No se pudo preparar el audio. Inicia el micrófono y vuelve a grabar.');
     }
-    if (attachedAudio.size > 25 * 1024 * 1024) {
+    if (attachedAudio.size > 25_000_000) {
       throw new Error('La grabación supera el límite de 25 MB de Groq. Detén antes y vuelve a intentarlo.');
     }
 
-    const r =
-      await apiFetch(
-        '/api/llamadas/live',
-        {
-          method: 'POST',
-          body: form
-        }
-      );
-
-    const d =
-      await readResponse(r);
-
+    const r = await apiFetch('/api/llamadas/live', {
+      method: 'POST',
+      body: form
+    });
     if (!r.ok) {
-      throw new Error(
-        d.error ||
-        'No se pudo guardar la llamada'
-      );
+      const responseData = await readResponse(r).catch(() => ({}));
+      throw new Error(responseData.error || `No se pudo guardar la llamada (HTTP ${r.status})`);
     }
 
-    setLiveStatus(
-      'Caso creado',
-      'activo'
-    );
+    try {
+      d = await r.json();
+    } catch (responseError) {
+      console.error('La llamada se guardó, pero la respuesta no contenía JSON válido.', responseError);
+    }
 
-    $('live-provider').textContent =
-      `Caso #${d.id} · ${
-        d.priority ||
-        'clasificando'
-      }`;
-
-    showAlert(
-      `Llamada en vivo convertida en caso #${d.id} · ${d.priority}`,
-      'ok'
-    );
-
-    recordEvent(
-      `Llamada en vivo guardada como caso #${d.id} (${d.priority}).`,
-      'admin'
-    );
-
-    selectedCall =
-      d;
-
-    currentQueue =
-      'pendientes';
-
-    await loadQueue();
-
-    updateTabs();
-
-    selectCall(
-      d.id
-    );
-
-    setTimeout(
-      () => {
-
-        $('modal-live').hidden =
-          true;
-
-        $('live-iniciar').disabled =
-          false;
-
-        $('live-detener').textContent =
-          'Detener y guardar';
-
-        live.stopping =
-          false;
-
-      },
-      900
-    );
+    const locationId = r.headers.get('Location')?.match(/\/api\/llamadas\/(\d+)\/?$/)?.[1];
+    savedCallId = d?.id ?? (locationId ? Number(locationId) : null);
 
   } catch (e) {
-
-    saveFailed =
-      true;
-
     setLiveStatus(
       'Error al guardar',
       'error'
@@ -3243,21 +3137,72 @@ async function stopLiveCall(
 
     live.stopping =
       false;
+
+    live = {
+      ...live,
+      stream: null,
+      mediaRecorder: null,
+      stopping: false
+    };
+    return;
   }
 
   live = {
     ...live,
-
     stream: null,
     mediaRecorder: null,
-    chunks: saveFailed ? live.chunks : [],
-    transcript: saveFailed ? live.transcript : '',
+    chunks: [],
+    transcript: '',
     stopping: false,
-
-    operatorLocation: saveFailed
-      ? live.operatorLocation
-      : { lat: null, lng: null }
+    operatorLocation: { lat: null, lng: null }
   };
+
+  const callLabel = savedCallId == null ? 'Llamada guardada' : `Caso #${savedCallId}`;
+  try {
+    setLiveStatus('Caso creado', 'activo');
+    $('live-provider').textContent =
+      `${callLabel} · ${d?.priority || 'clasificando'}`;
+    showAlert(
+      savedCallId == null
+        ? 'La llamada se guardó. Verifica la lista de llamadas antes de intentar enviarla nuevamente.'
+        : `Llamada en vivo convertida en caso #${savedCallId} · ${d?.priority || 'clasificando'}`,
+      'ok'
+    );
+    recordEvent(
+      savedCallId == null
+        ? 'Llamada en vivo guardada.'
+        : `Llamada en vivo guardada como caso #${savedCallId} (${d?.priority || 'clasificando'}).`,
+      'admin'
+    );
+
+    currentQueue = 'pendientes';
+    const queueRefreshed = await loadQueue();
+    updateTabs();
+
+    if (savedCallId != null && queueRefreshed) {
+      selectCall(savedCallId);
+    }
+    if (savedCallId != null && (!selectedCall || selectedCall.id !== savedCallId)) {
+      selectedCall = d;
+      if (d) {
+        renderDetails(d);
+        updateMap(d);
+      }
+    }
+  } catch (uiError) {
+    console.error(`${callLabel} se guardó, pero no se pudo actualizar la vista.`, uiError);
+    showAlert(
+      `${callLabel} se guardó. No se pudo actualizar la vista; recarga la lista de llamadas.`,
+      'error'
+    );
+  } finally {
+    setTimeout(() => {
+      $('modal-live').hidden = true;
+      $('live-iniciar').disabled = false;
+      $('live-detener').textContent = 'Detener y guardar';
+      live.stopping = false;
+    }, 900);
+  }
 }
 
 

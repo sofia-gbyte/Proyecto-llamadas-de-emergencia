@@ -13,7 +13,7 @@
 
   Para volver a tener todo funcionando después de limpiar:
     - Servicios externos: configurar claves en data\.codes-secrets.ps1
-    - Compilación (target/): se regenera solo al ejecutar INICIAR_CODES.bat
+    - Compilación (target/): se regenera con mvn clean verify o al empaquetar CODES
 
   NUNCA toca: la base de datos (data\llamadas.mv.db), el archivo de
   secretos (data\.codes-secrets.ps1), los audios de casos

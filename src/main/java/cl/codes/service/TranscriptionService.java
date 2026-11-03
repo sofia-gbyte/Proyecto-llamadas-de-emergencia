@@ -1,5 +1,6 @@
 package cl.codes.service;
 
+import cl.codes.exception.ExternalServiceException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
@@ -11,6 +12,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,6 +29,7 @@ public class TranscriptionService {
     private final String baseUrl;
     private final String model;
     private final String language;
+    private final boolean externalServicesEnabled;
     private final HttpClient http = HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(Duration.ofSeconds(10))
@@ -37,23 +40,28 @@ public class TranscriptionService {
             @Value("${app.groq.api-key:}") String apiKey,
             @Value("${app.groq.base-url:https://api.groq.com/openai/v1}") String baseUrl,
             @Value("${app.groq.model:whisper-large-v3-turbo}") String model,
-            @Value("${app.groq.language:es-CL}") String language
+            @Value("${app.groq.language:es-CL}") String language,
+            @Value("${app.external-services.enabled:false}") boolean externalServicesEnabled
     ) {
         this.apiKey = apiKey == null ? "" : apiKey.strip();
         this.baseUrl = baseUrl == null ? "https://api.groq.com/openai/v1" : baseUrl.replaceAll("/+$", "");
         this.model = model == null || model.isBlank() ? "whisper-large-v3-turbo" : model.strip();
         this.language = language == null || language.isBlank() ? "es-CL" : language.strip();
+        this.externalServicesEnabled = externalServicesEnabled;
     }
 
     public String transcribe(Path audio) throws IOException, InterruptedException {
+        if (!externalServicesEnabled) {
+            throw new ExternalServiceException("La transcripción en la nube está desactivada. Habilita los proveedores externos en Configuración y reinicia CODES.");
+        }
         if (apiKey.isBlank()) {
-            throw new IOException("Groq API key is not configured. Set app.groq.api-key or GROQ_API_KEY.");
+            throw new ExternalServiceException("Falta la clave GROQ_API_KEY. Configúrala en el menú del EXE y reinicia CODES.");
         }
         if (!Files.exists(audio)) {
-            throw new IOException("Audio file not found: " + audio);
+            throw new IOException("No se encontró el archivo de audio temporal para transcribir.");
         }
-        if (Files.size(audio) > 25L * 1024 * 1024) {
-            throw new IOException("Groq transcription supports audio files up to 25 MB.");
+        if (Files.size(audio) > 25_000_000L) {
+            throw new ExternalServiceException("Groq admite audios de hasta 25 MB. Detén la grabación antes y vuelve a intentarlo.");
         }
 
         String boundary = "----GroqBoundary" + UUID.randomUUID();
@@ -67,17 +75,47 @@ public class TranscriptionService {
                 .POST(HttpRequest.BodyPublishers.ofByteArray(payload))
                 .build();
 
-        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response;
+        try {
+            response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        } catch (HttpTimeoutException e) {
+            throw new ExternalServiceException("Groq tardó demasiado en responder. Comprueba la conexión e inténtalo nuevamente.", e);
+        } catch (IOException e) {
+            throw new ExternalServiceException("No se pudo conectar con Groq. Comprueba la conexión a Internet y la URL configurada.", e);
+        }
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IOException("Groq transcription failed with HTTP " + response.statusCode() + ".");
+            throw providerError(response.statusCode());
         }
 
-        JsonNode json = mapper.readTree(response.body());
+        JsonNode json;
+        try {
+            json = mapper.readTree(response.body());
+        } catch (IOException e) {
+            throw new ExternalServiceException("Groq respondió en un formato inesperado. Inténtalo nuevamente.", e);
+        }
         String text = json.path("text").asText("").trim();
         if (text.isBlank()) {
-            throw new IOException("Groq returned an empty transcript.");
+            throw new ExternalServiceException("Groq no detectó voz en la grabación. Comprueba el micrófono o registra la llamada manualmente.");
         }
         return text;
+    }
+
+    private ExternalServiceException providerError(int status) {
+        return switch (status) {
+            case 401, 403 -> new ExternalServiceException(
+                    "Groq rechazó la clave API (HTTP " + status + "). Revisa GROQ_API_KEY y reinicia CODES.");
+            case 413 -> new ExternalServiceException(
+                    "Groq rechazó el audio por su tamaño. El límite de transcripción es 25 MB.");
+            case 422 -> new ExternalServiceException(
+                    "Groq no pudo procesar el formato de audio o el modelo configurado. Revisa GROQ_MODEL.");
+            case 429 -> new ExternalServiceException(
+                    "Groq alcanzó el límite de solicitudes o de cuota (HTTP 429). Revisa el plan de la cuenta e inténtalo más tarde.");
+            default -> status >= 500
+                    ? new ExternalServiceException(
+                            "Groq presenta una falla temporal (HTTP " + status + "). Inténtalo nuevamente más tarde.")
+                    : new ExternalServiceException(
+                            "Groq rechazó la transcripción (HTTP " + status + "). Revisa la configuración del proveedor.");
+        };
     }
 
     private byte[] buildMultipartBody(Path audioFile, String fileName, String boundary) throws IOException {

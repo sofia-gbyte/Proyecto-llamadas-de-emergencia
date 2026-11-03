@@ -2,7 +2,41 @@
 
 Este archivo resume los cambios funcionales y de operación relevantes por versión de CODES. Las versiones de las bibliotecas se mantienen documentadas por separado en [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) y en `pom.xml`.
 
+## [1.1.0] - 2026-11-03
+
+### Integraciones y llamadas en vivo
+
+- Los errores de Groq ahora indican cómo resolver claves inválidas, cuotas agotadas, formato/tamaño de audio, fallos temporales y problemas de conexión, sin exponer claves ni respuestas internas del proveedor.
+- El límite de audio de llamadas en vivo se alinea al máximo de 25 MB de Groq; los errores de transcripción se entregan como respuestas `502` seguras y comprensibles para la interfaz.
+- Se invalidó la caché del JavaScript del navegador para que las instalaciones actualizadas carguen la corrección del guardado en vivo.
+- Se añadieron pruebas simuladas para claves rechazadas, límites de cuota y fallos temporales. Las pruebas no contactan a Groq ni envían audio real.
+
+### Menú y distribución local
+
+- Se alineó la tarjeta de **ALMACENAMIENTO LOCAL** con las tarjetas de estado y actividad del menú del EXE.
+- Se retiró del menú la acción de borrado de casos y audios, que podía afectar todos los registros en vez de solo los de prueba.
+- Se actualizó el empaquetado Windows, el artefacto Maven y la documentación activa a la versión `1.1.0`; el destino estable sigue siendo `dist\CODES` y los datos permanecen en la carpeta local persistente.
+- `mvn clean verify` pasó con 89 pruebas; el app-image incluye 207 archivos verificados, runtime Java y un único `CODES.exe`. SHA-256 del EXE: `A1B89D1A047DC395DD6C44C92FE256FD23C0AEEDE2BBAF988CDDE9C32638E789`; SHA-256 de `package-manifest.json`: `2E28C77E5FCE3B9D12B39E4D95B76A83609A385ABA0A82ACFA11A16C8FF4D4F7`.
+- El alcance continúa limitado a pruebas locales de baja capacidad con datos sintéticos; la versión no está certificada para despacho real ni para almacenar datos personales sensibles.
+
 ## [1.0.2] - 2026-11-03
+
+### Preparación de app-image local
+
+- Se migró a Spring Boot 4.0.9 y se conservaron los contratos existentes; la suite Maven finalizó con 84 pruebas aprobadas.
+- Se desactivaron por defecto las integraciones externas para evitar el envío no consentido de audios, direcciones, coordenadas o correos. La activación requiere `CODES_EXTERNAL_SERVICES_ENABLED=true`; la interfaz no cambia automáticamente a proveedores públicos si falla el proveedor configurado.
+- El menú de Windows ahora incluye **Configurar integraciones y API** para introducir claves de Groq, Geoapify y SMTP y personalizar mapa/rutas sin editar archivos manualmente. Las claves se guardan en el perfil local con permisos restringidos; hay que reiniciar el EXE para aplicar cambios.
+- Se rediseñó el menú Swing con la paleta azul petróleo/turquesa de la consola web, el logo incluido en el EXE, estado de servicio y actividad reciente. Se agruparon respaldo, limpieza y casos de prueba en **Datos y respaldos**, con etiquetas más breves y acceso a la carpeta persistente.
+- El logo borroso se sustituyó por el original azul y blanco compartido para esta entrega, tanto en el menú como en el icono multirresolución de Windows.
+- En las llamadas en vivo, el envío confirmado ya no se confunde con un error al refrescar la interfaz; se evita conservar el audio como pendiente de reintento si el servidor ya respondió que se guardó.
+- La ubicación estable del app-image es `dist\CODES`; las versiones actualizadas reemplazan ese paquete y reutilizan `%LOCALAPPDATA%\CODES\data` (o `%USERPROFILE%\.codes\data` como alternativa), sin cambiar de carpeta de datos.
+- El paquete `dist\CODES` se generó desde el JAR probado, con runtime Java 21.0.12.1 y el menú gráfico de configuración de proveedores; se debe mantener la carpeta completa junto al runtime.
+- SHA-256 de `CODES.exe`: `9A84E3CB53D9A68CDD5F050C9A963821FD60E4CE83DA32F240C20FDDD1197D9F`; SHA-256 de `package-manifest.json`: `CA2BF39700D42FEBFC81A7612B49936111AAFEF8053B82B0420CA8471E5C6BB6`.
+- La suite final `mvn clean verify` pasó con 84 pruebas; se verificaron los hashes del paquete y la ausencia de scripts y datos locales. Las pruebas no contactan servicios externos reales.
+- Se comprobó que un intento de enlazar el servidor a `0.0.0.0` se rechaza y que el paquete no incluye scripts, secretos, bases de datos ni audios locales.
+- La solicitud de recuperación de contraseña informa al usuario cuando el correo está desactivado; no intenta contactar al endpoint ni a un servidor SMTP.
+- El escaneo de dependencias no reportó CVE conocidos en las coordenadas enviadas. Esto no equivale a una auditoría de código ni a una certificación de seguridad.
+- La documentación aclara que H2 y los secretos no están cifrados en reposo, que el EXE no está firmado y que los servicios externos pueden recibir datos; el paquete es para pruebas locales con datos sintéticos, no para despacho real.
 
 ### Identidad visual de Windows
 
@@ -33,7 +67,7 @@ Este archivo resume los cambios funcionales y de operación relevantes por versi
 - Los errores de transcripción ya no exponen el cuerpo de respuesta del proveedor y los logs no registran transcripciones ni nombres de archivos de audio.
 - Se agregó el empaquetado Windows autocontenido con `jpackage`; la app-image incluye su runtime Java y utiliza `%LOCALAPPDATA%\CODES\data`.
 - Leaflet se sirve desde la ruta real incluida en el WebJar, evitando depender de una CDN para cargar la biblioteca.
-- Verificación de entrega: 52 pruebas Maven aprobadas; smoke test del app-image con HTML, Leaflet, `script.js` y heartbeat local.
+- En una validación anterior de esta versión: 52 pruebas Maven aprobadas y smoke test de recursos web del app-image; la verificación final de esta entrega se describe en **Preparación de app-image local**.
 
 ## [1.0.1] - 2026-11-02
 

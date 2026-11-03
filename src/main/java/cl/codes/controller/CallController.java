@@ -28,7 +28,9 @@ public class CallController {
     private final LiveCallService liveCallService;
     private final AuditLogService auditLogService;
     private final String mapTilesUrl;
+    private final String mapAttribution;
     private final String routingUrl;
+    private final boolean externalServicesEnabled;
     private final boolean geoapifyConfigured;
     private final boolean groqConfigured;
 
@@ -37,19 +39,24 @@ public class CallController {
             LiveCallService liveCallService,
             AuditLogService auditLogService,
             @Value("${CODES_MAP_TILES_URL:}") String mapTilesUrl,
+            @Value("${CODES_MAP_ATTRIBUTION:&copy; Esri}") String mapAttribution,
             @Value("${CODES_ROUTING_URL:https://router.project-osrm.org}") String routingUrl,
             @Value("${app.geoapify.api-key:}") String geoapifyApiKey,
-            @Value("${app.groq.api-key:}") String groqApiKey
+            @Value("${app.groq.api-key:}") String groqApiKey,
+            @Value("${app.external-services.enabled:false}") boolean externalServicesEnabled
     ) {
         this.service = service;
         this.liveCallService = liveCallService;
         this.auditLogService = auditLogService;
-        this.mapTilesUrl = mapTilesUrl.isBlank()
+        this.externalServicesEnabled = externalServicesEnabled;
+        this.mapTilesUrl = !externalServicesEnabled ? ""
+                : mapTilesUrl.isBlank()
                 ? "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
                 : mapTilesUrl.strip();
-        this.routingUrl = routingUrl.strip();
-        this.geoapifyConfigured = !geoapifyApiKey.isBlank();
-        this.groqConfigured = !groqApiKey.isBlank();
+        this.mapAttribution = externalServicesEnabled ? mapAttribution : "";
+        this.routingUrl = externalServicesEnabled ? routingUrl.strip() : "";
+        this.geoapifyConfigured = externalServicesEnabled && !geoapifyApiKey.isBlank();
+        this.groqConfigured = externalServicesEnabled && !groqApiKey.isBlank();
     }
 
     @GetMapping("/llamadas/pending")
@@ -157,8 +164,11 @@ public class CallController {
     @GetMapping("/public-config")
     public Map<String, Object> publicConfig() {
         return Map.of(
-                "mapProvider", mapTilesUrl.isBlank() ? "Esri World Imagery" : "Configured map provider",
+                "externalServicesEnabled", externalServicesEnabled,
+                "mapProvider", !externalServicesEnabled ? "Disabled"
+                        : mapTilesUrl.isBlank() ? "Esri World Imagery" : "Configured map provider",
                 "mapTilesUrl", mapTilesUrl,
+                "mapAttribution", mapAttribution,
                 "mapConfigured", !mapTilesUrl.isBlank(),
                 "geocodingConfigured", geoapifyConfigured,
                 "transcriptionConfigured", groqConfigured,

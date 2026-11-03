@@ -5,10 +5,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.EnableScheduling;
+import cl.codes.config.LocalDataDirectory;
+import cl.codes.config.LocalServerConfiguration;
 
 import java.awt.Desktop;
+import java.awt.GraphicsEnvironment;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Path;
@@ -21,30 +25,65 @@ public class CodesApplication {
     private static final Logger log = LoggerFactory.getLogger(CodesApplication.class);
 
     public static void main(String[] args) {
-        configurePackagedDataDirectory();
+        try {
+            configureLocalDataDirectory();
+        } catch (RuntimeException exception) {
+            String safeDetail = exception instanceof IllegalStateException
+                    ? exception.getMessage() : exception.getClass().getSimpleName();
+            log.error("CODES local startup preparation failed: {}", safeDetail);
+            showStartupError("No se pudo preparar el directorio local de CODES. Revise permisos, espacio disponible "
+                    + "y que los datos estén fuera de la carpeta de instalación.");
+            return;
+        }
+        if (Boolean.getBoolean("codes.packaged") && !GraphicsEnvironment.isHeadless()) {
+            PackagedDesktopLauncher.launch(args);
+            return;
+        }
+        startServer(args);
+    }
+
+    static ConfigurableApplicationContext startServer(String[] args) {
         if (Boolean.getBoolean("codes.packaged")) {
             cl.codes.config.LocalSecretBootstrap.loadLocalSecrets();
         }
-        SpringApplication.run(CodesApplication.class, args);
+        SpringApplication application = new SpringApplication(CodesApplication.class);
+        LocalServerConfiguration.enforceLoopbackOnly(application);
+        return application.run(args);
     }
 
-    private static void configurePackagedDataDirectory() {
-        if (!Boolean.getBoolean("codes.packaged")) return;
+    private static void configureLocalDataDirectory() {
+        boolean packaged = Boolean.getBoolean("codes.packaged");
         String configuredDirectory = System.getProperty("CODES_DATA_DIR");
         if (configuredDirectory == null || configuredDirectory.isBlank()) {
             configuredDirectory = System.getenv("CODES_DATA_DIR");
         }
         if (configuredDirectory == null || configuredDirectory.isBlank()) {
-            String localAppData = System.getenv("LOCALAPPDATA");
-            Path baseDirectory = localAppData == null || localAppData.isBlank()
-                    ? Path.of(System.getProperty("user.home"), ".codes")
-                    : Path.of(localAppData, "CODES");
-            configuredDirectory = baseDirectory.resolve("data").toString();
+            if (packaged) {
+                String localAppData = System.getenv("LOCALAPPDATA");
+                configuredDirectory = LocalDataDirectory.defaultPackagedDirectory(
+                        localAppData, Path.of(System.getProperty("user.home"))).toString();
+            } else {
+                configuredDirectory = Path.of("data").toString();
+            }
         }
-        String normalizedDirectory = Path.of(configuredDirectory).toAbsolutePath().normalize().toString().replace('\\', '/');
+        Path dataDirectory = LocalDataDirectory.prepare(Path.of(configuredDirectory),
+                packaged ? PackagedDesktopLauncher.appImageDirectory() : null);
+
+        String normalizedDirectory = dataDirectory.toString().replace('\\', '/');
         System.setProperty("CODES_DATA_DIR", normalizedDirectory);
-        System.setProperty("CODES_AUDIT_LOG_PATH",
-                Path.of(normalizedDirectory, "logs", "auditoria.log").toString().replace('\\', '/'));
+        if (packaged) {
+            System.setProperty("CODES_AUDIT_LOG_PATH",
+                    Path.of(normalizedDirectory, "logs", "auditoria.log").toString().replace('\\', '/'));
+        }
+    }
+
+    private static void showStartupError(String message) {
+        if (GraphicsEnvironment.isHeadless()) {
+            System.err.println(message);
+            return;
+        }
+        javax.swing.JOptionPane.showMessageDialog(null, message, "CODES - Error de inicio",
+                javax.swing.JOptionPane.ERROR_MESSAGE);
     }
 
     @EventListener(ApplicationReadyEvent.class)

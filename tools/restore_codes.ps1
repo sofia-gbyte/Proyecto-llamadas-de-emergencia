@@ -42,4 +42,4 @@ Get-ChildItem $backupRoot -Recurse -File | Where-Object { $_.Name -ne 'manifest.
 
 Write-Host "Restauración completada en $targetRoot" -ForegroundColor Green
 Write-Host "Archivos restaurados: $restored" -ForegroundColor Green
-Write-Host 'Revisa data\.codes-secrets.ps1 y ejecuta CODES.bat para comprobar el sistema.' -ForegroundColor Yellow
+Write-Host 'Revisa data\.codes-secrets.ps1 y abre el app-image de CODES para comprobar el sistema.' -ForegroundColor Yellow

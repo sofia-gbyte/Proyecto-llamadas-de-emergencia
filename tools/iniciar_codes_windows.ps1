@@ -211,7 +211,7 @@ function Install-Java21IfMissing {
     }
 }
 
-# Java: el .bat ya resuelve la ruta; la detección interna queda como respaldo.
+# Java: usa la ruta proporcionada o detecta una instalación disponible.
 if ($JavaPath -and (Test-Path $JavaPath)) {
     $fileVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($JavaPath).ProductVersion
     $javaVersionMatch = [regex]::Match($fileVersion, '(\d+)')
@@ -238,7 +238,7 @@ if (-not $javaInfo -or -not $javaInfo.Exists -or $javaInfo.Version -lt 21) {
     exit 1
 }
 
-# Maven: el .bat ya resuelve la ruta; la detección interna queda como respaldo.
+# Maven: usa la ruta proporcionada o busca una instalación disponible.
 $mavenCandidates = @(
     (Join-Path $HOME '.maven\apache-maven-3.9.9\bin'),
     (Join-Path $HOME '.maven\maven-3.9.15\bin'),

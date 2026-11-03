@@ -51,6 +51,7 @@ public class GeocoderService {
     private final String userAgent;
     private final String geoapifyApiKey;
     private final String geoapifyBaseUrl;
+    private final boolean externalServicesEnabled;
     private final double defaultCenterLatitude;
     private final double defaultCenterLongitude;
     private final double radiusKm;
@@ -78,6 +79,7 @@ public class GeocoderService {
             @Value("${app.geocoder.user-agent}") String userAgent,
             @Value("${app.geoapify.api-key:}") String geoapifyApiKey,
             @Value("${app.geoapify.base-url:https://api.geoapify.com/v1/geocode/search}") String geoapifyBaseUrl,
+            @Value("${app.external-services.enabled:false}") boolean externalServicesEnabled,
             @Value("${app.geocoder.centro-lat:-33.4489}") double defaultCenterLatitude,
             @Value("${app.geocoder.centro-lng:-70.6693}") double defaultCenterLongitude,
             @Value("${app.geocoder.radio-km:30}") double radiusKm
@@ -87,6 +89,7 @@ public class GeocoderService {
         this.userAgent = userAgent;
         this.geoapifyApiKey = geoapifyApiKey == null ? "" : geoapifyApiKey.strip();
         this.geoapifyBaseUrl = normalizeBaseUrl(geoapifyBaseUrl);
+        this.externalServicesEnabled = externalServicesEnabled;
         this.defaultCenterLatitude = defaultCenterLatitude;
         this.defaultCenterLongitude = defaultCenterLongitude;
         this.radiusKm = radiusKm;
@@ -105,6 +108,10 @@ public class GeocoderService {
     * la ubicación hablada ni limitan la búsqueda del incidente.
      */
     public Coordinates geocode(String address, String context, Double sourceLatitude, Double sourceLongitude) {
+        if (!externalServicesEnabled) {
+            log.debug("Geocoding skipped because external providers are disabled.");
+            return Coordinates.EMPTY;
+        }
         LinkedHashSet<String> queries = new LinkedHashSet<>();
         if (address != null && !address.isBlank()) queries.add(address.strip());
         if (context != null && !context.isBlank()) {
