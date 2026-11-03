@@ -37,14 +37,14 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
-    private final List<String> origenesPermitidos;
+    private final List<String> allowedOrigins;
 
     public SecurityConfig(
             JwtAuthFilter jwtAuthFilter,
-            @Value("${app.cors-allowed-origins}") List<String> origenesPermitidos
+            @Value("${app.cors-allowed-origins}") List<String> allowedOrigins
     ) {
         this.jwtAuthFilter = jwtAuthFilter;
-        this.origenesPermitidos = origenesPermitidos;
+        this.allowedOrigins = allowedOrigins;
     }
 
     /**
@@ -98,7 +98,7 @@ public class SecurityConfig {
             )
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // preflight CORS
-                .requestMatchers("/", "/index.html", "/styles.css", "/console-redesign.css", "/script.js", "/favicon.ico", "/webjars/**", "/error", "/api/auth/login", "/api/auth/register", "/api/auth/captcha-site-key", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/health", "/api/heartbeat", "/api/public-config").permitAll()
+                .requestMatchers("/", "/index.html", "/styles.css", "/console-redesign.css", "/script.js", "/favicon.ico", "/vendor/altcha/**", "/webjars/**", "/error", "/api/auth/login", "/api/auth/register", "/api/auth/captcha-config", "/api/auth/captcha-challenge", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/health", "/api/heartbeat", "/api/public-config").permitAll()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
@@ -114,7 +114,7 @@ public class SecurityConfig {
         // evita que cualquier página abierta en el navegador de la sala
         // pueda hacerle peticiones a esta API si el operator la visita
         // por error.
-        config.setAllowedOrigins(origenesPermitidos);
+        config.setAllowedOrigins(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
 

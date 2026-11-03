@@ -37,12 +37,12 @@ public class UserController {
 
     @GetMapping
     public List<UserResponse> list() {
-        return repo.findAll().stream().map(UserResponse::de).toList();
+        return repo.findAll().stream().map(UserResponse::from).toList();
     }
 
     @GetMapping("/{id}")
     public UserResponse getById(@PathVariable Long id) {
-        return UserResponse.de(get(id));
+        return UserResponse.from(get(id));
     }
 
     @PostMapping
@@ -56,13 +56,13 @@ public class UserController {
         user.setRole(req.rol());
         user.setActive(true);
         user.setInstitution(req.institution());
-        User creado = repo.save(user);
-        auditLogService.registrar(auth.getName(), "create-user", "user", creado.getUsername(), request.getRemoteAddr(), "success");
+        User createdUser = repo.save(user);
+        auditLogService.recordEvent(auth.getName(), "create-user", "user", createdUser.getUsername(), request.getRemoteAddr(), "success");
         var location = ServletUriComponentsBuilder.fromCurrentContextPath()
                 .path("/api/users/{id}")
-                .buildAndExpand(creado.getId())
+                .buildAndExpand(createdUser.getId())
                 .toUri();
-        return ResponseEntity.created(location).body(UserResponse.de(creado));
+        return ResponseEntity.created(location).body(UserResponse.from(createdUser));
     }
 
     @PutMapping("/{id}")
@@ -90,9 +90,9 @@ public class UserController {
         user.setLastName(normalizeOptional(req.lastName()));
         user.setEmail(normalizeOptional(req.email()));
         user.setSessionsValidFrom(LocalDateTime.now());
-        UserResponse resultado = UserResponse.de(repo.save(user));
-        auditLogService.registrar(auth.getName(), "update-user", "user", user.getUsername(), request.getRemoteAddr(), "success");
-        return resultado;
+        UserResponse response = UserResponse.from(repo.save(user));
+        auditLogService.recordEvent(auth.getName(), "update-user", "user", user.getUsername(), request.getRemoteAddr(), "success");
+        return response;
     }
 
     @DeleteMapping("/{id}")
@@ -108,7 +108,7 @@ public class UserController {
         }
         String username = user.getUsername();
         repo.delete(user);
-        auditLogService.registrar(auth.getName(), "delete-user", "user", username, request.getRemoteAddr(), "success");
+        auditLogService.recordEvent(auth.getName(), "delete-user", "user", username, request.getRemoteAddr(), "success");
         return ResponseEntity.noContent().build();
     }
 
@@ -122,18 +122,18 @@ public class UserController {
         // Además de bloquear el acceso, invalida cualquier JWT que ese
         // usuario tuviera abierto en ese momento.
         user.setSessionsValidFrom(LocalDateTime.now());
-        UserResponse resultado = UserResponse.de(repo.save(user));
-        auditLogService.registrar(auth.getName(), "disable-user", "user", user.getUsername(), request.getRemoteAddr(), "success");
-        return resultado;
+        UserResponse response = UserResponse.from(repo.save(user));
+        auditLogService.recordEvent(auth.getName(), "disable-user", "user", user.getUsername(), request.getRemoteAddr(), "success");
+        return response;
     }
 
     @PatchMapping("/{id}/enable")
     public UserResponse enable(@PathVariable Long id, Authentication auth, HttpServletRequest request) {
         User user = get(id);
         user.setActive(true);
-        UserResponse resultado = UserResponse.de(repo.save(user));
-        auditLogService.registrar(auth.getName(), "enable-user", "user", user.getUsername(), request.getRemoteAddr(), "success");
-        return resultado;
+        UserResponse response = UserResponse.from(repo.save(user));
+        auditLogService.recordEvent(auth.getName(), "enable-user", "user", user.getUsername(), request.getRemoteAddr(), "success");
+        return response;
     }
 
     /**
@@ -146,23 +146,23 @@ public class UserController {
     @PatchMapping("/{id}/reset-password")
     public java.util.Map<String, Object> resetPassword(@PathVariable Long id, Authentication auth, HttpServletRequest request) {
         User user = get(id);
-        String temporal = generarClaveTemporal();
-        user.setPasswordHash(securityService.hashPassword(temporal));
+        String temporaryPassword = generateTemporaryPassword();
+        user.setPasswordHash(securityService.hashPassword(temporaryPassword));
         user.setSessionsValidFrom(LocalDateTime.now());
         repo.save(user);
-        auditLogService.registrar(auth.getName(), "admin-reset-password", "user", user.getUsername(), request.getRemoteAddr(), "success");
+        auditLogService.recordEvent(auth.getName(), "admin-reset-password", "user", user.getUsername(), request.getRemoteAddr(), "success");
         return java.util.Map.of(
                 "message", "Contraseña temporal generada. Comunícasela a " + user.getUsername() + " por un canal seguro; debería cambiarla al iniciar sesión.",
-                "temporaryPassword", temporal
+                "temporaryPassword", temporaryPassword
         );
     }
 
-    private String generarClaveTemporal() {
-        String alfabeto = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+    private String generateTemporaryPassword() {
+        String alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
         java.security.SecureRandom random = new java.security.SecureRandom();
-        StringBuilder clave = new StringBuilder(12);
-        for (int i = 0; i < 12; i++) clave.append(alfabeto.charAt(random.nextInt(alfabeto.length())));
-        return clave.toString();
+        StringBuilder password = new StringBuilder(12);
+        for (int i = 0; i < 12; i++) password.append(alphabet.charAt(random.nextInt(alphabet.length())));
+        return password.toString();
     }
 
     /**
@@ -175,9 +175,9 @@ public class UserController {
     public UserResponse closeSessions(@PathVariable Long id, Authentication auth, HttpServletRequest request) {
         User user = get(id);
         user.setSessionsValidFrom(LocalDateTime.now());
-        UserResponse resultado = UserResponse.de(repo.save(user));
-        auditLogService.registrar(auth.getName(), "close-sessions", "user", user.getUsername(), request.getRemoteAddr(), "success");
-        return resultado;
+        UserResponse response = UserResponse.from(repo.save(user));
+        auditLogService.recordEvent(auth.getName(), "close-sessions", "user", user.getUsername(), request.getRemoteAddr(), "success");
+        return response;
     }
 
     private User get(Long id) {

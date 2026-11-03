@@ -7,7 +7,7 @@ import cl.codes.model.User;
 public record UserResponse(
         Long id, String username, String role, boolean active, String fullName, String email, String institution, boolean testAccount
 ) {
-    public static UserResponse de(User user) {
+    public static UserResponse from(User user) {
         String fullName = ((user.getFirstName() == null ? "" : user.getFirstName()) + " " +
                 (user.getLastName() == null ? "" : user.getLastName())).strip();
         if (fullName.isBlank()) fullName = user.getUsername();
@@ -15,5 +15,4 @@ public record UserResponse(
                 fullName, user.getEmail(), user.getInstitution(), user.isTestAccount());
     }
 }
-
 

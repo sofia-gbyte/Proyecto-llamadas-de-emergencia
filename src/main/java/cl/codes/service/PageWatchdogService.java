@@ -36,8 +36,8 @@ public class PageWatchdogService {
     private final ApplicationContext context;
     private final long timeoutMs;
 
-    private final AtomicLong ultimoLatido = new AtomicLong(-1);
-    private final AtomicBoolean apagando = new AtomicBoolean(false);
+    private final AtomicLong lastHeartbeatAt = new AtomicLong(-1);
+    private final AtomicBoolean shutdownStarted = new AtomicBoolean(false);
 
     public PageWatchdogService(
             ApplicationContext context,
@@ -47,21 +47,21 @@ public class PageWatchdogService {
         this.timeoutMs = timeoutMs;
     }
 
-    public void registrarLatido() {
-        ultimoLatido.set(System.currentTimeMillis());
+    public void recordHeartbeat() {
+        lastHeartbeatAt.set(System.currentTimeMillis());
     }
 
     @Scheduled(fixedDelayString = "${app.page-watchdog.check-interval-ms:5000}")
-    void revisar() {
-        long ultimo = ultimoLatido.get();
-        if (ultimo < 0 || apagando.get()) {
+    void checkWatchdog() {
+        long lastHeartbeat = lastHeartbeatAt.get();
+        if (lastHeartbeat < 0 || shutdownStarted.get()) {
             return; // nadie ha abierto la página todavía, o ya estamos apagando
         }
-        long inactivoMs = System.currentTimeMillis() - ultimo;
-        if (inactivoMs > timeoutMs && apagando.compareAndSet(false, true)) {
+        long idleTimeMs = System.currentTimeMillis() - lastHeartbeat;
+        if (idleTimeMs > timeoutMs && shutdownStarted.compareAndSet(false, true)) {
             log.warn(
                 "No se recibió el 'estoy viva' de la página en {} ms; se asume que se cerró. Apagando CODES...",
-                inactivoMs
+                idleTimeMs
             );
             // En un hilo aparte: cerrar el contexto desde dentro de la propia
             // tarea programada que lo dispara podría bloquear el apagado.

@@ -2,6 +2,56 @@
 
 Este archivo resume los cambios funcionales y de operación relevantes por versión de CODES. Las versiones de las bibliotecas se mantienen documentadas por separado en [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) y en `pom.xml`.
 
+## [1.0.2] - 2026-11-03
+
+### Identidad visual de Windows
+
+- Se actualizó el icono de `CODES.exe` con la imagen de marca de la aplicación.
+
+### Refuerzo de ALTCHA
+
+- Se migró la verificación a ALTCHA v2 con Argon2id (1 iteración, 8 MiB, paralelismo 1); el widget, worker y traducción española se sirven desde el propio proyecto.
+- Los desafíos se vinculan a login o registro, vencen a los cinco minutos y se firman con HMAC.
+- El uso de desafíos se guarda en H2 con una restricción única, evitando reuso incluso tras reinicios o solicitudes concurrentes.
+- Se limitó a dos el número de verificaciones Argon2id concurrentes para acotar el consumo de memoria del servidor.
+- La autenticación ALTCHA desde equipos de la LAN ahora requiere HTTPS; HTTP queda disponible para `localhost`.
+- El perfil equilibrado tardó aproximadamente 13 segundos en una prueba del widget en el navegador de desarrollo; el tiempo varía según el dispositivo.
+
+### Alcance de seguridad
+
+- Argon2id hace más costosa la automatización y reduce la ventaja del hardware acelerado; el estado persistido elimina la ventana de repetición por reinicio.
+- ALTCHA no demuestra por sí solo que el cliente sea humano ni es protección suficiente para exposición directa a Internet. Mantener rate limits y controles del proxy/WAF.
+
+### Seguimiento y clasificación de casos
+
+- Se pueden agregar antecedentes a una llamada abierta sin crear un caso duplicado; cada aporte conserva autoría, fecha e identificador de idempotencia.
+- La información complementaria actualiza prioridad, motivos y recomendaciones internas. No cambia automáticamente la ubicación ni activa despachos externos.
+- Se reconocen variantes plurales de personas atrapadas en la clasificación.
+
+### Privacidad y distribución local
+
+- Los errores de transcripción ya no exponen el cuerpo de respuesta del proveedor y los logs no registran transcripciones ni nombres de archivos de audio.
+- Se agregó el empaquetado Windows autocontenido con `jpackage`; la app-image incluye su runtime Java y utiliza `%LOCALAPPDATA%\CODES\data`.
+- Leaflet se sirve desde la ruta real incluida en el WebJar, evitando depender de una CDN para cargar la biblioteca.
+- Verificación de entrega: 52 pruebas Maven aprobadas; smoke test del app-image con HTML, Leaflet, `script.js` y heartbeat local.
+
+## [1.0.1] - 2026-11-02
+
+### Añadido
+
+- Protección ALTCHA local en inicio de sesión y registro, con desafíos firmados y de expiración corta.
+- Límite de solicitudes al endpoint de desafíos y rechazo de soluciones reutilizadas durante la ejecución del servidor.
+- Clave HMAC de ALTCHA generada y persistida automáticamente por el lanzador de Windows.
+- Validación de tamaño máximo del token CAPTCHA en los DTO de autenticación.
+
+### Auditoría y limitaciones conocidas en 1.0.1
+
+- Suite completa: 39 pruebas aprobadas; prueba de generación/verificación del desafío y rechazo de repetición.
+- La integración usa ALTCHA Java v1 con SHA-256 y un espacio de búsqueda máximo de 100.000; no usa Argon2id/Scrypt ni el widget oficial actual. La prueba de trabajo es resoluble con hardware acelerado y no demuestra por sí sola que el cliente sea humano.
+- El registro de desafíos usados es local a la instancia y en memoria: se reinicia al reiniciar CODES y no se comparte entre instancias.
+- El worker SHA-256 propio no requiere HTTPS para resolver desafíos desde la LAN. HTTPS sigue siendo necesario en redes no confiables para proteger credenciales y tokens, y para APIs del navegador como micrófono y geolocalización. No exponer ALTCHA por sí solo a Internet; mantener límites adicionales y controles anti-abuso en proxy/WAF.
+- La revisión no constituye certificación de seguridad ni recomienda desplegar el sistema en operación crítica.
+
 ## [1.0.0] - 2026-11-01
 
 Primera versión 1.0 del proyecto, enfocada en consolidar la API y documentar su alcance operativo.

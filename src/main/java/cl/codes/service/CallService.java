@@ -1,17 +1,26 @@
 package cl.codes.service;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import cl.codes.classifier.Classifier;
+import cl.codes.model.CallInformationUpdate;
 import cl.codes.model.Call;
 import cl.codes.model.User;
 import cl.codes.exception.ResourceNotFoundException;
 import cl.codes.repository.CallRepository;
 import cl.codes.repository.UserRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
@@ -20,15 +29,19 @@ public class CallService {
     private final CallRepository repo;
     private final UserRepository userRepo;
     private final GeocoderService geocoder;
+    private final ObjectMapper mapper;
+    private static final int MAX_INFORMATION_UPDATES = 100;
+    private static final int MAX_TOTAL_INFORMATION_CHARS = 20_000;
 
     private static final Map<String, Integer> PRIORITY_ORDER = Map.of(
             "URGENTE", 0, "ROJA", 1, "MEDIA", 2, "VERDE", 3
     );
 
-    public CallService(CallRepository repo, UserRepository userRepo, GeocoderService geocoder) {
+    public CallService(CallRepository repo, UserRepository userRepo, GeocoderService geocoder, ObjectMapper mapper) {
         this.repo = repo;
         this.userRepo = userRepo;
         this.geocoder = geocoder;
+        this.mapper = mapper;
     }
 
     public Call getById(Long id, Authentication auth) {
@@ -59,6 +72,92 @@ public class CallService {
         }
         call.setOperationalSummary(normalizedSummary);
         return repo.save(call);
+    }
+
+    @Transactional
+    public Call appendInformation(Long id, String updateId, String information, Authentication auth) {
+        User user = currentUser(auth);
+        ensureNotPreview(user);
+        Call call = getById(id, auth);
+        if (call.getClosureDate() != null) {
+            throw new IllegalStateException("Closed calls cannot be updated");
+        }
+        boolean supervisorOrAdmin = "supervisor".equalsIgnoreCase(user.getRole()) || isAdmin(user);
+        if (!supervisorOrAdmin && (!call.isAssigned() || !user.getUsername().equals(call.getAssignedOperator()))) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Only the assigned operator or a supervisor can update this call");
+        }
+
+        String normalizedInformation = information.strip();
+        List<CallInformationUpdate> updates = readInformationUpdates(call.getInformationUpdates());
+        if (updates.stream().anyMatch(update -> update.updateId().equalsIgnoreCase(updateId))) {
+            return call;
+        }
+        String normalizedForComparison = normalizeInformation(normalizedInformation);
+        if (updates.stream().anyMatch(update ->
+                normalizeInformation(update.information()).equals(normalizedForComparison))) {
+            return call;
+        }
+        if (updates.size() >= MAX_INFORMATION_UPDATES) {
+            throw new IllegalStateException("This call has reached the maximum number of information updates");
+        }
+        int currentInformationLength = updates.stream().mapToInt(update -> update.information().length()).sum();
+        if (currentInformationLength + normalizedInformation.length() > MAX_TOTAL_INFORMATION_CHARS) {
+            throw new IllegalArgumentException("The total additional information for this call cannot exceed 20000 characters");
+        }
+
+        updates = new ArrayList<>(updates);
+        updates.add(new CallInformationUpdate(updateId, normalizedInformation, LocalDateTime.now().toString(), user.getUsername()));
+        try {
+            call.setInformationUpdates(mapper.writeValueAsString(updates));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Could not serialize call information updates", e);
+        }
+
+        String combinedText = classificationText(call, updates);
+        Classifier.ClassificationResult classification = Classifier.classifyCall(combinedText);
+        call.setPriority(classification.priority());
+        call.setUrgentScore(classification.scores().getOrDefault("urgente", 0));
+        call.setRedScore(classification.scores().getOrDefault("roja", 0));
+        call.setMediumScore(classification.scores().getOrDefault("media", 0));
+        call.setGreenScore(classification.scores().getOrDefault("verde", 0));
+        try {
+            call.setHighlightedWords(mapper.writeValueAsString(classification.highlightedWords()));
+            call.setClassificationReasons(mapper.writeValueAsString(classification.reasons()));
+            call.setSuggestedInstitutions(mapper.writeValueAsString(classification.suggestedInstitutions()));
+            call.setInstitutionRecommendations(mapper.writeValueAsString(classification.institutionRecommendations()));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Could not serialize call classification", e);
+        }
+
+        String summary = call.getOperationalSummary();
+        String addition = "Información complementaria: " + normalizedInformation;
+        call.setOperationalSummary(summary == null || summary.isBlank()
+                ? addition
+                : summary.stripTrailing() + "\n" + addition);
+        return repo.saveAndFlush(call);
+    }
+
+    private List<CallInformationUpdate> readInformationUpdates(String json) {
+        if (json == null || json.isBlank()) return new ArrayList<>();
+        try {
+            return mapper.readValue(json, new TypeReference<>() {});
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Stored call information updates are invalid", e);
+        }
+    }
+
+    private String classificationText(Call call, List<CallInformationUpdate> updates) {
+        String transcription = call.getTranscription() == null ? "" : call.getTranscription();
+        String additionalInformation = updates.stream()
+                .map(CallInformationUpdate::information)
+                .reduce((left, right) -> left + "\n" + right)
+                .orElse("");
+        return transcription + (additionalInformation.isBlank() ? "" : "\n" + additionalInformation);
+    }
+
+    private String normalizeInformation(String information) {
+        return information.strip().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
     }
 
     public void deletePending(Long id, Authentication auth) {
@@ -166,7 +265,13 @@ public class CallService {
         return repo.save(call);
     }
 
-    public record Metrics(long totalCalls, long urgentesActivas, long pendientes, long enProgreso, Double tiempoPromedioRespuestaSeg) {}
+    public record Metrics(
+            long totalCalls,
+            @JsonProperty("urgentesActivas") long activeUrgentCalls,
+            @JsonProperty("pendientes") long pending,
+            @JsonProperty("enProgreso") long inProgress,
+            @JsonProperty("tiempoPromedioRespuestaSeg") Double averageResponseTimeSeconds
+    ) {}
 
     public Metrics metrics(Authentication auth) {
         User user = currentUser(auth);
@@ -192,8 +297,4 @@ public class CallService {
         return new Metrics(total, activeUrgentCalls, pending, inProgress, averageResponse);
     }
 
-    /* Nombres del record alineados 1 a 1 con lo que espera script.js
-       (d.pendientes, d.enProgreso, d.urgentesActivas, d.tiempoPromedioRespuestaSeg):
-       antes se llamaban distinto en Java y el JSON nunca calzaba con el
-       frontend, por eso el panel RESUMEN se quedaba en "–". */
 }

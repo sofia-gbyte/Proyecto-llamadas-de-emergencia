@@ -16,6 +16,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
@@ -27,8 +28,8 @@ class LiveCallServiceTest {
 
     @Test
     void persistsGroqTranscriptGeoapifyAddressAndSummaryInCallResponse() throws Exception {
-        String relato = "Se reporta incendio en el Hospital Barros Luco, hay humo y necesitamos bomberos.";
-        String direccionGeoapify = "Hospital Barros Luco, San Miguel, Santiago, Chile";
+        String transcriptText = "Se reporta incendio en el Hospital Barros Luco, hay humo y necesitamos bomberos.";
+        String geoapifyAddress = "Hospital Barros Luco, San Miguel, Santiago, Chile";
         CallRepository callRepository = mock(CallRepository.class);
         UserRepository userRepository = mock(UserRepository.class);
         GeocoderService geocoder = mock(GeocoderService.class);
@@ -38,9 +39,9 @@ class LiveCallServiceTest {
         user.setUsername("operador");
         user.setInstitution("bomberos");
         when(userRepository.findByUsername("operador")).thenReturn(Optional.of(user));
-        when(transcription.transcribe(any(Path.class))).thenReturn(relato);
+        when(transcription.transcribe(any(Path.class))).thenReturn(transcriptText);
         when(geocoder.geocode(nullable(String.class), anyString(), any(), any()))
-                .thenReturn(new GeocoderService.Coordinates(-33.42, -70.61, direccionGeoapify));
+                .thenReturn(new GeocoderService.Coordinates(-33.42, -70.61, geoapifyAddress));
         doAnswer(invocation -> {
             Files.writeString(invocation.getArgument(1), "encrypted-audio-data");
             return null;
@@ -65,18 +66,22 @@ class LiveCallServiceTest {
         );
 
         Call saved = service.create("", audio, "operador", "127.0.0.1");
-        CallResponse response = CallResponse.de(saved);
+        CallResponse response = CallResponse.from(saved);
 
-        assertNull(cl.codes.classifier.Classifier.classifyCall(relato).direccion());
-        assertEquals(relato, saved.getTranscription());
-        assertEquals(direccionGeoapify, saved.getDetectedAddress());
+        assertNull(cl.codes.classifier.Classifier.classifyCall(transcriptText).address());
+        assertEquals(transcriptText, saved.getTranscription());
+        assertEquals(geoapifyAddress, saved.getDetectedAddress());
         assertEquals(-33.42, saved.getLatitude());
         assertEquals(-70.61, saved.getLongitude());
-        assertEquals("Incendio reportado en " + direccionGeoapify + ". Se solicita apoyo de Bomberos.",
+        assertEquals("Incendio reportado en " + geoapifyAddress + ". Se solicita apoyo de Bomberos.",
                 saved.getOperationalSummary());
-        assertEquals(relato, response.transcription());
-        assertEquals(direccionGeoapify, response.address());
+        assertEquals(transcriptText, response.transcription());
+        assertEquals(geoapifyAddress, response.address());
         assertEquals(saved.getOperationalSummary(), response.operationalSummary());
+        assertEquals("bomberos", response.suggestedInstitutions().get(0));
+        assertEquals("PRIMARY", response.institutionRecommendations().get(0).role());
+        assertTrue(response.institutionRecommendations().stream()
+                .noneMatch(item -> item.institution().equals("samu")));
         verify(transcription).transcribe(any(Path.class));
         verify(geocoder).geocode(nullable(String.class), anyString(), any(), any());
         verify(callRepository).save(saved);

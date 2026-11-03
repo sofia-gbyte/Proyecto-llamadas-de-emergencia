@@ -16,10 +16,11 @@ import cl.codes.service.AuditLogService;
 import cl.codes.security.JwtService;
 import cl.codes.security.AuthRateLimitService;
 import cl.codes.security.LoginAttemptService;
-import cl.codes.security.TurnstileService;
+import cl.codes.security.AltchaService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.CacheControl;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -28,6 +29,7 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import jakarta.servlet.http.HttpServletRequest;
@@ -45,7 +47,7 @@ public class AuthController {
     private final AuthRateLimitService authRateLimitService;
     private final UserRepository userRepository;
     private final SecurityService securityService;
-    private final TurnstileService turnstileService;
+    private final AltchaService altchaService;
     private final PasswordResetService passwordResetService;
     private final AuditLogService auditLogService;
 
@@ -56,7 +58,7 @@ public class AuthController {
             AuthRateLimitService authRateLimitService,
             UserRepository userRepository,
             SecurityService securityService,
-            TurnstileService turnstileService,
+            AltchaService altchaService,
             PasswordResetService passwordResetService,
             AuditLogService auditLogService
     ) {
@@ -66,7 +68,7 @@ public class AuthController {
         this.authRateLimitService = authRateLimitService;
         this.userRepository = userRepository;
         this.securityService = securityService;
-        this.turnstileService = turnstileService;
+        this.altchaService = altchaService;
         this.passwordResetService = passwordResetService;
         this.auditLogService = auditLogService;
     }
@@ -76,7 +78,7 @@ public class AuthController {
         if (!authRateLimitService.allowLogin(request.getRemoteAddr())) {
             return tooManyRequests();
         }
-        if (!turnstileService.verify(req.captchaToken(), request.getRemoteAddr())) {
+        if (!altchaService.verify(req.captchaToken(), "login")) {
             return captchaRequired();
         }
         String identifier = req.username().strip();
@@ -100,7 +102,7 @@ public class AuthController {
             String role = auth.getAuthorities().iterator().next().getAuthority()
                     .replace("ROLE_", "").toLowerCase();
             String token = jwtService.generateToken(user, role);
-            auditLogService.registrar(user, "login", "session", null, request.getRemoteAddr(), "success");
+            auditLogService.recordEvent(user, "login", "session", null, request.getRemoteAddr(), "success");
 
             return ResponseEntity.ok(new LoginResponse(token, user, role, jwtService.getExpirationMinutes()));
 
@@ -108,7 +110,7 @@ public class AuthController {
             if (!(e instanceof DisabledException)) {
                 loginAttemptService.registerFailure(user);
             }
-            auditLogService.registrar(user, "login", "session", null, request.getRemoteAddr(), "failure");
+            auditLogService.recordEvent(user, "login", "session", null, request.getRemoteAddr(), "failure");
             return invalidCredentials();
         }
     }
@@ -123,7 +125,7 @@ public class AuthController {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         user.setSessionsValidFrom(LocalDateTime.now());
         userRepository.save(user);
-        auditLogService.registrar(user.getUsername(), "logout", "session", null, request.getRemoteAddr(), "success");
+        auditLogService.recordEvent(user.getUsername(), "logout", "session", null, request.getRemoteAddr(), "success");
         return ResponseEntity.ok(Map.of("message", "Sesión cerrada"));
     }
 
@@ -134,17 +136,17 @@ public class AuthController {
         try { passwordResetService.requestReset(req.email()); } catch (RuntimeException ignored) {
             // No revelar si el correo existe ni detalles del proveedor SMTP.
         }
-        auditLogService.registrar(req.email(), "forgot-password-request", "user", null, request.getRemoteAddr(), "requested");
+        auditLogService.recordEvent(req.email(), "forgot-password-request", "user", null, request.getRemoteAddr(), "requested");
         return ResponseEntity.ok(Map.of("message", "Si existe una cuenta activa con ese correo, recibirás instrucciones de recuperación."));
     }
 
     @PostMapping("/reset-password")
     public ResponseEntity<?> resetPassword(@Valid @RequestBody ResetPasswordRequest req, HttpServletRequest request) {
         if (!passwordResetService.resetPassword(req.token(), req.newPassword())) {
-            auditLogService.registrar(null, "reset-password", "user", null, request.getRemoteAddr(), "failure");
+            auditLogService.recordEvent(null, "reset-password", "user", null, request.getRemoteAddr(), "failure");
             return ResponseEntity.badRequest().body(Map.of("error", "El enlace de recuperación no es válido, ya fue utilizado o expiró."));
         }
-        auditLogService.registrar(null, "reset-password", "user", null, request.getRemoteAddr(), "success");
+        auditLogService.recordEvent(null, "reset-password", "user", null, request.getRemoteAddr(), "success");
         return ResponseEntity.ok(Map.of("message", "Contraseña restablecida correctamente. Ya puedes iniciar sesión."));
     }
 
@@ -153,11 +155,11 @@ public class AuthController {
         if (!authRateLimitService.allowRegister(request.getRemoteAddr())) {
             return tooManyRequests();
         }
-        if (!turnstileService.verify(req.captchaToken(), request.getRemoteAddr())) {
+        if (!altchaService.verify(req.captchaToken(), "register")) {
             return captchaRequired();
         }
         String user = req.username().strip();
-        String email = req.correo().strip().toLowerCase();
+        String email = req.email().strip().toLowerCase();
         if (userRepository.existsByUsername(user)) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "A user with that username already exists"));
         }
@@ -169,15 +171,15 @@ public class AuthController {
         account.setPasswordHash(securityService.hashPassword(req.password()));
         account.setRole("operator");
         account.setActive(false);
-        account.setFirstName(req.nombre().strip());
-        account.setLastName(req.apellido().strip());
+        account.setFirstName(req.firstName().strip());
+        account.setLastName(req.lastName().strip());
         account.setEmail(email);
-        account.setInstitution(req.institucion());
+        account.setInstitution(req.institution());
         userRepository.save(account);
-        auditLogService.registrar(user, "register", "user", user, request.getRemoteAddr(), "success");
+        auditLogService.recordEvent(user, "register", "user", user, request.getRemoteAddr(), "success");
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                 "message", "Account created successfully. An administrator must activate it before login.",
-                "user", UserResponse.de(account)
+                "user", UserResponse.from(account)
         ));
     }
 
@@ -197,20 +199,32 @@ public class AuthController {
         // tenía una sesión abierta con la contraseña anterior, queda fuera.
         user.setSessionsValidFrom(LocalDateTime.now());
         userRepository.save(user);
-        auditLogService.registrar(user.getUsername(), "change-password", "user", user.getUsername(), request.getRemoteAddr(), "success");
+        auditLogService.recordEvent(user.getUsername(), "change-password", "user", user.getUsername(), request.getRemoteAddr(), "success");
         return ResponseEntity.ok(Map.of("message", "Password changed successfully"));
     }
 
-    @org.springframework.web.bind.annotation.RequestMapping(
-            value = "/captcha-site-key",
-            method = {org.springframework.web.bind.annotation.RequestMethod.GET,
-                      org.springframework.web.bind.annotation.RequestMethod.POST}
-    )
-    public ResponseEntity<?> captchaSiteKey() {
-        return ResponseEntity.ok(Map.of(
-                "enabled", turnstileService.isEnabled(),
-                "siteKey", turnstileService.getSiteKey()
-        ));
+    @org.springframework.web.bind.annotation.GetMapping("/captcha-config")
+    public ResponseEntity<?> captchaConfig() {
+        return ResponseEntity.ok(Map.of("enabled", altchaService.isEnabled()));
+    }
+
+    @org.springframework.web.bind.annotation.GetMapping("/captcha-challenge")
+    public ResponseEntity<?> captchaChallenge(
+            @RequestParam String purpose,
+            HttpServletRequest request
+    ) {
+        if (!authRateLimitService.allowCaptcha(request.getRemoteAddr())) {
+            return tooManyRequests();
+        }
+        if (!AltchaService.isSupportedPurpose(purpose)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Unsupported CAPTCHA purpose."));
+        }
+        if (!altchaService.isEnabled()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(altchaService.createChallenge(purpose));
     }
 
     private ResponseEntity<?> invalidCredentials() {

@@ -13,7 +13,7 @@
 
     <groupId>cl.codes</groupId>
     <artifactId>codes</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.2</version>
     <name>CODES - Centro de Emergencias</name>
 
     <properties>
@@ -59,6 +59,16 @@
             <groupId>org.webjars</groupId>
             <artifactId>leaflet</artifactId>
             <version>1.9.4</version>
+        </dependency>
+        <dependency>
+            <groupId>org.altcha</groupId>
+            <artifactId>altcha</artifactId>
+            <version>2.1.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>1.86</version>
         </dependency>
         <!-- Incluye spring-security-crypto (BCryptPasswordEncoder), por eso
              ya no se necesita la dependencia jbcrypt por separado. -->

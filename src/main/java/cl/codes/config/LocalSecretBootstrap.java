@@ -1,40 +1,89 @@
 package cl.codes.config;
 
 import java.io.IOException;
+import java.io.StringReader;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.Properties;
+import java.util.Set;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class LocalSecretBootstrap {
+    private static final Object LOCK = new Object();
+    private static final Set<String> ALLOWED_LOCAL_SETTINGS = Set.of(
+            "CODES_JWT_SECRET", "CODES_ENCRYPT_KEY", "CODES_ADMIN_USER", "CODES_ADMIN_PASSWORD",
+            "CODES_ALTCHA_SECRET", "CODES_ALTCHA_ENABLED", "CODES_DB_USERNAME", "CODES_DB_PASSWORD",
+            "GROQ_API_KEY", "GEOAPIFY_API_KEY", "CODES_SMTP_HOST", "CODES_SMTP_PORT",
+            "CODES_SMTP_USERNAME", "CODES_SMTP_PASSWORD", "CODES_MAIL_FROM", "CODES_PUBLIC_BASE_URL"
+    );
 
     private LocalSecretBootstrap() {
     }
 
     public static String resolveOrGenerate(String envVarName, String configuredValue, Supplier<String> generator) {
-        String value = configuredValue;
-        if ((value == null || value.isBlank()) && System.getenv(envVarName) != null) {
-            value = System.getenv(envVarName);
-        }
-        if ((value == null || value.isBlank()) && System.getProperty(envVarName) != null) {
-            value = System.getProperty(envVarName);
-        }
+        synchronized (LOCK) {
+            String value = configuredValue;
+            if (value == null || value.isBlank()) value = System.getenv(envVarName);
+            if (value == null || value.isBlank()) value = System.getProperty(envVarName);
+            if (value == null || value.isBlank()) value = readPersistedValue(envVarName);
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
 
-        if (value != null && !value.isBlank()) {
-            return value;
+            String generated = generator.get();
+            persistEnvValue(envVarName, generated);
+            return generated;
         }
+    }
 
-        String generated = generator.get();
-        persistEnvValue(envVarName, generated);
-        return generated;
+    public static void loadLocalSecrets() {
+        synchronized (LOCK) {
+            try {
+                Path dataDir = dataDirectory();
+                Map<String, String> secrets = new LinkedHashMap<>();
+                readProperties(dataDir.resolve(".codes-secrets.properties"))
+                        .forEach((key, value) -> secrets.put(String.valueOf(key), String.valueOf(value)));
+                Path powershellFile = dataDir.resolve(".codes-secrets.ps1");
+                if (Files.exists(powershellFile)) {
+                    Matcher matcher = Pattern.compile(
+                            "(?m)^\\s*\\$env:([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*'((?:[^']|'')*)'\\s*$"
+                    ).matcher(Files.readString(powershellFile, StandardCharsets.UTF_8).replace("\uFEFF", ""));
+                    while (matcher.find()) {
+                        secrets.put(matcher.group(1), matcher.group(2).replace("''", "'"));
+                    }
+                }
+                secrets.forEach((name, value) -> {
+                    if (ALLOWED_LOCAL_SETTINGS.contains(name)
+                            && !value.isBlank()
+                            && System.getenv(name) == null
+                            && System.getProperty(name) == null) {
+                        System.setProperty(name, value);
+                    }
+                });
+            } catch (IOException e) {
+                throw new IllegalStateException("No se pudieron cargar los secretos locales de CODES.", e);
+            }
+        }
     }
 
     private static void persistEnvValue(String envVarName, String value) {
         try {
-            Path dataDir = Path.of("data");
+            Path dataDir = dataDirectory();
             Files.createDirectories(dataDir);
-            Path secretFile = dataDir.resolve(".codes-secrets.ps1");
+            Path propertiesFile = dataDir.resolve(".codes-secrets.properties");
+            Properties properties = readProperties(propertiesFile);
+            properties.setProperty(envVarName, value);
+            writePropertiesAtomically(propertiesFile, properties);
 
+            Path secretFile = dataDir.resolve(".codes-secrets.ps1");
             String line = "$env:" + envVarName + " = '" + value + "'";
             String existing = Files.exists(secretFile)
                     ? Files.readString(secretFile, StandardCharsets.UTF_8)
@@ -49,7 +98,75 @@ public final class LocalSecretBootstrap {
                 Files.writeString(secretFile, sb.toString(), StandardCharsets.UTF_8);
             }
         } catch (IOException e) {
-            throw new IllegalStateException("No se pudo guardar el secreto local en data/.codes-secrets.ps1", e);
+            throw new IllegalStateException("No se pudo guardar el secreto local en el directorio de datos de CODES.", e);
         }
+    }
+
+    private static String readPersistedValue(String envVarName) {
+        try {
+            Path dataDir = dataDirectory();
+            Path propertiesFile = dataDir.resolve(".codes-secrets.properties");
+            String value = readProperties(propertiesFile).getProperty(envVarName);
+            if (value != null && !value.isBlank()) return value;
+
+            Path powershellFile = dataDir.resolve(".codes-secrets.ps1");
+            value = readPowerShellValue(powershellFile, envVarName);
+            if (value == null) return null;
+            if (!value.isBlank()) {
+                Files.createDirectories(dataDir);
+                Properties properties = readProperties(propertiesFile);
+                properties.setProperty(envVarName, value);
+                writePropertiesAtomically(propertiesFile, properties);
+                return value;
+            }
+            return null;
+        } catch (IOException e) {
+            throw new IllegalStateException("No se pudieron leer los secretos locales de CODES.", e);
+        }
+    }
+
+    private static String readPowerShellValue(Path powershellFile, String envVarName) throws IOException {
+        if (!Files.exists(powershellFile)) return null;
+        Matcher matcher = Pattern.compile(
+                "(?m)^\\s*\\$env:" + Pattern.quote(envVarName) + "\\s*=\\s*'((?:[^']|'')*)'\\s*$"
+        ).matcher(Files.readString(powershellFile, StandardCharsets.UTF_8).replace("\uFEFF", ""));
+        return matcher.find() ? matcher.group(1).replace("''", "'") : null;
+    }
+
+    private static Properties readProperties(Path propertiesFile) throws IOException {
+        Properties properties = new Properties();
+        if (Files.exists(propertiesFile)) {
+            try (var reader = Files.newBufferedReader(propertiesFile, StandardCharsets.UTF_8)) {
+                properties.load(reader);
+            }
+        }
+        return properties;
+    }
+
+    private static void writePropertiesAtomically(Path propertiesFile, Properties properties) throws IOException {
+        Files.createDirectories(propertiesFile.getParent());
+        Path temporaryFile = Files.createTempFile(propertiesFile.getParent(), ".codes-secrets-", ".tmp");
+        try {
+            try (var writer = Files.newBufferedWriter(temporaryFile, StandardCharsets.UTF_8)) {
+                properties.store(writer, "CODES local secrets; do not share or commit this file");
+            }
+            try {
+                Files.move(temporaryFile, propertiesFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(temporaryFile, propertiesFile, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(temporaryFile);
+        }
+    }
+
+    private static Path dataDirectory() {
+        String configuredDirectory = System.getProperty("CODES_DATA_DIR");
+        if (configuredDirectory == null || configuredDirectory.isBlank()) {
+            configuredDirectory = System.getenv("CODES_DATA_DIR");
+        }
+        return configuredDirectory == null || configuredDirectory.isBlank()
+                ? Path.of("data")
+                : Path.of(configuredDirectory);
     }
 }

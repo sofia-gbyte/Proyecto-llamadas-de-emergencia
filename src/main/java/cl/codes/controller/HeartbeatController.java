@@ -21,6 +21,6 @@ public class HeartbeatController {
 
     @PostMapping("/api/heartbeat")
     public void heartbeat() {
-        watchdog.registrarLatido();
+        watchdog.recordHeartbeat();
     }
 }

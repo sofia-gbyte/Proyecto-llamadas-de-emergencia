@@ -22,7 +22,8 @@ import java.time.format.DateTimeFormatter;
  */
 @Service
 public class LiveCallService {
-    private static final DateTimeFormatter MARCA = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS");
+    private static final DateTimeFormatter FILE_TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS");
+    private static final int MAX_TRANSCRIPTION_CHARS = 20_000;
 
     private final CallRepository repo;
     private final UserRepository userRepository;
@@ -63,63 +64,64 @@ public class LiveCallService {
             throw new org.springframework.security.access.AccessDeniedException(
                 "Esta es una sesión de vista previa (solo lectura): no puede crear llamadas reales.");
         }
-        Path temporal = null;
-        Path encriptado = null;
+        Path temporaryAudioFile = null;
+        Path encryptedAudioFile = null;
         try {
-            String textoOrigen = cleanTranscription(transcription);
+            String sourceTranscript = cleanTranscription(transcription);
             if (audio != null && !audio.isEmpty()) {
                 validateAudio(audio);
-                String nombre = sanitizeName(audio.getOriginalFilename());
-                temporal = Files.createTempFile("codes-live-", "." + extension(nombre));
+                String fileName = sanitizeName(audio.getOriginalFilename());
+                temporaryAudioFile = Files.createTempFile("codes-live-", "." + extension(fileName));
                 try (var input = audio.getInputStream()) {
-                    Files.copy(input, temporal, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    Files.copy(input, temporaryAudioFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                 }
-                if (!Files.exists(temporal) || Files.size(temporal) == 0) {
+                if (!Files.exists(temporaryAudioFile) || Files.size(temporaryAudioFile) == 0) {
                     throw new IllegalStateException("La grabación llegó vacía al servidor.");
                 }
-                if (textoOrigen.isBlank()) {
-                    textoOrigen = transcriptionService.transcribe(temporal);
+                if (sourceTranscript.isBlank()) {
+                    sourceTranscript = transcriptionService.transcribe(temporaryAudioFile);
                 }
             }
-            if (textoOrigen.isBlank()) {
+            if (sourceTranscript.isBlank()) {
                 throw new IllegalArgumentException("Se necesita una transcripción o un audio para crear la llamada.");
             }
 
-            String texto = cleanTranscription(textoOrigen);
-            Classifier.ResultadoClasificacion classification = Classifier.classifyCall(texto);
+            String transcript = cleanTranscription(sourceTranscript);
+            Classifier.ClassificationResult classification = Classifier.classifyCall(transcript);
             if (!Classifier.hasOperationalInformation(classification)) {
                 throw new IllegalArgumentException("The transcription has insufficient operational information.");
             }
-            GeocoderService.Coordinates coords = geocoder.geocode(classification.direccion(), texto, operatorLatitude, operatorLongitude);
-            String direccion = coords.formattedAddress() != null && !coords.formattedAddress().isBlank()
+            GeocoderService.Coordinates coords = geocoder.geocode(classification.address(), transcript, operatorLatitude, operatorLongitude);
+            String address = coords.formattedAddress() != null && !coords.formattedAddress().isBlank()
                     ? coords.formattedAddress()
-                    : classification.direccion();
+                    : classification.address();
 
-            if (temporal != null) {
+            if (temporaryAudioFile != null) {
                 Files.createDirectories(encryptedFolder);
-                String nombre = sanitizeName(audio.getOriginalFilename());
-                encriptado = encryptedFolder.resolve(
-                        MARCA.format(LocalDateTime.now()) + "_" + nombre + ".enc"
+                String fileName = sanitizeName(audio.getOriginalFilename());
+                encryptedAudioFile = encryptedFolder.resolve(
+                        FILE_TIMESTAMP_FORMAT.format(LocalDateTime.now()) + "_" + fileName + ".enc"
                 );
-                securityService.encryptFile(temporal, encriptado);
-                if (!Files.exists(encriptado) || Files.size(encriptado) <= 12) {
+                securityService.encryptFile(temporaryAudioFile, encryptedAudioFile);
+                if (!Files.exists(encryptedAudioFile) || Files.size(encryptedAudioFile) <= 12) {
                     throw new IllegalStateException("No fue posible completar el guardado seguro de la grabación.");
                 }
             }
 
             Call call = new Call();
-            call.setTranscription(texto);
-            call.setOperationalSummary(operationalSummaryService.generate(texto, classification, direccion));
-            call.setOriginalAudio(encriptado != null ? encriptado.toString() : null);
+            call.setTranscription(transcript);
+            call.setOperationalSummary(operationalSummaryService.generate(transcript, classification, address));
+            call.setOriginalAudio(encryptedAudioFile != null ? encryptedAudioFile.toString() : null);
             call.setPriority(classification.priority());
-            call.setUrgentScore(classification.puntajes().getOrDefault("urgente", 0));
-            call.setRedScore(classification.puntajes().getOrDefault("roja", 0));
-            call.setMediumScore(classification.puntajes().getOrDefault("media", 0));
-            call.setGreenScore(classification.puntajes().getOrDefault("verde", 0));
+            call.setUrgentScore(classification.scores().getOrDefault("urgente", 0));
+            call.setRedScore(classification.scores().getOrDefault("roja", 0));
+            call.setMediumScore(classification.scores().getOrDefault("media", 0));
+            call.setGreenScore(classification.scores().getOrDefault("verde", 0));
             call.setHighlightedWords(mapper.writeValueAsString(classification.highlightedWords()));
-            call.setClassificationReasons(mapper.writeValueAsString(classification.motivos()));
-            call.setSuggestedInstitutions(mapper.writeValueAsString(classification.institucionesSugeridas()));
-            call.setDetectedAddress(direccion);
+            call.setClassificationReasons(mapper.writeValueAsString(classification.reasons()));
+            call.setSuggestedInstitutions(mapper.writeValueAsString(classification.suggestedInstitutions()));
+            call.setInstitutionRecommendations(mapper.writeValueAsString(classification.institutionRecommendations()));
+            call.setDetectedAddress(address);
             call.setLatitude(coords.lat());
             call.setLongitude(coords.lng());
             call.setSourceIp(ip);
@@ -127,7 +129,7 @@ public class LiveCallService {
             call.setInstitution(creator.getInstitution());
             return repo.save(call);
         } finally {
-            if (temporal != null) Files.deleteIfExists(temporal);
+            if (temporaryAudioFile != null) Files.deleteIfExists(temporaryAudioFile);
         }
     }
 
@@ -149,16 +151,19 @@ public class LiveCallService {
 
     private String cleanTranscription(String value) {
         if (value == null || value.isBlank()) return "";
-        String texto = value.strip();
+        String text = value.strip();
         try {
-            com.fasterxml.jackson.databind.JsonNode nodo = mapper.readTree(texto);
-            if (nodo != null && nodo.isObject() && nodo.has("text")) {
-                return nodo.get("text").asText("").strip();
+            com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(text);
+            if (node != null && node.isObject() && node.has("text")) {
+                text = node.get("text").asText("").strip();
             }
-        } catch (Exception ignored) {
-            // No era JSON: ya es texto plano.
+        } catch (com.fasterxml.jackson.core.JsonProcessingException invalidJson) {
+            // A malformed JSON-looking transcription is still treated as user-provided plain text.
         }
-        return texto;
+        if (text.length() > MAX_TRANSCRIPTION_CHARS) {
+            throw new IllegalArgumentException("La transcripción no puede superar 20000 caracteres.");
+        }
+        return text;
     }
 
     private String extension(String name) {

@@ -2,7 +2,7 @@
 
 Revision inicial del proyecto al 2026-09-29. Este documento identifica componentes visibles en el codigo y dependencias directas; no es asesoramiento legal ni sustituye la revision del artefacto final.
 
-Versión de CODES documentada: `1.0.0` (definida en `pom.xml`). Este número identifica el artefacto de la aplicación; no representa la versión de Spring Boot ni de las dependencias.
+Versión de CODES documentada: `1.0.2` (definida en `pom.xml`). Este número identifica el artefacto de la aplicación; no representa la versión de Spring Boot ni de las dependencias.
 
 ## Codigo y dependencias directas
 
@@ -13,8 +13,11 @@ Versión de CODES documentada: `1.0.0` (definida en `pom.xml`). Este número ide
 | H2 Database | Version resuelta por Spring Boot 3.3.4 | MPL 2.0 o EPL 1.0 | Confirmar la version exacta en el arbol de dependencias del release. |
 | JJWT | 0.12.6 | Apache License 2.0 | Incluye modulos API, implementacion y Jackson. |
 | Leaflet | 1.9.4, empaquetado como WebJar | BSD 2-Clause | El navegador obtiene los archivos desde el propio JAR de CODES; no necesita un CDN en ejecucion. |
+| ALTCHA Java | 2.1.1 (protocolo v2) | MIT | Genera y verifica localmente los desafíos ALTCHA v2 con la KDF Argon2id conectada por CODES. |
+| Bouncy Castle | 1.86 (`bcprov-jdk18on`) | MIT-style | Implementa Argon2id en el servidor; dependencia directa añadida para la KDF de ALTCHA. |
+| ALTCHA widget | 3.5.0, bundle autoalojado | MIT | `altcha.min.js`, `argon2id.js` y la traducción `es-419.js` se sirven desde `static/vendor/altcha/`; su licencia está incluida en esa carpeta. No se carga desde un CDN. |
 
-Enlaces de referencia: [Spring Boot](https://github.com/spring-projects/spring-boot/blob/v3.3.4/LICENSE.txt), [H2](https://www.h2database.com/html/license.html), [JJWT](https://github.com/jwtk/jjwt/blob/0.12.6/LICENSE), [Leaflet](https://github.com/Leaflet/Leaflet/blob/v1.9.4/LICENSE).
+Enlaces de referencia: [Spring Boot](https://github.com/spring-projects/spring-boot/blob/v3.3.4/LICENSE.txt), [H2](https://www.h2database.com/html/license.html), [JJWT](https://github.com/jwtk/jjwt/blob/0.12.6/LICENSE), [Leaflet](https://github.com/Leaflet/Leaflet/blob/v1.9.4/LICENSE), [ALTCHA Java](https://github.com/altcha-org/altcha-lib-java/blob/main/LICENSE), [ALTCHA widget](https://github.com/altcha-org/altcha/blob/v3/LICENSE.txt), [Bouncy Castle](https://www.bouncycastle.org/licence/).
 
 El JDK de ejecucion depende de la distribucion elegida (por ejemplo, Temurin u Oracle). Elegirla y revisar sus terminos en el servidor de produccion.
 
@@ -34,7 +37,7 @@ Los endpoints publicos son de mejor esfuerzo, no ofrecen SLA y no deben recibir 
 
 ## Otros servicios opcionales
 
-- Cloudflare Turnstile esta desactivado por defecto. Solo se consulta si `CODES_TURNSTILE_ENABLED=true` y se proporcionan claves. Al desactivarlo se mantienen los limites de intentos de la aplicacion; una instalacion publica debe usar proteccion anti-abuso equivalente en su proxy/WAF.
+- ALTCHA se ejecuta en el propio servidor y navegador, sin transmitir información a un proveedor de CAPTCHA. `CODES_ALTCHA_ENABLED` permite desactivarlo; los límites de intentos de la aplicación permanecen activos. El widget requiere HTTPS desde equipos de la LAN (excepto `localhost`).
 - SMTP es configurable y depende del proveedor que el operador elija (`CODES_SMTP_*`).
 - No se cargan Google Fonts ni Leaflet desde CDN; tampoco se abre Google Maps. Leaflet esta empaquetado y la navegacion de coordenadas se mantiene dentro de CODES.
 - `CODES_Prototipo.html` es una demo independiente: todavia carga Leaflet desde un CDN y usa teselas OSM y rutas OSRM publicas. No usarla como despliegue de produccion; requiere Internet y sus proveedores deben sustituirse si se opera esa demo.

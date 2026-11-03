@@ -18,6 +18,7 @@ public class AuthRateLimitService {
     private static final Window LOGIN_WINDOW = new Window(10, Duration.ofMinutes(15));
     private static final Window REGISTER_WINDOW = new Window(3, Duration.ofHours(1));
     private static final Window RECOVERY_WINDOW = new Window(5, Duration.ofHours(1));
+    private static final Window CAPTCHA_WINDOW = new Window(30, Duration.ofMinutes(15));
 
     private record Window(int maxRequests, Duration duration) {}
     private record Counter(Instant startedAt, int requests) {}
@@ -25,6 +26,7 @@ public class AuthRateLimitService {
     private final ConcurrentHashMap<String, Counter> loginCounters = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Counter> registerCounters = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Counter> recoveryCounters = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Counter> captchaCounters = new ConcurrentHashMap<>();
 
     public boolean allowLogin(String clientIp) {
         return allow(loginCounters, clientIp, LOGIN_WINDOW);
@@ -36,6 +38,10 @@ public class AuthRateLimitService {
 
     public boolean allowRecovery(String clientIp) {
         return allow(recoveryCounters, clientIp, RECOVERY_WINDOW);
+    }
+
+    public boolean allowCaptcha(String clientIp) {
+        return allow(captchaCounters, clientIp, CAPTCHA_WINDOW);
     }
 
     private boolean allow(ConcurrentHashMap<String, Counter> counters, String clientIp, Window window) {

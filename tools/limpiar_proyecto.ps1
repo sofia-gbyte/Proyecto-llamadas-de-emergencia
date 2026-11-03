@@ -164,10 +164,18 @@ if ($Comprimir) {
     # rutas exactas, a diferencia de Compress-Archive con listas de archivos.
     $excluirDirs = @(
         (Join-Path $root '.git'),
+        (Join-Path $root 'backups'),
+        (Join-Path $root 'logs'),
         (Join-Path $root 'data\audios_crudos'),
         (Join-Path $root 'data\audios_encriptados')
     ) | Where-Object { Test-Path $_ }
-    $excluirArchivos = @('llamadas.mv.db', 'llamadas.trace.db', '.codes-secrets.ps1')
+    $excluirArchivos = @(
+        'llamadas.mv.db',
+        'llamadas.trace.db',
+        '.codes-secrets.ps1',
+        'app-run.log',
+        '*.log'
+    )
 
     $robocopyArgs = @($root, $tempProyecto, '/E', '/NFL', '/NDL', '/NJH', '/NJS')
     if ($excluirDirs.Count -gt 0) { $robocopyArgs += '/XD'; $robocopyArgs += $excluirDirs }
@@ -182,5 +190,5 @@ if ($Comprimir) {
     Remove-Item -Path $temp -Recurse -Force -ErrorAction SilentlyContinue
 
     Write-Host "Listo: $destino" -ForegroundColor Green
-    Write-Host '(No incluye la base de datos, los secretos ni los audios de casos.)' -ForegroundColor DarkGray
+    Write-Host '(No incluye respaldos, logs, la base de datos, los secretos ni los audios de casos.)' -ForegroundColor DarkGray
 }

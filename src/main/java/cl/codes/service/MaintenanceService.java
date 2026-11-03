@@ -31,7 +31,7 @@ public class MaintenanceService {
 
     /** Todos los días a las 04:00, hora del servidor (madrugada, tráfico mínimo). */
     @Scheduled(cron = "${app.maintenance.cron:0 0 4 * * *}")
-    public void limpiarTokensVencidos() {
+    public void removeExpiredTokens() {
         try {
             tokenRepository.deleteByExpiresAtBefore(LocalDateTime.now());
             log.debug("Limpieza programada: tokens de recuperación vencidos eliminados");

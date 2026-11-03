@@ -36,12 +36,12 @@ public class AuditLogService {
     private static final Logger log = LoggerFactory.getLogger(AuditLogService.class);
     private static final DateTimeFormatter TS = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
-    private final Path archivo;
+    private final Path logFile;
     private final ObjectMapper mapper = new ObjectMapper();
     private final Object lock = new Object();
 
-    public AuditLogService(@Value("${app.log-auditoria-path:./logs/auditoria.log}") String ruta) {
-        this.archivo = Path.of(ruta);
+    public AuditLogService(@Value("${app.log-auditoria-path:./logs/auditoria.log}") String filePath) {
+        this.logFile = Path.of(filePath);
     }
 
     /**
@@ -50,27 +50,27 @@ public class AuditLogService {
      * @param tipoRecurso tipo de recurso afectado, p.ej. "user", "call", "session"
      * @param idRecurso   identificador del recurso afectado (puede ser null)
      * @param ip          IP de origen de la petición
-     * @param resultado   "success", "failure", "requested", etc.
+     * @param outcome     "success", "failure", "requested", etc.
      */
-    public void registrar(String actor, String accion, String tipoRecurso, String idRecurso, String ip, String resultado) {
-        Map<String, Object> evento = new LinkedHashMap<>();
-        evento.put("timestamp", LocalDateTime.now().format(TS));
-        evento.put("actor", actor != null ? actor : "anonymous");
-        evento.put("accion", accion);
-        evento.put("tipoRecurso", tipoRecurso);
-        evento.put("idRecurso", idRecurso);
-        evento.put("ip", ip);
-        evento.put("resultado", resultado);
+    public void recordEvent(String actor, String action, String resourceType, String resourceId, String ip, String outcome) {
+        Map<String, Object> eventRecord = new LinkedHashMap<>();
+        eventRecord.put("timestamp", LocalDateTime.now().format(TS));
+        eventRecord.put("actor", actor != null ? actor : "anonymous");
+        eventRecord.put("accion", action);
+        eventRecord.put("tipoRecurso", resourceType);
+        eventRecord.put("idRecurso", resourceId);
+        eventRecord.put("ip", ip);
+        eventRecord.put("resultado", outcome);
 
         synchronized (lock) {
             try {
-                Path carpeta = archivo.toAbsolutePath().getParent();
-                if (carpeta != null) Files.createDirectories(carpeta);
-                String linea = mapper.writeValueAsString(evento) + System.lineSeparator();
-                Files.writeString(archivo, linea, StandardCharsets.UTF_8,
+                Path parentDirectory = logFile.toAbsolutePath().getParent();
+                if (parentDirectory != null) Files.createDirectories(parentDirectory);
+                String line = mapper.writeValueAsString(eventRecord) + System.lineSeparator();
+                Files.writeString(logFile, line, StandardCharsets.UTF_8,
                         StandardOpenOption.CREATE, StandardOpenOption.APPEND);
             } catch (IOException e) {
-                log.warn("No se pudo escribir en el log de auditoría ({}): {}", archivo, e.getMessage());
+                log.warn("No se pudo escribir en el log de auditoría ({}): {}", logFile, e.getMessage());
             }
         }
     }

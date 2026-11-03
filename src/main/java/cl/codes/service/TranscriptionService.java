@@ -69,13 +69,13 @@ public class TranscriptionService {
 
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IOException("Groq transcription failed with HTTP " + response.statusCode() + ": " + response.body());
+            throw new IOException("Groq transcription failed with HTTP " + response.statusCode() + ".");
         }
 
         JsonNode json = mapper.readTree(response.body());
         String text = json.path("text").asText("").trim();
         if (text.isBlank()) {
-            throw new IOException("Groq did not return a transcript: " + response.body());
+            throw new IOException("Groq returned an empty transcript.");
         }
         return text;
     }

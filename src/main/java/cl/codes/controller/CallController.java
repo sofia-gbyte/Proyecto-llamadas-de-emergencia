@@ -1,6 +1,7 @@
 package cl.codes.controller;
 
 import cl.codes.controller.dto.CloseRequest;
+import cl.codes.controller.dto.CallInformationUpdateRequest;
 import cl.codes.controller.dto.CallResponse;
 import cl.codes.controller.dto.CreateLiveCallRequest;
 import cl.codes.controller.dto.UpdateCallRequest;
@@ -24,7 +25,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 @RequestMapping("/api")
 public class CallController {
     private final CallService service;
-    private final LiveCallService enVivoService;
+    private final LiveCallService liveCallService;
     private final AuditLogService auditLogService;
     private final String mapTilesUrl;
     private final String routingUrl;
@@ -33,7 +34,7 @@ public class CallController {
 
     public CallController(
             CallService service,
-            LiveCallService enVivoService,
+            LiveCallService liveCallService,
             AuditLogService auditLogService,
             @Value("${CODES_MAP_TILES_URL:}") String mapTilesUrl,
             @Value("${CODES_ROUTING_URL:https://router.project-osrm.org}") String routingUrl,
@@ -41,7 +42,7 @@ public class CallController {
             @Value("${app.groq.api-key:}") String groqApiKey
     ) {
         this.service = service;
-        this.enVivoService = enVivoService;
+        this.liveCallService = liveCallService;
         this.auditLogService = auditLogService;
         this.mapTilesUrl = mapTilesUrl.isBlank()
                 ? "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
@@ -53,22 +54,35 @@ public class CallController {
 
     @GetMapping("/llamadas/pending")
     public List<CallResponse> pending(Authentication auth) {
-        return service.getPending(auth).stream().map(CallResponse::de).toList();
+        return service.getPending(auth).stream().map(CallResponse::from).toList();
     }
 
     @GetMapping("/llamadas/in-progress")
     public List<CallResponse> inProgress(Authentication auth) {
-        return service.getInProgress(auth).stream().map(CallResponse::de).toList();
+        return service.getInProgress(auth).stream().map(CallResponse::from).toList();
     }
 
     @GetMapping("/llamadas/closed")
     public List<CallResponse> closed(@RequestParam(defaultValue = "50") int limit, Authentication auth) {
-        return service.getClosed(Math.max(1, Math.min(limit, 100)), auth).stream().map(CallResponse::de).toList();
+        return service.getClosed(Math.max(1, Math.min(limit, 100)), auth).stream().map(CallResponse::from).toList();
     }
 
     @GetMapping("/llamadas/{id}")
     public CallResponse getById(@PathVariable Long id, Authentication auth) {
-        return CallResponse.de(service.getById(id, auth));
+        return CallResponse.from(service.getById(id, auth));
+    }
+
+    @PostMapping("/llamadas/{id}/updates")
+    @PreAuthorize("hasAnyRole('OPERATOR', 'SUPERVISOR', 'ADMINISTRATOR')")
+    public CallResponse appendInformation(
+            @PathVariable Long id,
+            @Valid @RequestBody CallInformationUpdateRequest requestBody,
+            Authentication auth,
+            HttpServletRequest request
+    ) {
+        var call = service.appendInformation(id, requestBody.updateId(), requestBody.information(), auth);
+        auditLogService.recordEvent(auth.getName(), "update-call-information", "call", String.valueOf(id), request.getRemoteAddr(), "success");
+        return CallResponse.from(call);
     }
 
     @PutMapping("/llamadas/{id}")
@@ -80,15 +94,15 @@ public class CallController {
             HttpServletRequest request
     ) {
         var call = service.update(id, requestBody.operationalSummary(), requestBody.address(), auth);
-        auditLogService.registrar(auth.getName(), "update-call", "call", String.valueOf(id), request.getRemoteAddr(), "success");
-        return CallResponse.de(call);
+        auditLogService.recordEvent(auth.getName(), "update-call", "call", String.valueOf(id), request.getRemoteAddr(), "success");
+        return CallResponse.from(call);
     }
 
     @DeleteMapping("/llamadas/{id}")
     @PreAuthorize("hasRole('ADMINISTRATOR')")
     public ResponseEntity<Void> delete(@PathVariable Long id, Authentication auth, HttpServletRequest request) {
         service.deletePending(id, auth);
-        auditLogService.registrar(auth.getName(), "archive-call", "call", String.valueOf(id), request.getRemoteAddr(), "success");
+        auditLogService.recordEvent(auth.getName(), "archive-call", "call", String.valueOf(id), request.getRemoteAddr(), "success");
         return ResponseEntity.noContent().build();
     }
 
@@ -96,7 +110,7 @@ public class CallController {
     @PreAuthorize("hasAnyRole('OPERATOR', 'SUPERVISOR', 'ADMINISTRATOR')")
     public ResponseEntity<?> assign(@PathVariable Long id, Authentication auth, HttpServletRequest request) {
         var call = service.assign(id, auth);
-        auditLogService.registrar(auth.getName(), "assign-call", "call", String.valueOf(id), request.getRemoteAddr(), "success");
+        auditLogService.recordEvent(auth.getName(), "assign-call", "call", String.valueOf(id), request.getRemoteAddr(), "success");
         return ResponseEntity.ok(Map.of("message", "Call " + id + " assigned to " + call.getAssignedOperator()));
     }
 
@@ -104,26 +118,30 @@ public class CallController {
     @PreAuthorize("hasAnyRole('OPERATOR', 'SUPERVISOR', 'ADMINISTRATOR')")
     public ResponseEntity<?> close(@PathVariable Long id, @Valid @RequestBody CloseRequest req, Authentication auth, HttpServletRequest request) {
         service.close(id, req.comment(), auth);
-        auditLogService.registrar(auth.getName(), "close-call", "call", String.valueOf(id), request.getRemoteAddr(), "success");
+        auditLogService.recordEvent(auth.getName(), "close-call", "call", String.valueOf(id), request.getRemoteAddr(), "success");
         return ResponseEntity.ok(Map.of("message", "Call " + id + " closed"));
     }
 
     @PostMapping(value = "/llamadas/live", consumes = "multipart/form-data")
     @PreAuthorize("hasAnyRole('OPERATOR', 'SUPERVISOR', 'ADMINISTRATOR')")
     public ResponseEntity<CallResponse> createLive(
-            @Valid @RequestPart("datos") CreateLiveCallRequest datos,
+            @Valid @RequestPart("datos") CreateLiveCallRequest requestData,
             @RequestPart(value = "audio", required = false) MultipartFile audio,
             Authentication auth,
             HttpServletRequest request
     ) throws Exception {
+        if (requestData == null) {
+            throw new IllegalArgumentException("La solicitud de llamada está vacía.");
+        }
         String ip = request.getRemoteAddr();
-        var call = enVivoService.create(datos.transcription(), audio, auth.getName(), ip, datos.latitudOperador(), datos.longitudOperador());
-        auditLogService.registrar(auth.getName(), "create-call", "call", String.valueOf(call.getId()), ip, "success");
+        var call = liveCallService.create(requestData.transcription(), audio, auth.getName(), ip,
+                requestData.operatorLatitude(), requestData.operatorLongitude());
+        auditLogService.recordEvent(auth.getName(), "create-call", "call", String.valueOf(call.getId()), ip, "success");
         var location = ServletUriComponentsBuilder.fromCurrentContextPath()
                 .path("/api/llamadas/{id}")
                 .buildAndExpand(call.getId())
                 .toUri();
-        return ResponseEntity.created(location).body(CallResponse.de(call));
+        return ResponseEntity.created(location).body(CallResponse.from(call));
     }
 
     @GetMapping("/metrics")

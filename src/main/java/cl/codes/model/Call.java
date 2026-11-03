@@ -51,6 +51,14 @@ public class Call {
     @Column(name = "suggested_institutions")
     private String suggestedInstitutions;
 
+    @Lob
+    @Column(name = "institution_recommendations")
+    private String institutionRecommendations;
+
+    @Lob
+    @Column(name = "information_updates")
+    private String informationUpdates;
+
     @Column(name = "detected_address", length = 200)
     private String detectedAddress;
 
@@ -83,6 +91,10 @@ public class Call {
 
     @Column(name = "created_by_user", length = 50)
     private String createdByUser;
+
+    @Version
+    @Column(name = "entity_version", nullable = false, columnDefinition = "bigint default 0")
+    private long version;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -123,6 +135,12 @@ public class Call {
     public String getSuggestedInstitutions() { return suggestedInstitutions; }
     public void setSuggestedInstitutions(String suggestedInstitutions) { this.suggestedInstitutions = suggestedInstitutions; }
 
+    public String getInstitutionRecommendations() { return institutionRecommendations; }
+    public void setInstitutionRecommendations(String institutionRecommendations) { this.institutionRecommendations = institutionRecommendations; }
+
+    public String getInformationUpdates() { return informationUpdates; }
+    public void setInformationUpdates(String informationUpdates) { this.informationUpdates = informationUpdates; }
+
     public String getDetectedAddress() { return detectedAddress; }
     public void setDetectedAddress(String detectedAddress) { this.detectedAddress = detectedAddress; }
 
@@ -159,4 +177,3 @@ public class Call {
     public String getCreatedByUser() { return createdByUser; }
     public void setCreatedByUser(String createdByUser) { this.createdByUser = createdByUser; }
 }
-

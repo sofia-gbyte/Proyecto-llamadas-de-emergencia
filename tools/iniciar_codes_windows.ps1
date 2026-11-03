@@ -52,41 +52,26 @@ function Test-PortOpen {
     }
 }
 
-# Si CODES se cerró antes cliqueando la X de la ventana (en vez de dejar que
-# el script termine solo), Windows mata la consola de golpe y el "finally"
-# que libera los puertos nunca alcanza a correr. Eso deja procesos huérfanos
-# de Java (8000) todavía corriendo, y el
-# siguiente inicio los confunde con una instancia sana, saltándose por
-# completo el arranque real del servidor.
-# Por eso, ANTES de decidir nada, nos aseguramos de partir limpios: si hay
-# algo escuchando en 8000 que no sea una instancia sana de CODES,
-# lo cerramos.
-function Stop-ProcesoHuerfanoEnPuerto {
-    param([int]$Port, [string]$Etiqueta)
-    try {
-        $conexiones = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
-        foreach ($conexion in $conexiones) {
-            $procId = $conexion.OwningProcess
-            if ($procId -and $procId -ne $PID) {
-                try {
-                    $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
-                    $nombre = if ($proc) { $proc.ProcessName } else { "PID $procId" }
-                    Write-Host "Se encontró un proceso ($nombre) de una sesión anterior de CODES todavía escuchando en el puerto $Port ($Etiqueta). Cerrándolo..." -ForegroundColor Yellow
-                    taskkill.exe /PID $procId /T /F | Out-Null
-                }
-                catch {}
+function Stop-OwnedProcessTree {
+    param(
+        [int]$RootProcessId,
+        [long]$ExpectedStartTimeUtcTicks
+    )
+
+    # The launcher may terminate only the process tree it started explicitly.
+    # Never infer ownership from the process currently listening on port 8000.
+    if ($RootProcessId -gt 0 -and $RootProcessId -ne $PID) {
+        try {
+            $rootProcess = Get-Process -Id $RootProcessId -ErrorAction Stop
+            if ($rootProcess.StartTime.ToUniversalTime().Ticks -ne $ExpectedStartTimeUtcTicks) {
+                return
             }
+        } catch {
+            return
         }
-    }
-    catch {
-        # Get-NetTCPConnection puede no estar disponible en algunos Windows;
-        # si falla, seguimos igual con la lógica normal de detección de puertos.
+        taskkill.exe /PID $RootProcessId /T /F | Out-Null
     }
 }
-
-Write-Host 'Verificando que no queden procesos de una sesión anterior de CODES...' -ForegroundColor DarkGray
-Stop-ProcesoHuerfanoEnPuerto -Port 8000 -Etiqueta 'Spring Boot'
-Start-Sleep -Milliseconds 500
 
 function Get-JavaInfo {
     function Parse-JavaMajorVersion([string]$Text) {
@@ -369,15 +354,23 @@ if ([string]::IsNullOrWhiteSpace($env:GEOAPIFY_API_KEY)) {
     Write-Host 'Aviso: GEOAPIFY_API_KEY no está configurada; la geocodificación automática no estará disponible.' -ForegroundColor Yellow
 }
 
-if ([string]::IsNullOrWhiteSpace($env:CODES_TURNSTILE_ENABLED)) {
-    $env:CODES_TURNSTILE_ENABLED = 'false'
-}
-$turnstileEstado = 'Desactivado; limites de intentos activos'
-if ($env:CODES_TURNSTILE_ENABLED -eq 'true') {
-    if ([string]::IsNullOrWhiteSpace($env:CODES_TURNSTILE_SITE_KEY) -or [string]::IsNullOrWhiteSpace($env:CODES_TURNSTILE_SECRET_KEY)) {
-        throw 'Turnstile esta habilitado pero faltan CODES_TURNSTILE_SITE_KEY o CODES_TURNSTILE_SECRET_KEY.'
+if ([string]::IsNullOrWhiteSpace($env:CODES_ALTCHA_SECRET)) {
+    $altchaSecretBytes = New-Object byte[] 32
+    $altchaRng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $altchaRng.GetBytes($altchaSecretBytes)
+    } finally {
+        $altchaRng.Dispose()
     }
-    $turnstileEstado = 'Habilitado (requiere Cloudflare)'
+    $env:CODES_ALTCHA_SECRET = [Convert]::ToBase64String($altchaSecretBytes)
+    Add-Content -Path $secretFile -Value "`$env:CODES_ALTCHA_SECRET = '$env:CODES_ALTCHA_SECRET'"
+}
+if ([string]::IsNullOrWhiteSpace($env:CODES_ALTCHA_ENABLED)) {
+    $env:CODES_ALTCHA_ENABLED = 'true'
+}
+$captchaEstado = 'ALTCHA activo (local)'
+if ($env:CODES_ALTCHA_ENABLED -eq 'false') {
+    $captchaEstado = 'Desactivado; limites de intentos activos'
 }
 
 Write-Host ''
@@ -386,7 +379,7 @@ Write-Host ' CODES - Sistema de Despacho' -ForegroundColor Cyan
 Write-Host '============================================='
 Write-Host "Java:       $($javaInfo.Version) OK" -ForegroundColor Green
 Write-Host "Maven:      OK" -ForegroundColor Green
-Write-Host "Captcha:    $turnstileEstado" -ForegroundColor Green
+Write-Host "Captcha:    $captchaEstado" -ForegroundColor Green
 Write-Host 'Spring Boot: http://localhost:8000' -ForegroundColor Green
 Write-Host "Groq Whisper: $(if ($env:GROQ_API_KEY) { 'configurado' } else { 'sin clave' })"
 Write-Host "Geoapify:     $(if ($env:GEOAPIFY_API_KEY) { 'configurado' } else { 'sin clave' })"
@@ -444,7 +437,11 @@ if (Test-SpringHealth) {
         Write-Host 'ERROR: Spring Boot NO pudo iniciar o /api/health no responde.' -ForegroundColor Red
         Write-Host "Revisa el archivo: $springLog" -ForegroundColor Yellow
         if ($springProcess -and -not $springProcess.HasExited) {
-            try { taskkill.exe /PID $springProcess.Id /T /F | Out-Null } catch {}
+            try {
+                Stop-OwnedProcessTree `
+                    -RootProcessId $springProcess.Id `
+                    -ExpectedStartTimeUtcTicks $springProcess.StartTime.ToUniversalTime().Ticks
+            } catch {}
         }
         if (Test-Path $springLog) {
             Write-Host '--- Ultimas lineas de spring-boot.log ---' -ForegroundColor Yellow
@@ -479,10 +476,20 @@ Write-Host 'Cierra esta ventana para detener CODES.' -ForegroundColor DarkGray
 # ventana. Si la usuaria pulsa X y Windows termina esta consola abruptamente,
 # el watchdog detecta que este PID desapareció y detiene Spring Boot.
 $watchdog = Join-Path $root 'tools\codes_watchdog.ps1'
-if (Test-Path $watchdog) {
+if ((Test-Path $watchdog) -and $springProcess -and -not $springProcess.HasExited) {
     try {
+        $launcherProcess = Get-Process -Id $PID -ErrorAction Stop
+        $watchdogArguments = @(
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', "`"$watchdog`"",
+            '-ParentProcessId', [string]$PID,
+            '-ParentProcessStartTimeUtcTicks', [string]$launcherProcess.StartTime.ToUniversalTime().Ticks,
+            '-OwnedProcessIds', [string]$springProcess.Id,
+            '-OwnedProcessStartTimeUtcTicks', [string]$springProcess.StartTime.ToUniversalTime().Ticks
+        )
         Start-Process -FilePath 'powershell.exe' `
-            -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$watchdog,'-ParentPid',$PID) `
+            -ArgumentList $watchdogArguments `
             -WorkingDirectory $root `
             -WindowStyle Hidden | Out-Null
     } catch {}
@@ -495,14 +502,13 @@ try {
     }
 }
 finally {
-    if ($springProcess -and -not $springProcess.HasExited) { try { taskkill.exe /PID $springProcess.Id /T /F | Out-Null } catch {} }
-    Start-Sleep -Milliseconds 500
-    foreach ($port in @(8000)) {
+    if ($springProcess -and -not $springProcess.HasExited) {
         try {
-            $connections = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
-            foreach ($c in $connections) { if ($c.OwningProcess -and $c.OwningProcess -ne $PID) { taskkill.exe /PID $c.OwningProcess /T /F | Out-Null } }
+            Stop-OwnedProcessTree `
+                -RootProcessId $springProcess.Id `
+                -ExpectedStartTimeUtcTicks $springProcess.StartTime.ToUniversalTime().Ticks
         } catch {}
     }
     Write-Host ''
-    Write-Host 'CODES detenido y puerto liberado.' -ForegroundColor Yellow
+    Write-Host 'Instancia CODES iniciada por este lanzador detenida.' -ForegroundColor Yellow
 }

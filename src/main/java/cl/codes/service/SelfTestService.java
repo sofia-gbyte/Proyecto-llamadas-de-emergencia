@@ -1,6 +1,7 @@
 package cl.codes.service;
 
 import cl.codes.repository.UserRepository;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,45 +36,53 @@ public class SelfTestService {
     private final UserRepository userRepository;
     private final Path dataDir;
     private final Path geocachePath;
-    private final double espacioLibreMinimoGb;
+    private final double minimumFreeSpaceGb;
     private final boolean groqConfigured;
     private final boolean geoapifyConfigured;
 
-    private final AtomicReference<SelfTestResult> ultimoResultado = new AtomicReference<>();
+    private final AtomicReference<SelfTestResult> latestResult = new AtomicReference<>();
 
     public SelfTestService(
             UserRepository userRepository,
             @Value("${app.data-dir:./data}") String dataDir,
             @Value("${app.geocache-path:./data/geocache.json}") String geocachePath,
-            @Value("${app.selftest.min-free-space-gb:1.0}") double espacioLibreMinimoGb,
+            @Value("${app.selftest.min-free-space-gb:1.0}") double minimumFreeSpaceGb,
             @Value("${app.groq.api-key:}") String groqApiKey,
             @Value("${app.geoapify.api-key:}") String geoapifyApiKey
     ) {
         this.userRepository = userRepository;
         this.dataDir = Path.of(dataDir);
         this.geocachePath = Path.of(geocachePath);
-        this.espacioLibreMinimoGb = espacioLibreMinimoGb;
+        this.minimumFreeSpaceGb = minimumFreeSpaceGb;
         this.groqConfigured = groqApiKey != null && !groqApiKey.isBlank();
         this.geoapifyConfigured = geoapifyApiKey != null && !geoapifyApiKey.isBlank();
     }
 
-    public record CheckResult(String nombre, boolean ok, String detalle) {}
+    public record CheckResult(
+            @JsonProperty("nombre") String name,
+            boolean ok,
+            @JsonProperty("detalle") String details
+    ) {}
 
-    public record SelfTestResult(LocalDateTime timestamp, String estadoGeneral, List<CheckResult> checks) {}
+    public record SelfTestResult(
+            LocalDateTime timestamp,
+            @JsonProperty("estadoGeneral") String overallStatus,
+            List<CheckResult> checks
+    ) {}
 
     /** Último resultado conocido; si todavía no corrió ninguno, lo ejecuta ahora mismo. */
-    public SelfTestResult ultimo() {
-        SelfTestResult actual = ultimoResultado.get();
-        return actual != null ? actual : ejecutar();
+    public SelfTestResult latest() {
+        SelfTestResult latest = latestResult.get();
+        return latest != null ? latest : runSelfTest();
     }
 
     @Scheduled(
             initialDelayString = "${app.selftest.initial-delay-ms:30000}",
             fixedDelayString = "${app.selftest.interval-ms:600000}" // cada 10 min por defecto
     )
-    public SelfTestResult ejecutar() {
+    public SelfTestResult runSelfTest() {
         List<CheckResult> checks = new ArrayList<>();
-        boolean fallaCritica = false;
+        boolean criticalFailure = false;
 
         // 1. Base de datos: una lectura simple y barata, sin tocar datos operativos.
         try {
@@ -81,28 +90,28 @@ public class SelfTestService {
             checks.add(new CheckResult("base_de_datos", true, "Consulta de prueba respondida correctamente"));
         } catch (Exception e) {
             checks.add(new CheckResult("base_de_datos", false, "No respondió: " + e.getMessage()));
-            fallaCritica = true;
+            criticalFailure = true;
         }
 
         // 2. Disco: escritura y borrado de un archivo temporal invisible dentro de data/.
         try {
             Files.createDirectories(dataDir);
-            Path prueba = dataDir.resolve(".selftest_tmp");
-            Files.writeString(prueba, "selftest " + LocalDateTime.now());
-            Files.deleteIfExists(prueba);
+            Path tempFile = dataDir.resolve(".selftest_tmp");
+            Files.writeString(tempFile, "selftest " + LocalDateTime.now());
+            Files.deleteIfExists(tempFile);
             checks.add(new CheckResult("disco_escritura", true, "Escritura y borrado de prueba correctos"));
         } catch (Exception e) {
             checks.add(new CheckResult("disco_escritura", false, "No se pudo escribir en " + dataDir + ": " + e.getMessage()));
-            fallaCritica = true;
+            criticalFailure = true;
         }
 
         // 3. Espacio libre en disco (los audios y la base de datos crecen con el tiempo).
         try {
-            File carpeta = dataDir.toAbsolutePath().toFile();
-            double libreGb = carpeta.getUsableSpace() / (1024.0 * 1024.0 * 1024.0);
-            boolean ok = libreGb >= espacioLibreMinimoGb;
+            File dataDirectory = dataDir.toAbsolutePath().toFile();
+            double freeSpaceGb = dataDirectory.getUsableSpace() / (1024.0 * 1024.0 * 1024.0);
+            boolean ok = freeSpaceGb >= minimumFreeSpaceGb;
             checks.add(new CheckResult("espacio_libre", ok,
-                    String.format("%.1f GB libres (mínimo configurado: %.1f GB)", libreGb, espacioLibreMinimoGb)));
+                    String.format("%.1f GB libres (mínimo configurado: %.1f GB)", freeSpaceGb, minimumFreeSpaceGb)));
         } catch (Exception e) {
             checks.add(new CheckResult("espacio_libre", false, "No se pudo calcular: " + e.getMessage()));
         }
@@ -117,25 +126,25 @@ public class SelfTestService {
 
         // 5. Carpeta de caché de geocodificación. Tampoco crítico.
         try {
-            Path carpetaCache = geocachePath.toAbsolutePath().getParent();
-            boolean ok = carpetaCache == null || Files.isDirectory(carpetaCache) || carpetaCache.toFile().mkdirs();
-            checks.add(new CheckResult("geocache", ok, ok ? "Carpeta de caché accesible" : "No se pudo acceder a " + carpetaCache));
+            Path cacheDirectory = geocachePath.toAbsolutePath().getParent();
+            boolean ok = cacheDirectory == null || Files.isDirectory(cacheDirectory) || cacheDirectory.toFile().mkdirs();
+            checks.add(new CheckResult("geocache", ok, ok ? "Carpeta de caché accesible" : "No se pudo acceder a " + cacheDirectory));
         } catch (Exception e) {
             checks.add(new CheckResult("geocache", false, "No se pudo verificar: " + e.getMessage()));
         }
 
-        String estado = fallaCritica ? "FALLA"
+        String status = criticalFailure ? "FALLA"
                 : checks.stream().anyMatch(c -> !c.ok()) ? "DEGRADADO"
                 : "OK";
 
-        SelfTestResult resultado = new SelfTestResult(LocalDateTime.now(), estado, checks);
-        ultimoResultado.set(resultado);
+        SelfTestResult result = new SelfTestResult(LocalDateTime.now(), status, checks);
+        latestResult.set(result);
 
-        switch (estado) {
+        switch (status) {
             case "OK" -> log.debug("Autochequeo interno: OK");
             case "DEGRADADO" -> log.warn("Autochequeo interno: DEGRADADO -> {}", checks);
             default -> log.error("Autochequeo interno: FALLA -> {}", checks);
         }
-        return resultado;
+        return result;
     }
 }

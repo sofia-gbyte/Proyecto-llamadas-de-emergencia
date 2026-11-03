@@ -65,7 +65,7 @@ class GeocoderServiceTest {
                 "Choque ubicado en Avenida Manuel Montt 1234"
         );
 
-        assertTrue(result.presente());
+        assertTrue(result.isPresent());
         assertEquals("Avenida Manuel Montt, Providencia, Santiago, Chile", result.formattedAddress());
         Map<String, String> parameters = queryParameters(lastRequest.get());
         assertEquals("test-key", parameters.get("apiKey"));
@@ -83,7 +83,7 @@ class GeocoderServiceTest {
                 "Accidente en la comuna de Lo Barnechea"
         );
 
-        assertTrue(result.presente());
+        assertTrue(result.isPresent());
         assertTrue(queryParameters(lastRequest.get()).get("text").contains("Lo Barnechea"));
     }
 
@@ -102,7 +102,7 @@ class GeocoderServiceTest {
 
         GeocoderService.Coordinates result = service.geocode("Avenida Manuel Montt #1234");
 
-        assertFalse(result.presente());
+        assertFalse(result.isPresent());
         assertNull(lastRequest.get());
     }
 
@@ -113,7 +113,7 @@ class GeocoderServiceTest {
 
         GeocoderService.Coordinates result = service.geocode("Avenida Manuel Montt #1234");
 
-        assertFalse(result.presente());
+        assertFalse(result.isPresent());
     }
 
     private GeocoderService service() {

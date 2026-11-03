@@ -4,6 +4,9 @@ import cl.codes.model.Call;
 import cl.codes.model.User;
 import cl.codes.repository.CallRepository;
 import cl.codes.repository.UserRepository;
+import cl.codes.model.CallInformationUpdate;
+import cl.codes.controller.dto.CallResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,7 +37,7 @@ class CallServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CallService(callRepository, userRepository, geocoder);
+        service = new CallService(callRepository, userRepository, geocoder, new ObjectMapper());
         operatorAuth = new UsernamePasswordAuthenticationToken("ana", null, List.of(new SimpleGrantedAuthority("ROLE_OPERATOR")));
         otherAuth = new UsernamePasswordAuthenticationToken("beatriz", null, List.of(new SimpleGrantedAuthority("ROLE_SUPERVISOR")));
         adminAuth = new UsernamePasswordAuthenticationToken("admin", null, List.of(new SimpleGrantedAuthority("ROLE_ADMINISTRATOR")));
@@ -51,6 +54,17 @@ class CallServiceTest {
         assertTrue(service.getPending(operatorAuth).isEmpty());
         verify(callRepository).findByAssignedFalseAndDeletedFalseAndInstitution("bomberos");
         verify(callRepository, never()).findByAssignedFalseAndDeletedFalseAndInstitution("carabineros");
+    }
+
+    @Test
+    void metricsKeepTheirExistingSpanishJsonKeys() throws Exception {
+        String json = new ObjectMapper().writeValueAsString(
+                new CallService.Metrics(10, 2, 3, 5, 12.5));
+
+        assertTrue(json.contains("\"urgentesActivas\":2"));
+        assertTrue(json.contains("\"pendientes\":3"));
+        assertTrue(json.contains("\"enProgreso\":5"));
+        assertTrue(json.contains("\"tiempoPromedioRespuestaSeg\":12.5"));
     }
 
     @Test
@@ -119,6 +133,55 @@ class CallServiceTest {
 
         assertThrows(IllegalStateException.class, () -> service.update(12L, "Corrección", null, otherAuth));
         verify(callRepository, never()).save(any());
+    }
+
+    @Test
+    void assignedOperatorCanAppendInformationIdempotentlyAndRefreshClassification() throws Exception {
+        Call call = new Call();
+        call.setInstitution("bomberos");
+        call.setAssigned(true);
+        call.setAssignedOperator("ana");
+        call.setTranscription("Incendio en una vivienda.");
+        call.setOperationalSummary("Incendio reportado.");
+        when(userRepository.findByUsername("ana")).thenReturn(Optional.of(user("ana", "operator", "bomberos")));
+        when(callRepository.findById(20L)).thenReturn(Optional.of(call));
+        when(callRepository.saveAndFlush(call)).thenReturn(call);
+
+        Call updated = service.appendInformation(
+                20L, "ec6de66d-c7d4-4d38-97ad-1afbf15ecf00", "Hay una persona inconsciente.", operatorAuth);
+        Call duplicateContent = service.appendInformation(
+                20L, "38fce4e0-f62e-474d-8be8-8cfeffeff322", "  HAY UNA PERSONA INCONSCIENTE.  ", operatorAuth);
+        Call retry = service.appendInformation(
+                20L, "ec6de66d-c7d4-4d38-97ad-1afbf15ecf00", "Hay una persona inconsciente.", operatorAuth);
+
+        assertSame(call, updated);
+        assertSame(call, duplicateContent);
+        assertSame(call, retry);
+        assertEquals(1, new ObjectMapper().readValue(call.getInformationUpdates(),
+                new com.fasterxml.jackson.core.type.TypeReference<List<CallInformationUpdate>>() {}).size());
+        assertEquals("URGENTE", call.getPriority());
+        assertTrue(call.getOperationalSummary().contains("Hay una persona inconsciente"));
+        CallResponse response = CallResponse.from(call);
+        assertEquals(1, response.informationUpdates().size());
+        assertTrue(response.suggestedInstitutions().containsAll(List.of("bomberos", "samu")));
+        assertTrue(response.incidentCategories().contains("UNCONSCIOUS_PERSON"));
+        assertEquals(response.suggestedInstitutions().size(),
+                response.suggestedInstitutions().stream().distinct().count());
+        verify(callRepository, times(1)).saveAndFlush(call);
+    }
+
+    @Test
+    void operatorCannotAppendInformationToAnotherOperatorsCall() {
+        Call call = new Call();
+        call.setInstitution("bomberos");
+        call.setAssigned(true);
+        call.setAssignedOperator("otra-persona");
+        when(userRepository.findByUsername("ana")).thenReturn(Optional.of(user("ana", "operator", "bomberos")));
+        when(callRepository.findById(21L)).thenReturn(Optional.of(call));
+
+        assertThrows(AccessDeniedException.class, () -> service.appendInformation(
+                21L, "ec6de66d-c7d4-4d38-97ad-1afbf15ecf00", "Actualización legítima", operatorAuth));
+        verify(callRepository, never()).saveAndFlush(any());
     }
 
     @Test

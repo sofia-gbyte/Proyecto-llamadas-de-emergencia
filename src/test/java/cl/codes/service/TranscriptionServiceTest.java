@@ -22,6 +22,8 @@ class TranscriptionServiceTest {
     private HttpServer server;
     private final AtomicReference<String> authorization = new AtomicReference<>();
     private final AtomicReference<String> requestBody = new AtomicReference<>();
+    private final AtomicReference<Integer> responseStatus = new AtomicReference<>(200);
+    private final AtomicReference<String> responseBody = new AtomicReference<>("{\"text\":\"Choque en Avenida Manuel Montt\"}");
 
     @BeforeEach
     void startGroqStub() throws IOException {
@@ -29,9 +31,9 @@ class TranscriptionServiceTest {
         server.createContext("/openai/v1/audio/transcriptions", exchange -> {
             authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
             requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            byte[] response = "{\"text\":\"Choque en Avenida Manuel Montt\"}".getBytes(StandardCharsets.UTF_8);
+            byte[] response = responseBody.get().getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, response.length);
+            exchange.sendResponseHeaders(responseStatus.get(), response.length);
             try (var output = exchange.getResponseBody()) {
                 output.write(response);
             }
@@ -70,6 +72,19 @@ class TranscriptionServiceTest {
 
         assertTrue(error.getMessage().contains("GROQ_API_KEY"));
         assertNull(authorization.get());
+    }
+
+    @Test
+    void doesNotExposeProviderErrorBodyInException() throws Exception {
+        Path audio = tempDir.resolve("recording.webm");
+        Files.writeString(audio, "fake webm audio");
+        responseStatus.set(500);
+        responseBody.set("{\"error\":\"sensitive-provider-response\"}");
+
+        IOException error = assertThrows(IOException.class, () -> service("test-key").transcribe(audio));
+
+        assertTrue(error.getMessage().contains("500"));
+        assertFalse(error.getMessage().contains("sensitive-provider-response"));
     }
 
     private TranscriptionService service(String apiKey) {

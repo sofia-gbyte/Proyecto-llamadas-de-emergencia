@@ -11,9 +11,8 @@ $env:CODES_DB_PASSWORD = ''
 # quedan deshabilitadas; el resto de la aplicación puede iniciar.
 $env:GROQ_API_KEY = ''
 $env:GEOAPIFY_API_KEY = ''
-$env:CODES_TURNSTILE_ENABLED = 'false'
-$env:CODES_TURNSTILE_SITE_KEY = ''
-$env:CODES_TURNSTILE_SECRET_KEY = ''
+$env:CODES_ALTCHA_ENABLED = 'true'
+$env:CODES_ALTCHA_SECRET = ''
 
 # Opcionales, para recuperación de contraseña por correo.
 $env:CODES_SMTP_HOST = ''

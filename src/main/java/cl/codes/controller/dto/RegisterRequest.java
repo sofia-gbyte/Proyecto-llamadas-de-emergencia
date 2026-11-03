@@ -1,5 +1,6 @@
 package cl.codes.controller.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -12,11 +13,9 @@ public record RegisterRequest(
         @NotBlank @Size(min=12,message="La contraseña debe tener al menos 12 caracteres")
         @Pattern(regexp="^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^a-zA-Z\\d]).+$",
                 message="La contraseña debe incluir mayúsculas, minúsculas, números y símbolos") String password,
-        @NotBlank @Size(max=80) String nombre,
-        @NotBlank @Size(max=80) String apellido,
-        @NotBlank @Email @Size(max=150) String correo,
-        @NotBlank @Pattern(regexp="bomberos|carabineros|samu", message="Institución no válida") String institucion,
-        String captchaToken
+        @JsonProperty("nombre") @NotBlank @Size(max=80) String firstName,
+        @JsonProperty("apellido") @NotBlank @Size(max=80) String lastName,
+        @JsonProperty("correo") @NotBlank @Email @Size(max=150) String email,
+        @JsonProperty("institucion") @NotBlank @Pattern(regexp="bomberos|carabineros|samu", message="Institución no válida") String institution,
+        @Size(max=4096) String captchaToken
 ) {}
-
-

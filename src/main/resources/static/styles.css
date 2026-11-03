@@ -2146,12 +2146,25 @@ body.tema-claro .banner-narracion h3 { color: #16253f; }
 .detalle-transcripcion-bloque[open] summary { color:#e8eefb; border-bottom:1px solid #1b2c46; }
 .detalle-transcripcion-bloque .detalle-transcripcion { margin:0; border:0; border-radius:0; background:#0a1526; color:#b3c3e3; font-size:.78rem; line-height:1.6; }
 
-/* Verificación de seguridad (Cloudflare Turnstile) */
+/* Verificación de seguridad ALTCHA */
 .captcha-widget {
-    display: flex;
-    justify-content: center;
-    min-height: 65px;
+    display: block;
+    min-height: 54px;
     margin: 0.4rem 0 0.8rem;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid #263a59;
+    border-radius: 10px;
+    background: #101d34;
+}
+.altcha-widget {
+    display: block;
+    --altcha-color-base: #101d34;
+    --altcha-color-base-content: #d3ddf2;
+    --altcha-color-primary: #00c8b0;
+    --altcha-border-color: #263a59;
+}
+.captcha-widget[hidden] {
+    display: none;
 }
 
 /* Ruta automática operador → incidente */

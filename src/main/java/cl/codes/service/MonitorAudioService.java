@@ -80,7 +80,7 @@ public class MonitorAudioService {
                     Path fileName = (Path) event.context();
                     Path fullPath = rawAudioFolder.resolve(fileName);
                     if (isValidAudio(fullPath)) {
-                        if (esperarArchivoEstable(fullPath)) {
+                        if (waitForStableFile(fullPath)) {
                             processAudio(fullPath);
                         }
                     }
@@ -94,20 +94,20 @@ public class MonitorAudioService {
         }
     }
 
-    private boolean esperarArchivoEstable(Path path) {
-        long ultimoTamano = -1L;
-        int estables = 0;
+    private boolean waitForStableFile(Path path) {
+        long previousSize = -1L;
+        int stableChecks = 0;
         for (int i = 0; i < 30; i++) {
             try {
                 if (!Files.exists(path) || !Files.isRegularFile(path)) return false;
-                long tamano = Files.size(path);
-                if (tamano > 0 && tamano == ultimoTamano) {
-                    estables++;
-                    if (estables >= 2) return true;
+                long size = Files.size(path);
+                if (size > 0 && size == previousSize) {
+                    stableChecks++;
+                    if (stableChecks >= 2) return true;
                 } else {
-                    estables = 0;
+                    stableChecks = 0;
                 }
-                ultimoTamano = tamano;
+                previousSize = size;
                 TimeUnit.SECONDS.sleep(1);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -126,7 +126,7 @@ public class MonitorAudioService {
     }
 
     void processAudio(Path audioPath) {
-        log.info("New audio detected: {}", audioPath);
+        log.info("New audio detected for transcription.");
         String transcription;
         try {
             transcription = transcriptionService.transcribe(audioPath);
@@ -135,9 +135,7 @@ public class MonitorAudioService {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             return;
         }
-        log.info("Transcription: {}", transcription);
-
-        Classifier.ResultadoClasificacion classification = Classifier.classifyCall(transcription);
+        Classifier.ClassificationResult classification = Classifier.classifyCall(transcription);
         if (!Classifier.hasOperationalInformation(classification)) {
             discardAudio(audioPath, "transcription has insufficient operational information", null);
             return;
@@ -145,10 +143,10 @@ public class MonitorAudioService {
         log.info("Assigned priority: {}", classification.priority());
 
         try {
-            GeocoderService.Coordinates coords = geocoderService.geocode(classification.direccion(), transcription);
+            GeocoderService.Coordinates coords = geocoderService.geocode(classification.address(), transcription);
             String address = coords.formattedAddress() != null && !coords.formattedAddress().isBlank()
                     ? coords.formattedAddress()
-                    : classification.direccion();
+                    : classification.address();
 
             String marker = LocalDateTime.now().format(MARCA_TIEMPO);
             Path encryptedPath = encryptedAudioFolder.resolve(marker + "_" + audioPath.getFileName() + ".enc");
@@ -159,13 +157,14 @@ public class MonitorAudioService {
             call.setOperationalSummary(operationalSummaryService.generate(transcription, classification, address));
             call.setTranscription(transcription);
             call.setPriority(classification.priority());
-            call.setUrgentScore(classification.puntajes().getOrDefault("urgente", 0));
-            call.setRedScore(classification.puntajes().getOrDefault("roja", 0));
-            call.setMediumScore(classification.puntajes().getOrDefault("media", 0));
-            call.setGreenScore(classification.puntajes().getOrDefault("verde", 0));
+            call.setUrgentScore(classification.scores().getOrDefault("urgente", 0));
+            call.setRedScore(classification.scores().getOrDefault("roja", 0));
+            call.setMediumScore(classification.scores().getOrDefault("media", 0));
+            call.setGreenScore(classification.scores().getOrDefault("verde", 0));
             call.setHighlightedWords(mapper.writeValueAsString(classification.highlightedWords()));
-            call.setClassificationReasons(mapper.writeValueAsString(classification.motivos()));
-            call.setSuggestedInstitutions(mapper.writeValueAsString(classification.institucionesSugeridas()));
+            call.setClassificationReasons(mapper.writeValueAsString(classification.reasons()));
+            call.setSuggestedInstitutions(mapper.writeValueAsString(classification.suggestedInstitutions()));
+            call.setInstitutionRecommendations(mapper.writeValueAsString(classification.institutionRecommendations()));
             call.setDetectedAddress(address);
             call.setLatitude(coords.lat());
             call.setLongitude(coords.lng());
@@ -176,17 +175,17 @@ public class MonitorAudioService {
             log.info("Call saved with ID {} (priority {})", saved.getId(), saved.getPriority());
 
         } catch (Exception e) {
-            log.error("Error processing audio {}", audioPath, e);
+            log.error("Error processing audio; the call was not recorded.", e);
         }
     }
 
     private void discardAudio(Path audioPath, String reason, Exception cause) {
-        if (cause == null) log.info("Discarding audio {}: {}", audioPath, reason);
-        else log.warn("Discarding audio {}: {}", audioPath, reason, cause);
+        if (cause == null) log.info("Discarding audio: {}", reason);
+        else log.warn("Discarding audio: {}", reason, cause);
         try {
             Files.deleteIfExists(audioPath);
         } catch (IOException e) {
-            log.error("Could not delete discarded audio {}", audioPath, e);
+            log.error("Could not delete discarded audio file.", e);
         }
     }
 }

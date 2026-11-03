@@ -1,6 +1,6 @@
 # Operacion local de CODES
 
-Guía de instalación, respaldo, seguridad y preparación para una futura instalación en LAN. Esta guía corresponde a CODES `1.0.0` (versión del artefacto definida en `pom.xml`). La versión se orienta a uso local o en una red interna controlada; no está preparada para exposición directa a Internet ni para despacho de emergencias reales sin las revisiones indicadas aquí.
+Guía de instalación, respaldo, seguridad y preparación para una futura instalación en LAN. Esta guía corresponde a CODES `1.0.2` (versión del artefacto definida en `pom.xml`). La versión se orienta a uso local o en una red interna controlada; no está preparada para exposición directa a Internet ni para despacho de emergencias reales sin las revisiones indicadas aquí.
 
 Consulta [README.md](README.md) para la arquitectura, los contratos de la API y las decisiones técnicas, y [CHANGELOG.md](CHANGELOG.md) para los cambios de esta versión.
 
@@ -14,7 +14,7 @@ CODES.bat -> 1. Iniciar CODES
 
 Ese modo busca o instala Java 21 y Maven, carga las claves locales e inicia Spring Boot. No ejecuta scripts Python ni consulta Overpass.
 
-La aplicacion queda disponible en `http://localhost:8000`.
+La aplicacion queda disponible en `http://localhost:8000`. ALTCHA protege el login y el registro sin consultar servicios externos; el lanzador genera y guarda su clave HMAC local.
 
 ### Claves de los proveedores
 
@@ -31,7 +31,7 @@ La plantilla de nombres de variables está en `codes-secrets.example.ps1`, en la
 
 No reemplaces automáticamente el archivo de secretos local por la plantilla: conserva las claves de cifrado existentes, porque los audios guardados dependen de la clave con la que se cifraron. Las credenciales reales nunca deben copiarse a la plantilla ni subirse al repositorio.
 
-## Gestión de usuarios y llamadas (API 1.0.0)
+## Gestión de usuarios y llamadas (API 1.0.2)
 
 - La gestión CRUD de usuarios (`/api/users`) está restringida al rol `administrator`. La API permite consultar por ID, crear, editar rol/institución/datos de perfil y eliminar. No se puede eliminar la propia cuenta ni el último administrador activo. Los cambios de perfil invalidan los JWT emitidos anteriormente para ese usuario.
 - Las llamadas pueden consultarse por ID (`GET /api/llamadas/{id}`) respetando la institución del usuario y las instituciones sugeridas.
@@ -68,7 +68,7 @@ La perdida de `CODES_ENCRYPT_KEY` impide recuperar audios cifrados.
 
 ## Seguridad y evidencia
 
-La aplicacion implementa JWT, BCrypt, roles, aislamiento institucional, invalidacion de sesiones, CORS restringido, limites de intentos, auditoria y cifrado AES-256-GCM. Turnstile es opcional y viene desactivado; si se expone a Internet, debe habilitarse o sustituirse por protecciones anti-abuso equivalentes en el proxy/WAF.
+La aplicacion implementa JWT, BCrypt, roles, aislamiento institucional, invalidacion de sesiones, CORS restringido, limites de intentos, auditoria, cifrado AES-256-GCM y ALTCHA autoalojado con Argon2id. El widget y su worker se sirven localmente, sin proveedor de CAPTCHA. El uso de desafíos queda persistido en H2 para bloquear repeticiones aun después de reiniciar. Desde equipos de la LAN se requiere HTTPS para ALTCHA, micrófono y geolocalización; HTTP solo es compatible con `localhost`. Argon2id eleva el costo del abuso automatizado, pero no basta para frenar bots sofisticados en Internet ni sustituye los controles anti-abuso en proxy/WAF.
 
 Antes de una entrega o instalacion operativa se debe comprobar:
 
@@ -119,7 +119,7 @@ La version actual no debe publicarse directamente en Internet. Para habilitar ac
 3. Colocar Caddy o Nginx delante de Spring Boot, emitir HTTPS y reenviar solo el trafico web necesario. Mantener el puerto 8000 fuera de Internet; permitir acceso a Spring Boot solo desde el proxy.
 4. Probar login, captura de microfono y geolocalizacion desde los dispositivos reales. Los navegadores requieren HTTPS (salvo `localhost`) para microfono y geolocalizacion.
 5. Para operacion critica, contratar proveedores con SLA para transcripcion, geocodificacion, teselas y rutas; configurar sus endpoints con variables de entorno y guardar las claves en un gestor de secretos.
-6. Configurar secretos fuera del repositorio, CORS con el origen HTTPS exacto, Turnstile o proteccion anti-abuso equivalente, SMTP propio si se requiere recuperacion de clave y monitorizacion/alertas.
+6. Configurar secretos fuera del repositorio, CORS con el origen HTTPS exacto, proteccion anti-abuso en el proxy/WAF, SMTP propio si se requiere recuperacion de clave y monitorizacion/alertas.
 7. Automatizar respaldos cifrados de BD, audios, claves y datos cartograficos, y ensayar restauracion. Definir retencion y borrado antes de guardar llamadas reales.
 8. Hacer pruebas de seguridad, concurrencia, navegadores y perdida de red; ejecutar un piloto cerrado con operadores antes de integrar o comunicar alertas a servicios oficiales.
 

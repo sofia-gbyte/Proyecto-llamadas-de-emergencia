@@ -1,7 +1,7 @@
 /* CODES · Frontend integrado con Spring Boot */
 const API_URL = '/api';
-const REFRESCO_MS = 8000;
-let configuracionPublica = {
+const REFRESH_INTERVAL_MS = 8000;
+let publicConfiguration = {
   mapProvider: 'Esri World Imagery',
   mapTilesUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
   mapConfigured: true,
@@ -9,206 +9,208 @@ let configuracionPublica = {
   transcriptionConfigured: false,
   routingUrl: 'https://router.project-osrm.org',
 };
-let capaBaseMapa = null;
-let errorConfiguracionMapa = '';
-let errorTeselasMapa = '';
-let fallbackTeselasActivado = false;
-let captchaRequerido = false;
-const configuracionPublicaPromise = fetch(`${API_URL}/public-config`)
+let baseMapLayer = null;
+let mapConfigurationError = '';
+let tileLoadError = '';
+let tileFallbackEnabled = false;
+let captchaRequired = false;
+const publicConfigurationPromise = fetch(`${API_URL}/public-config`)
   .then(resp => {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     return resp.json();
   })
   .then(config => {
-    const tilesAnteriores = configuracionPublica.mapTilesUrl;
-    configuracionPublica = { ...configuracionPublica, ...config };
-    errorConfiguracionMapa = '';
-    if (mapa && configuracionPublica.mapTilesUrl !== tilesAnteriores) {
-      configurarCapaBaseMapa();
+    const previousTiles = publicConfiguration.mapTilesUrl;
+    publicConfiguration = { ...publicConfiguration, ...config };
+    mapConfigurationError = '';
+    if (map && publicConfiguration.mapTilesUrl !== previousTiles) {
+      configureBaseMapLayer();
     }
-    actualizarEstadoMapa();
-    const notaAsr = $('live-nota');
-    if (notaAsr) notaAsr.textContent = configuracionPublica.transcriptionConfigured
+    updateMapStatus();
+    const asrNote = $('live-nota');
+    if (asrNote) asrNote.textContent = publicConfiguration.transcriptionConfigured
       ? 'El audio se enviará al servidor para transcribirse con Groq al guardar.'
       : 'Falta configurar GROQ_API_KEY en el servidor para habilitar la transcripción automática.';
   })
   .catch(error => {
-    errorConfiguracionMapa = 'No se pudo cargar la configuración; se mantienen los servicios públicos predeterminados.';
-    actualizarEstadoMapa();
+    mapConfigurationError = 'No se pudo cargar la configuración; se mantienen los servicios públicos predeterminados.';
+    updateMapStatus();
     console.error('No se pudo cargar la configuración pública del mapa.', error);
   });
 
-let sesion = null;
+let session = null;
 // true cuando la pestaña se abrió como "vista previa de operador" (admin
 // mirando la interfaz de una institución con la cuenta sintética
 // preview_<institucion>): oculta/bloquea acciones que escriban datos,
 // como defensa adicional a lo que ya rechaza el backend.
-let vistaPreviaSoloLectura = false;
-let mapa = null;
-let marcador = null;
-let marcadorDispositivo = null;
-let precisionDispositivo = null;
-let rutaIncidente = null;
-let rutaIncidenteKey = null;
-const rutasSolicitadas = new Set();
-const rutasCalculadas = new Map();
-let ubicacionActualOperador = null;
-let solicitudRutaId = 0;
-let llamadaSeleccionada = null;
-let vistaActual = 'info';
-let colaActual = 'pendientes';
-let cacheColas = {
+let readOnlyPreview = false;
+let map = null;
+let incidentMarker = null;
+let deviceMarker = null;
+let deviceAccuracy = null;
+let incidentRoute = null;
+let incidentRouteKey = null;
+const requestedRoutes = new Set();
+const calculatedRoutes = new Map();
+let currentOperatorLocation = null;
+let routeRequestId = 0;
+let selectedCall = null;
+let currentView = 'info';
+let currentQueue = 'pendientes';
+let queueCache = {
   pendientes: [],
   'en-curso': [],
   cerradas: []
 };
-let colasInicializadas = false;
-const urgenciasNotificadas = new Set();
-let adminTabActual = 'incidentes';
-let feedEventos = [];
+let queuesInitialized = false;
+const notifiedUrgencies = new Set();
+let currentAdminTab = 'incidentes';
+let eventFeed = [];
 const captchaTokens = { login: '', register: '' };
 const captchaWidgets = { login: null, register: null };
-const captchaContenedores = { login: 'captcha-login', register: 'captcha-register' };
-const captchaErrores = { login: 'login-error', register: 'registro-error' };
-let captchaConfigurado = false;
-let captchaSiteKey = '';
+const captchaContainers = { login: 'captcha-login', register: 'captcha-register' };
+const captchaErrors = { login: 'login-error', register: 'registro-error' };
+const captchaInitialized = { login: false, register: false };
+let captchaConfigured = false;
 
-function mostrarErrorCaptcha(tipo, msg) {
-  const el = document.getElementById(captchaErrores[tipo]);
+function showCaptchaError(type, msg) {
+  const el = document.getElementById(captchaErrors[type]);
   if (el) { el.textContent = msg; el.hidden = false; }
 }
 
-// Dibuja el widget de Turnstile. El de registro se dibuja recién al abrir su pestaña
-// (dentro de un formulario oculto el widget puede no cargar bien).
-function renderizarCaptcha(tipo, intentos = 0) {
-  if (!captchaConfigurado || captchaWidgets[tipo] !== null) return;
-  if (!window.turnstile) {
-    if (intentos >= 40) {
-      mostrarErrorCaptcha(tipo, 'No se pudo cargar la verificación de seguridad de Cloudflare. Revisa tu conexión a internet y recarga la página (Ctrl+F5).');
-      return;
+function updateCaptchaStatus(type, message) {
+  const status = $(`captcha-${type}-status`);
+  if (status) status.textContent = message;
+}
+
+function renderCaptcha(type) {
+  if (!captchaConfigured || captchaInitialized[type]) return;
+  const widget = $(`captcha-${type}-widget`);
+  if (!widget) return;
+  captchaInitialized[type] = true;
+  captchaWidgets[type] = widget;
+  widget.addEventListener('verified', event => {
+    captchaTokens[type] = event.detail?.payload || '';
+    updateCaptchaStatus(
+      type,
+      captchaTokens[type] ? 'Verificación completada.' : 'No se recibió la solución ALTCHA.'
+    );
+  });
+  widget.addEventListener('statechange', event => {
+    const state = event.detail?.state;
+    if (state !== 'verified') captchaTokens[type] = '';
+    if (state === 'verifying') updateCaptchaStatus(type, 'Resolviendo ALTCHA Argon2id…');
+    if (state === 'error') {
+      showCaptchaError(type, 'No se pudo completar ALTCHA. Comprueba HTTPS y vuelve a intentarlo.');
     }
-    setTimeout(() => renderizarCaptcha(tipo, intentos + 1), 250);
-    return;
-  }
-  const el = document.getElementById(captchaContenedores[tipo]);
-  if (!el) return;
-  el.innerHTML = '';
-  captchaWidgets[tipo] = window.turnstile.render(el, {
-    sitekey: captchaSiteKey,
-    callback: token => { captchaTokens[tipo] = token; },
-    'expired-callback': () => { captchaTokens[tipo] = ''; },
-    'error-callback': () => {
-      captchaTokens[tipo] = '';
-      mostrarErrorCaptcha(tipo, 'La verificación de seguridad no pudo cargarse. Recarga la página; si sigue igual, revisa las claves de Turnstile.');
-    }
+  });
+  widget.addEventListener('expired', () => {
+    captchaTokens[type] = '';
+    updateCaptchaStatus(type, 'La verificación expiró. Inténtalo otra vez.');
+  });
+  widget.addEventListener('outofmemory', () => {
+    captchaTokens[type] = '';
+    showCaptchaError(type, 'El dispositivo no tiene memoria suficiente para completar la verificación.');
   });
 }
 
-// Los tokens de Turnstile son de un solo uso: tras cada intento (bueno o malo)
-// hay que pedir uno nuevo, si no el segundo intento falla con "captcha inválido".
-function reiniciarCaptcha(tipo) {
-  captchaTokens[tipo] = '';
-  const id = captchaWidgets[tipo];
-  if (window.turnstile && id !== null && id !== undefined) {
-    try { window.turnstile.reset(id); } catch (_) { /* nada */ }
-  }
+function resetCaptcha(type) {
+  captchaTokens[type] = '';
+  const widget = captchaWidgets[type];
+  if (typeof widget?.reset === 'function') widget.reset();
+  updateCaptchaStatus(type, 'Verificación de seguridad ALTCHA Argon2id.');
 }
 
-function dibujarRutaGuardada(ruta, ajustarVista) {
-  if (!mapa || !ruta || rutaIncidenteKey == null) return;
-  const latLngs = ruta.coordinates.map(([lng, lat]) => [lat, lng]);
-  rutaIncidente = L.polyline(latLngs, {
+function drawSavedRoute(route, adjustView) {
+  if (!map || !route || incidentRouteKey == null) return;
+  const latLngs = route.coordinates.map(([lng, lat]) => [lat, lng]);
+  incidentRoute = L.polyline(latLngs, {
     color: '#ffd166',
     weight: 6,
     opacity: 0.9,
     lineCap: 'round',
     lineJoin: 'round'
-  }).addTo(mapa);
+  }).addTo(map);
 
-  const distancia = ruta.distance >= 1000
-    ? `${(ruta.distance / 1000).toFixed(1)} km`
-    : `${Math.round(ruta.distance)} m`;
-  const minutos = Math.max(1, Math.round(ruta.duration / 60));
-  const rutaEstado = $('ruta-estado');
-  if (rutaEstado) rutaEstado.textContent = `Ruta estimada · ${distancia} · ${minutos} min`;
-  if (ajustarVista) {
-    mapa.fitBounds(rutaIncidente.getBounds(), { padding: [40, 40], maxZoom: 16 });
+  const distance = route.distance >= 1000
+    ? `${(route.distance / 1000).toFixed(1)} km`
+    : `${Math.round(route.distance)} m`;
+  const minutes = Math.max(1, Math.round(route.duration / 60));
+  const routeStatus = $('ruta-estado');
+  if (routeStatus) routeStatus.textContent = `Ruta estimada · ${distance} · ${minutes} min`;
+  if (adjustView) {
+    map.fitBounds(incidentRoute.getBounds(), { padding: [40, 40], maxZoom: 16 });
   }
 }
 
-async function inicializarCaptcha() {
+async function initializeCaptcha() {
+  ['form-login', 'form-registro'].forEach(formId => {
+    const form = $(formId);
+    if (form) form.noValidate = true;
+  });
+
   try {
-    const resp = await fetch(`${API_URL}/auth/captcha-site-key`);
-    const config = resp.ok ? await resp.json() : {};
-    captchaRequerido = config.enabled === true;
-    if (!captchaRequerido) {
-      captchaConfigurado = true;
-      ['login', 'register'].forEach(tipo => {
-        const error = $(captchaErrores[tipo]);
-        if (error) error.hidden = true;
-      });
-      return;
-    }
-    if (!config.siteKey) {
-      captchaConfigurado = false;
-      const msg = 'Turnstile está habilitado pero no está configurado correctamente en el servidor.';
-      ['login', 'register'].forEach(t => mostrarErrorCaptcha(t, msg));
-      return;
-    }
-    captchaSiteKey = config.siteKey;
-    captchaConfigurado = true;
-    if (window.turnstile) {
-      renderizarCaptcha('login');
-    } else {
-      const script = document.createElement('script');
-      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
-      script.defer = true;
-      script.onload = () => renderizarCaptcha('login');
-      script.onerror = () => mostrarErrorCaptcha('login', 'No se pudo cargar Turnstile.');
-      document.head.appendChild(script);
-    }
+    if (!window.altchaReadyPromise) throw new Error('No se configuró el widget ALTCHA.');
+    await window.altchaReadyPromise;
+    const resp = await fetch(`${API_URL}/auth/captcha-config`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const config = await resp.json();
+    captchaRequired = config.enabled === true;
+    captchaConfigured = true;
+    Object.keys(captchaContainers).forEach(type => {
+      const container = $(captchaContainers[type]);
+      if (container) container.hidden = !captchaRequired;
+      if (captchaRequired) {
+        renderCaptcha(type);
+      } else {
+        const widget = $(`captcha-${type}-widget`);
+        if (widget) widget.remove();
+        captchaWidgets[type] = null;
+      }
+    });
   } catch (error) {
     console.error('No se pudo cargar la verificación de seguridad.', error);
-    ['login', 'register'].forEach(t => mostrarErrorCaptcha(t, 'No se pudo conectar con el servidor.'));
+    captchaConfigured = false;
+    ['login', 'register'].forEach(type => showCaptchaError(type, 'No se pudo conectar con la verificación de seguridad.'));
   }
 }
 
 const $ = (id) => document.getElementById(id);
 
-function aplicarTema(tema) {
-  const temaClaro = tema === 'claro';
+function applyTheme(theme) {
+  const isLightTheme = theme === 'claro';
 
-  document.body.classList.toggle('tema-claro', temaClaro);
+  document.body.classList.toggle('tema-claro', isLightTheme);
 
-  const boton = $('btn-tema');
-  if (!boton) return;
+  const themeButton = $('btn-tema');
+  if (!themeButton) return;
 
-  boton.textContent = temaClaro ? 'Oscuro' : 'Claro';
-  boton.setAttribute(
+  themeButton.textContent = isLightTheme ? 'Oscuro' : 'Claro';
+  themeButton.setAttribute(
     'aria-label',
-    temaClaro ? 'Cambiar a tema oscuro' : 'Cambiar a tema claro'
+    isLightTheme ? 'Cambiar a tema oscuro' : 'Cambiar a tema claro'
   );
 }
 
-function inicializarTema() {
-  let tema = 'oscuro';
+function initializeTheme() {
+  let theme = 'oscuro';
 
   try {
-    tema = localStorage.getItem('codes-tema') || tema;
+    theme = localStorage.getItem('codes-tema') || theme;
   } catch (error) {
   }
 
-  aplicarTema(tema);
+  applyTheme(theme);
 
   $('btn-tema')?.addEventListener('click', () => {
-    const nuevoTema = document.body.classList.contains('tema-claro')
+    const newTheme = document.body.classList.contains('tema-claro')
       ? 'oscuro'
       : 'claro';
 
-    aplicarTema(nuevoTema);
+    applyTheme(newTheme);
 
     try {
-      localStorage.setItem('codes-tema', nuevoTema);
+      localStorage.setItem('codes-tema', newTheme);
     } catch (error) {
     }
   });
@@ -227,74 +229,74 @@ function escapeHtml(v) {
   );
 }
 
-function mostrarAlerta(texto, tipo = 'normal') {
+function showAlert(text, type = 'normal') {
   const el = $('alerta-urgente');
-  const tx = $('alerta-texto');
+  const tx = $('alerta-text');
 
   if (!el || !tx) return;
 
-  tx.textContent = texto;
+  tx.textContent = text;
   el.hidden = false;
 
   el.style.background =
-    tipo === 'error'
+    type === 'error'
       ? '#7f1d1d'
-      : tipo === 'ok'
+      : type === 'ok'
         ? '#065f46'
         : '';
 
-  clearTimeout(mostrarAlerta.timer);
+  clearTimeout(showAlert.timer);
 
-  mostrarAlerta.timer = setTimeout(() => {
+  showAlert.timer = setTimeout(() => {
     el.hidden = true;
     el.style.background = '';
   }, 4500);
 }
 
-function registrarEvento(mensaje, clase = '') {
-  feedEventos.unshift({
-    hora: new Date(),
-    mensaje,
-    clase
+function recordEvent(message, styleClass = '') {
+  eventFeed.unshift({
+    timestamp: new Date(),
+    message,
+    styleClass
   });
 
-  feedEventos = feedEventos.slice(0, 80);
+  eventFeed = eventFeed.slice(0, 80);
 
-  renderizarFeed();
+  renderFeed();
 }
 
-function notificarNuevasUrgencias(llamadas) {
-  const urgentes = llamadas.filter(llamada =>
-    llamada && llamada.priority === 'URGENTE' && llamada.id != null
+function notifyNewUrgencies(calls) {
+  const urgentCalls = calls.filter(call =>
+    call && call.priority === 'URGENTE' && call.id != null
   );
 
-  if (!colasInicializadas) {
-    urgentes.forEach(llamada => urgenciasNotificadas.add(llamada.id));
+  if (!queuesInitialized) {
+    urgentCalls.forEach(call => notifiedUrgencies.add(call.id));
     return;
   }
 
-  urgentes
-    .filter(llamada => !urgenciasNotificadas.has(llamada.id))
-    .forEach(llamada => {
-      urgenciasNotificadas.add(llamada.id);
-      const direccion = llamada.address || 'ubicación por determinar';
-      const mensaje = `Nueva alerta urgente: caso #${llamada.id}, ${direccion}`;
-      mostrarAlerta(mensaje, 'error');
-      registrarEvento(mensaje, 'urgente');
+  urgentCalls
+    .filter(call => !notifiedUrgencies.has(call.id))
+    .forEach(call => {
+      notifiedUrgencies.add(call.id);
+      const address = call.address || 'ubicación por determinar';
+      const message = `Nueva alerta urgente: caso #${call.id}, ${address}`;
+      showAlert(message, 'error');
+      recordEvent(message, 'urgente');
 
       if (navigator.vibrate) navigator.vibrate([180, 100, 180]);
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-        new Notification('CODES: alerta urgente', { body: mensaje, tag: `codes-${llamada.id}` });
+        new Notification('CODES: alerta urgente', { body: message, tag: `codes-${call.id}` });
       }
     });
 }
 
-function renderizarFeed() {
+function renderFeed() {
   const c = $('feed-lista');
 
   if (!c) return;
 
-  if (!feedEventos.length) {
+  if (!eventFeed.length) {
     c.innerHTML =
       '<p class="estado-vacio" style="font-size:.7rem;padding:1rem;">Esperando actividad…</p>';
 
@@ -305,56 +307,56 @@ function renderizarFeed() {
     return;
   }
 
-  c.innerHTML = feedEventos
+  c.innerHTML = eventFeed
     .map(e => `
       <div class="feed-item">
         <span class="hora">
-          ${e.hora.toLocaleTimeString('es-CL', { hour12: false })}
+          ${e.timestamp.toLocaleTimeString('es-CL', { hour12: false })}
         </span>
         <span class="mensaje">
-          ${escapeHtml(e.mensaje)}
+          ${escapeHtml(e.message)}
         </span>
       </div>
     `)
     .join('');
 
   if ($('feed-contador')) {
-    $('feed-contador').textContent = `${feedEventos.length} eventos`;
+    $('feed-contador').textContent = `${eventFeed.length} eventos`;
   }
 }
 
-async function apiFetch(ruta, opciones = {}) {
+async function apiFetch(route, options = {}) {
   const headers = {
-    ...(opciones.headers || {})
+    ...(options.headers || {})
   };
 
-  const rutaConBarra = ruta.startsWith('/') ? ruta : `/${ruta}`;
-  const rutaFinal =
-    rutaConBarra === API_URL || rutaConBarra.startsWith(`${API_URL}/`)
-      ? rutaConBarra
-      : `${API_URL}${rutaConBarra}`;
+  const routeWithSlash = route.startsWith('/') ? route : `/${route}`;
+  const finalRoute =
+    routeWithSlash === API_URL || routeWithSlash.startsWith(`${API_URL}/`)
+      ? routeWithSlash
+      : `${API_URL}${routeWithSlash}`;
 
-  if (sesion?.token) {
-    headers.Authorization = `Bearer ${sesion.token}`;
+  if (session?.token) {
+    headers.Authorization = `Bearer ${session.token}`;
   }
 
-  const resp = await fetch(rutaFinal, {
-    ...opciones,
+  const resp = await fetch(finalRoute, {
+    ...options,
     headers
   });
 
   if (resp.status === 401) {
-    const estabaLogueado = !!sesion;
+    const wasLoggedIn = !!session;
 
-    sesion = null;
+    session = null;
 
-    mostrarPantallaAuth(
+    showAuthScreen(
       'Tu sesión expiró o fue revocada. Ingresa nuevamente.',
       true
     );
 
-    if (estabaLogueado) {
-      registrarEvento('Sesión cerrada por el servidor.');
+    if (wasLoggedIn) {
+      recordEvent('Sesión cerrada por el servidor.');
     }
 
     throw new Error('No autenticado');
@@ -363,10 +365,10 @@ async function apiFetch(ruta, opciones = {}) {
   return resp;
 }
 
-async function leerRespuesta(resp) {
-  const tipo = resp.headers.get('content-type') || '';
+async function readResponse(resp) {
+  const type = resp.headers.get('content-type') || '';
 
-  if (tipo.includes('application/json')) {
+  if (type.includes('application/json')) {
     return resp.json();
   }
 
@@ -375,7 +377,7 @@ async function leerRespuesta(resp) {
   };
 }
 
-function mostrarPantallaAuth(error = '') {
+function showAuthScreen(error = '') {
   if ($('pantalla-auth')) {
     $('pantalla-auth').hidden = false;
   }
@@ -405,41 +407,41 @@ function ocultarPantallaAuth() {
 }
 
 
-function etiquetaRol(rol) {
+function roleLabel(rol) {
   return ({ administrator: 'Administrador', supervisor: 'Supervisor', operator: 'Operador' }[rol] || rol || 'Operador');
 }
 
-function actualizarUsuarioUI() {
-  const rol = sesion?.role || 'operator';
+function updateUserUi() {
+  const rol = session?.role || 'operator';
 
   if ($('rol-tag')) {
-    $('rol-tag').textContent = etiquetaRol(rol);
+    $('rol-tag').textContent = roleLabel(rol);
   }
 
-  if ($('usuario-nombre')) {
-    $('usuario-nombre').textContent =
-      sesion?.username || 'usuario';
+  if ($('user-name')) {
+    $('user-name').textContent =
+      session?.username || 'user';
   }
 
-  if ($('avatar-usuario')) {
-    const nombreAvatar = sesion?.username || 'U';
-    $('avatar-usuario').textContent =
-      nombreAvatar.trim().charAt(0).toUpperCase() || 'U';
+  if ($('avatar-user')) {
+    const avatarName = session?.username || 'U';
+    $('avatar-user').textContent =
+      avatarName.trim().charAt(0).toUpperCase() || 'U';
   }
 
-  if ($('usuario-estado')) {
-    $('usuario-estado').textContent =
-      sesion ? '● conectado' : '';
+  if ($('user-status')) {
+    $('user-status').textContent =
+      session ? '● conectado' : '';
   }
 
-  if ($('indicador-estado')) {
-    $('indicador-estado').className =
-      `indicador ${sesion ? 'online' : ''}`;
+  if ($('indicador-status')) {
+    $('indicador-status').className =
+      `indicador ${session ? 'online' : ''}`;
   }
 
-  if ($('estado-texto')) {
-    $('estado-texto').textContent =
-      sesion ? 'Operativo' : 'Sin sesión';
+  if ($('status-text')) {
+    $('status-text').textContent =
+      session ? 'Operativo' : 'Sin sesión';
   }
 
   if ($('modo-badge')) {
@@ -467,18 +469,18 @@ function actualizarUsuarioUI() {
   }
 }
 
-function mostrarAuthVista(vista) {
-  const vistas = ['login', 'registro', 'recuperar', 'reset'];
-  vistas.forEach(v => {
-    const form = $(`form-${v}`);
-    if (form) form.hidden = v !== vista;
+function showAuthView(viewName) {
+  const views = ['login', 'registro', 'recuperar', 'reset'];
+  views.forEach(view => {
+    const form = $(`form-${view}`);
+    if (form) form.hidden = view !== viewName;
   });
-  document.querySelectorAll('.auth-tab').forEach(t => t.classList.toggle('activo', t.dataset.tab === vista));
+  document.querySelectorAll('.auth-tab').forEach(tab => tab.classList.toggle('activo', tab.dataset.tab === viewName));
   const tabs = $('auth-tabs');
-  if (tabs) tabs.hidden = vista === 'recuperar' || vista === 'reset';
+  if (tabs) tabs.hidden = viewName === 'recuperar' || viewName === 'reset';
 }
 
-async function solicitarRecuperacion(e) {
+async function requestPasswordRecovery(e) {
   e.preventDefault();
   const error = $('recovery-error');
   const success = $('recovery-success');
@@ -488,7 +490,7 @@ async function solicitarRecuperacion(e) {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ email: $('recovery-email').value.trim() })
     });
-    const d = await leerRespuesta(resp);
+    const d = await readResponse(resp);
     if (!resp.ok) throw new Error(d.error || 'No se pudo procesar la solicitud.');
     success.textContent = d.message;
     success.hidden = false;
@@ -498,7 +500,7 @@ async function solicitarRecuperacion(e) {
   }
 }
 
-async function restablecerPassword(e) {
+async function resetPassword(e) {
   e.preventDefault();
   const error = $('reset-error');
   const success = $('reset-success');
@@ -513,21 +515,33 @@ async function restablecerPassword(e) {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ token, newPassword: password })
     });
-    const d = await leerRespuesta(resp);
+    const d = await readResponse(resp);
     if (!resp.ok) throw new Error(d.error || 'No se pudo restablecer la contraseña.');
     success.textContent = d.message;
     success.hidden = false;
     history.replaceState({}, '', location.pathname);
     $('reset-password').value = ''; $('reset-password-confirm').value = '';
-    setTimeout(() => mostrarAuthVista('login'), 1800);
+    setTimeout(() => showAuthView('login'), 1800);
   } catch (err) {
     error.textContent = err.message || 'No se pudo restablecer la contraseña.';
     error.hidden = false;
   }
 }
 
-async function iniciarSesion(e) {
+function validateAuthFields(form) {
+  const fields = form.querySelectorAll('input:not([type="hidden"]), select, textarea');
+  for (const field of fields) {
+    if (!field.checkValidity()) {
+      field.reportValidity();
+      return false;
+    }
+  }
+  return true;
+}
+
+async function login(e) {
   e.preventDefault();
+  if (!validateAuthFields(e.currentTarget)) return;
 
   const error = $('login-error');
 
@@ -535,19 +549,19 @@ async function iniciarSesion(e) {
     error.hidden = true;
   }
 
-  const nombreUsuario =
-    $('login-usuario').value.trim();
+  const username =
+    $('login-username').value.trim();
 
   const password =
     $('login-password').value;
 
-  if (captchaRequerido && !captchaConfigurado) {
-    error.textContent = 'Turnstile está habilitado pero no está configurado correctamente en el servidor.';
+  if (!captchaConfigured) {
+    error.textContent = 'No se pudo configurar la verificación ALTCHA. Recarga la página e inténtalo otra vez.';
     error.hidden = false;
     return;
   }
 
-  if (captchaRequerido && !captchaTokens.login) {
+  if (captchaRequired && !captchaTokens.login) {
     error.textContent = 'Completa la verificación de seguridad.';
     error.hidden = false;
     return;
@@ -562,14 +576,14 @@ async function iniciarSesion(e) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          username: nombreUsuario,
+          username: username,
           password,
-          captchaToken: captchaRequerido ? captchaTokens.login : ''
+          captchaToken: captchaRequired ? captchaTokens.login : ''
         })
       }
     );
 
-    const d = await leerRespuesta(resp);
+    const d = await readResponse(resp);
 
     if (!resp.ok) {
       error.textContent =
@@ -577,35 +591,36 @@ async function iniciarSesion(e) {
         'No se pudo iniciar sesión.';
 
       error.hidden = false;
-      reiniciarCaptcha('login');
+      resetCaptcha('login');
       return;
     }
 
-    sesion = d;
+    session = d;
 
     $('login-password').value = '';
 
     ocultarPantallaAuth();
-    actualizarUsuarioUI();
+    updateUserUi();
 
-    registrarEvento(
+    recordEvent(
       `Inició sesión como ${d.username}.`,
       'admin'
     );
 
-    await entrarConsola();
+    await enterConsole();
 
   } catch (err) {
     error.textContent =
       'No se pudo conectar con el servidor. ¿Está ejecutándose Spring Boot?';
 
     error.hidden = false;
-    reiniciarCaptcha('login');
+    resetCaptcha('login');
   }
 }
 
-async function registrarCuenta(e) {
+async function registerAccount(e) {
   e.preventDefault();
+  if (!validateAuthFields(e.currentTarget)) return;
 
   const error = $('registro-error');
   const ok = $('registro-success');
@@ -629,32 +644,32 @@ async function registrarCuenta(e) {
 
   const payload = {
     username:
-      $('reg-usuario').value.trim(),
+      $('reg-username').value.trim(),
 
     password,
 
-    captchaToken: captchaRequerido ? captchaTokens.register : '',
+    captchaToken: captchaRequired ? captchaTokens.register : '',
 
     nombre:
-      $('reg-nombre').value.trim(),
+      $('reg-first-name').value.trim(),
 
     apellido:
-      $('reg-apellido').value.trim(),
+      $('reg-last-name').value.trim(),
 
     correo:
-      $('reg-correo').value.trim(),
+      $('reg-email').value.trim(),
 
     institucion:
-      $('reg-institucion').value
+      $('reg-institution').value
   };
 
-  if (captchaRequerido && !captchaConfigurado) {
-    error.textContent = 'Turnstile está habilitado pero no está configurado correctamente en el servidor.';
+  if (!captchaConfigured) {
+    error.textContent = 'No se pudo configurar la verificación ALTCHA. Recarga la página e inténtalo otra vez.';
     error.hidden = false;
     return;
   }
 
-  if (captchaRequerido && !captchaTokens.register) {
+  if (captchaRequired && !captchaTokens.register) {
     error.textContent = 'Completa la verificación de seguridad.';
     error.hidden = false;
     return;
@@ -672,7 +687,7 @@ async function registrarCuenta(e) {
       }
     );
 
-    const d = await leerRespuesta(resp);
+    const d = await readResponse(resp);
 
     if (!resp.ok) {
       error.textContent =
@@ -684,18 +699,16 @@ async function registrarCuenta(e) {
         );
 
       error.hidden = false;
-      reiniciarCaptcha('register');
+      resetCaptcha('register');
       return;
     }
 
-    ok.textContent =
-      (d.mensaje || d.message) ||
-      'Cuenta creada. Un administrador debe activarla antes de iniciar sesión.';
+    ok.textContent = 'Cuenta creada. Un administrador debe activarla antes de iniciar sesión.';
 
     ok.hidden = false;
 
     e.target.reset();
-    reiniciarCaptcha('register');
+    resetCaptcha('register');
 
     setTimeout(
       () =>
@@ -712,38 +725,38 @@ async function registrarCuenta(e) {
       'No se pudo conectar con el servidor.';
 
     error.hidden = false;
-    reiniciarCaptcha('register');
+    resetCaptcha('register');
   }
 }
 
 
-async function cambiarClave() {
-  if (!sesion) return;
-  const actual = window.prompt('Contraseña actual:');
-  if (actual === null) return;
-  const nueva = window.prompt('Nueva contraseña (mínimo 12 caracteres, mayúscula, minúscula, número y símbolo):');
-  if (nueva === null) return;
-  const confirmacion = window.prompt('Repite la nueva contraseña:');
-  if (confirmacion === null) return;
-  if (nueva !== confirmacion) { mostrarAlerta('Las contraseñas nuevas no coinciden.', 'error'); return; }
+async function changePassword() {
+  if (!session) return;
+  const currentValue = window.prompt('Contraseña actual:');
+  if (currentValue === null) return;
+  const newValue = window.prompt('Nueva contraseña (mínimo 12 caracteres, mayúscula, minúscula, número y símbolo):');
+  if (newValue === null) return;
+  const confirmation = window.prompt('Repite la nueva contraseña:');
+  if (confirmation === null) return;
+  if (newValue !== confirmation) { showAlert('Las contraseñas nuevas no coinciden.', 'error'); return; }
   try {
     const r = await apiFetch('/auth/change-password', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ currentPassword: actual, newPassword: nueva })
+      body: JSON.stringify({ currentPassword: currentValue, newPassword: newValue })
     });
-    const d = await leerRespuesta(r);
+    const d = await readResponse(r);
     if (!r.ok) throw new Error(d.error || 'No se pudo cambiar la contraseña');
-    mostrarAlerta('Contraseña cambiada correctamente.', 'ok');
-  } catch (e) { if (e.message !== 'No autenticado') mostrarAlerta(e.message, 'error'); }
+    showAlert('Contraseña cambiada correctamente.', 'ok');
+  } catch (e) { if (e.message !== 'No autenticado') showAlert(e.message, 'error'); }
 }
 
-async function cerrarSesion() {
-  if (!sesion) return;
+async function logout() {
+  if (!session) return;
 
-  const token = sesion.token;
+  const token = session.token;
 
   if (live.startedAt) {
-    detenerLive(false);
+    stopLiveCall(false);
   }
 
   try {
@@ -755,10 +768,10 @@ async function cerrarSesion() {
     console.warn('No se pudo invalidar la sesión en el servidor.', e);
   }
 
-  const usuario =
-    sesion.username;
+  const user =
+    session.username;
 
-  sesion = null;
+  session = null;
 
   if (vistaPreviaSoloLectura) {
     vistaPreviaSoloLectura = false;
@@ -772,21 +785,21 @@ async function cerrarSesion() {
     }
   }
 
-  cacheColas = {
+  queueCache = {
     pendientes: [],
     'en-curso': [],
     cerradas: []
   };
 
-  llamadaSeleccionada = null;
-  rutasSolicitadas.clear();
-  rutasCalculadas.clear();
-  rutaIncidenteKey = null;
-  ubicacionActualOperador = null;
-  if (rutaIncidente && mapa) mapa.removeLayer(rutaIncidente);
-  rutaIncidente = null;
+  selectedCall = null;
+  requestedRoutes.clear();
+  calculatedRoutes.clear();
+  incidentRouteKey = null;
+  currentOperatorLocation = null;
+  if (incidentRoute && map) map.removeLayer(incidentRoute);
+  incidentRoute = null;
 
-  actualizarUsuarioUI();
+  updateUserUi();
 
   if ($('panel-cola')) {
     $('panel-cola').style.display = 'flex';
@@ -802,40 +815,40 @@ async function cerrarSesion() {
     $('panel-detalle').style.display = 'flex';
   }
 
-  mostrarPantallaAuth();
+  showAuthScreen();
 
-  registrarEvento(
-    `Cerró sesión ${usuario}.`
+  recordEvent(
+    `Cerró sesión ${user}.`
   );
 
-  $('login-usuario').value = '';
+  $('login-username').value = '';
   $('login-password').value = '';
-  $('login-usuario').focus();
+  $('login-username').focus();
 }
 
-async function entrarConsola() {
-  actualizarTodo();
+async function enterConsole() {
+  updateAll();
 
-  cambiarVista('info');
+  changeView('info');
 
-  initMapa();
-  setTimeout(() => mapa?.invalidateSize(true), 60);
+  initializeMap();
+  setTimeout(() => map?.invalidateSize(true), 60);
 
-  await cargarCola();
+  await loadQueue();
 
-  await actualizarMetricas();
+  await updateMetrics();
 
-  if (sesion?.role === 'administrator') {
-    await cargarUsuarios();
+  if (session?.role === 'administrator') {
+    await loadUsers();
   }
 }
 
-function actualizarReloj() {
-  const ahora = new Date();
+function updateClock() {
+  const currentTime = new Date();
 
   if ($('reloj')) {
     $('reloj').textContent =
-      ahora.toLocaleTimeString(
+      currentTime.toLocaleTimeString(
         'es-CL',
         { hour12: false }
       );
@@ -843,7 +856,7 @@ function actualizarReloj() {
 
   if ($('ultima-actualizacion')) {
     $('ultima-actualizacion').textContent =
-      `· ${ahora.toLocaleTimeString(
+      `· ${currentTime.toLocaleTimeString(
         'es-CL',
         { hour12: false }
       )}`;
@@ -851,27 +864,27 @@ function actualizarReloj() {
 }
 
 setInterval(
-  actualizarReloj,
+  updateClock,
   1000
 );
 
-actualizarReloj();
+updateClock();
 
 
 // ======================================================
 // MAPA
 // ======================================================
 
-function initMapa() {
+function initializeMap() {
   if (
-    mapa ||
+    map ||
     typeof L === 'undefined' ||
     !$('mapa')
   ) {
     return;
   }
 
-  mapa = L
+  map = L
     .map('mapa', {
       zoomControl: true
     })
@@ -880,18 +893,18 @@ function initMapa() {
       12
     );
 
-  configurarCapaBaseMapa();
+  configureBaseMapLayer();
   $('btn-reintentar-ruta')?.addEventListener(
     'click',
-    reintentarRutaSeleccionada
+    retrySelectedRoute
   );
   $('btn-mi-ubicacion')?.addEventListener(
     'click',
-    mostrarUbicacionDispositivo
+    showDeviceLocation
   );
 }
 
-const proveedoresTeselas = [
+const tileProviders = [
   {
     name: 'Esri World Imagery',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -917,19 +930,19 @@ const proveedoresTeselas = [
     maxZoom: 19
   }
 ];
-let indiceProveedorTeselas = -1;
-let temporizadorTeselas = null;
+let tileProviderIndex = -1;
+let tileTimer = null;
 
-function activarProveedorTeselas(index, mensaje = '') {
-  if (!mapa || index < 0 || index >= proveedoresTeselasActivos.length) {
-    errorTeselasMapa = 'No se pudieron cargar los mapas base. Comprueba la conexión a Internet o el acceso a los proveedores de mapas.';
-    actualizarEstadoMapa();
+function activateTileProvider(index, message = '') {
+  if (!map || index < 0 || index >= activeTileProviders.length) {
+    tileLoadError = 'No se pudieron cargar los mapas base. Comprueba la conexión a Internet o el acceso a los proveedores de mapas.';
+    updateMapStatus();
     return;
   }
-  if (temporizadorTeselas) clearTimeout(temporizadorTeselas);
-  indiceProveedorTeselas = index;
-  const provider = proveedoresTeselasActivos[index];
-  const previousLayer = capaBaseMapa;
+  if (tileTimer) clearTimeout(tileTimer);
+  tileProviderIndex = index;
+  const provider = activeTileProviders[index];
+  const previousLayer = baseMapLayer;
   const nextLayer = L.tileLayer(provider.url, {
     attribution: provider.attribution,
     maxZoom: provider.maxZoom,
@@ -939,28 +952,28 @@ function activarProveedorTeselas(index, mensaje = '') {
   let tileLoaded = false;
   nextLayer.on('tileload', () => {
     tileLoaded = true;
-    errorTeselasMapa = '';
-    fallbackTeselasActivado = index > 0;
-    actualizarEstadoMapa();
-    if (previousLayer && mapa.hasLayer(previousLayer)) mapa.removeLayer(previousLayer);
+    tileLoadError = '';
+    tileFallbackEnabled = index > 0;
+    updateMapStatus();
+    if (previousLayer && map.hasLayer(previousLayer)) map.removeLayer(previousLayer);
   });
   nextLayer.on('tileerror', () => {
-    if (!tileLoaded && indiceProveedorTeselas === index) {
-      if (temporizadorTeselas) clearTimeout(temporizadorTeselas);
-      temporizadorTeselas = setTimeout(() => {
-        if (!tileLoaded && indiceProveedorTeselas === index) activarProveedorTeselas(index + 1, provider.name);
+    if (!tileLoaded && tileProviderIndex === index) {
+      if (tileTimer) clearTimeout(tileTimer);
+      tileTimer = setTimeout(() => {
+        if (!tileLoaded && tileProviderIndex === index) activateTileProvider(index + 1, provider.name);
       }, 1800);
     }
   });
-  capaBaseMapa = nextLayer.addTo(mapa);
-  errorTeselasMapa = mensaje ? `${mensaje} no responde; probando ${provider.name}…` : '';
-  actualizarEstadoMapa();
-  temporizadorTeselas = setTimeout(() => {
-    if (!tileLoaded && indiceProveedorTeselas === index) activarProveedorTeselas(index + 1, provider.name);
+  baseMapLayer = nextLayer.addTo(map);
+  tileLoadError = message ? `${message} no responde; probando ${provider.name}…` : '';
+  updateMapStatus();
+  tileTimer = setTimeout(() => {
+    if (!tileLoaded && tileProviderIndex === index) activateTileProvider(index + 1, provider.name);
   }, 7000);
 }
 
-function crearCapaBase(url) {
+function createBaseLayer(url) {
   // Preserve a configured tile URL as the first choice, then fall back to public providers.
   const configured = (url || '').trim();
   if (configured && !configured.includes('{z}') || configured && !configured.includes('{x}') || configured && !configured.includes('{y}')) {
@@ -969,62 +982,62 @@ function crearCapaBase(url) {
   const customProvider = configured && ['{z}', '{x}', '{y}'].every(token => configured.includes(token))
     ? [{ name: 'Configured provider', url: configured, attribution: '&copy; Map data provider', maxZoom: 22 }]
     : [];
-  const allProviders = [...customProvider, ...proveedoresTeselas];
+  const allProviders = [...customProvider, ...tileProviders];
   // Keep the shared fallback list aligned with the active map instance.
   if (customProvider.length) {
-    proveedoresTeselasActivos = allProviders;
+    activeTileProviders = allProviders;
   } else {
-    proveedoresTeselasActivos = proveedoresTeselas;
+    activeTileProviders = tileProviders;
   }
-  activarProveedorTeselas(0);
-  return capaBaseMapa;
+  activateTileProvider(0);
+  return baseMapLayer;
 }
-let proveedoresTeselasActivos = proveedoresTeselas;
+let activeTileProviders = tileProviders;
 
-function configurarCapaBaseMapa() {
-  if (!mapa) return;
-  fallbackTeselasActivado = false;
-  indiceProveedorTeselas = -1;
-  if (temporizadorTeselas) clearTimeout(temporizadorTeselas);
-  if (capaBaseMapa) mapa.removeLayer(capaBaseMapa);
-  capaBaseMapa = null;
-  let tileUrl = (configuracionPublica.mapTilesUrl || '').trim();
+function configureBaseMapLayer() {
+  if (!map) return;
+  tileFallbackEnabled = false;
+  tileProviderIndex = -1;
+  if (tileTimer) clearTimeout(tileTimer);
+  if (baseMapLayer) map.removeLayer(baseMapLayer);
+  baseMapLayer = null;
+  let tileUrl = (publicConfiguration.mapTilesUrl || '').trim();
   // El servidor antiguo devolvía OpenStreetMap como "configurado" por defecto: se ignora para usar Esri Imagery.
   if (tileUrl.includes('tile.openstreetmap.org')) tileUrl = '';
   const customProvider = tileUrl && ['{z}', '{x}', '{y}'].every(token => tileUrl.includes(token))
     ? [{ name: 'Configured provider', url: tileUrl, attribution: '&copy; Map data provider', maxZoom: 22 }]
     : [];
-  proveedoresTeselasActivos = [...customProvider, ...proveedoresTeselas];
-  activarProveedorTeselas(0);
+  activeTileProviders = [...customProvider, ...tileProviders];
+  activateTileProvider(0);
 }
 
-function actualizarEstadoMapa() {
-  const estado = $('mapa-provider-estado');
-  if (!estado) return;
+function updateMapStatus() {
+  const status = $('mapa-provider-estado');
+  if (!status) return;
   const avisos = [];
-  if (!configuracionPublica.mapConfigured) avisos.push('Teselas no configuradas.');
-  if (!configuracionPublica.geocodingConfigured) avisos.push('Geocodificación no configurada.');
-  if (!configuracionPublica.routingUrl) avisos.push('Rutas no configuradas.');
-  if (errorConfiguracionMapa) avisos.push(errorConfiguracionMapa);
-  if (errorTeselasMapa) avisos.push(errorTeselasMapa);
-  estado.textContent = avisos.join(' ');
-  estado.hidden = avisos.length === 0;
+  if (!publicConfiguration.mapConfigured) avisos.push('Teselas no configuradas.');
+  if (!publicConfiguration.geocodingConfigured) avisos.push('Geocodificación no configurada.');
+  if (!publicConfiguration.routingUrl) avisos.push('Rutas no configuradas.');
+  if (mapConfigurationError) avisos.push(mapConfigurationError);
+  if (tileLoadError) avisos.push(tileLoadError);
+  status.textContent = avisos.join(' ');
+  status.hidden = avisos.length === 0;
 }
 
-function mostrarUbicacionDispositivo() {
-  const estado = $('ubicacion-estado');
-  const boton = $('btn-mi-ubicacion');
+function showDeviceLocation() {
+  const status = $('ubicacion-estado');
+  const locationButton = $('btn-mi-ubicacion');
 
   if (!navigator.geolocation) {
-    if (estado) estado.textContent = 'Geolocalización no disponible en este navegador.';
+    if (status) status.textContent = 'Geolocalización no disponible en este navegador.';
     return;
   }
 
-  initMapa();
-  if (!mapa) return;
+  initializeMap();
+  if (!map) return;
 
-  if (estado) estado.textContent = 'Solicitando ubicación aproximada...';
-  if (boton) boton.disabled = true;
+  if (status) status.textContent = 'Solicitando ubicación aproximada...';
+  if (locationButton) locationButton.disabled = true;
 
   navigator.geolocation.getCurrentPosition(
     posicion => {
@@ -1034,34 +1047,34 @@ function mostrarUbicacionDispositivo() {
       ];
       const accuracy = Math.max(posicion.coords.accuracy || 100, 40);
 
-      if (marcadorDispositivo) mapa.removeLayer(marcadorDispositivo);
-      if (precisionDispositivo) mapa.removeLayer(precisionDispositivo);
+      if (deviceMarker) map.removeLayer(deviceMarker);
+      if (deviceAccuracy) map.removeLayer(deviceAccuracy);
 
-      precisionDispositivo = L.circle(latLng, {
+      deviceAccuracy = L.circle(latLng, {
         radius: accuracy,
         color: '#4da3ff',
         fillColor: '#4da3ff',
         fillOpacity: 0.14,
         weight: 1.5
-      }).addTo(mapa);
+      }).addTo(map);
 
-      marcadorDispositivo = L.circleMarker(latLng, {
+      deviceMarker = L.circleMarker(latLng, {
         radius: 8,
         color: '#ffffff',
         weight: 3,
         fillColor: '#1683ff',
         fillOpacity: 1
       })
-        .addTo(mapa)
+        .addTo(map)
         .bindPopup(`Tu ubicación aproximada<br>Precisión: ${Math.round(accuracy)} m`);
 
-      mapa.setView(latLng, Math.max(mapa.getZoom(), 15));
-      if (estado) estado.textContent = `Ubicación aproximada · margen de ${Math.round(accuracy)} m`;
-      if (boton) boton.disabled = false;
+      map.setView(latLng, Math.max(map.getZoom(), 15));
+      if (status) status.textContent = `Ubicación aproximada · margen de ${Math.round(accuracy)} m`;
+      if (locationButton) locationButton.disabled = false;
     },
     () => {
-      if (estado) estado.textContent = 'No se pudo obtener la ubicación del dispositivo.';
-      if (boton) boton.disabled = false;
+      if (status) status.textContent = 'No se pudo obtener la ubicación del dispositivo.';
+      if (locationButton) locationButton.disabled = false;
     },
     {
       enableHighAccuracy: false,
@@ -1071,122 +1084,122 @@ function mostrarUbicacionDispositivo() {
   );
 }
 
-async function dibujarRutaAlIncidente(l) {
-  const rutaEstado = $('ruta-estado');
-  const botonReintentarRuta = $('btn-reintentar-ruta');
-  const solicitud = ++solicitudRutaId;
-  if (botonReintentarRuta) botonReintentarRuta.hidden = true;
+async function drawRouteToIncident(l) {
+  const routeStatus = $('ruta-estado');
+  const retryRouteButton = $('btn-reintentar-ruta');
+  const requestId = ++routeRequestId;
+  if (retryRouteButton) retryRouteButton.hidden = true;
   if (!l || l.latitude == null || l.longitude == null) {
-    if (rutaEstado) rutaEstado.textContent = 'Ruta no disponible: el incidente no tiene coordenadas.';
+    if (routeStatus) routeStatus.textContent = 'Ruta no disponible: el incidente no tiene coordenadas.';
     return;
   }
-  const claveRuta = `${l.id}:${l.latitude}:${l.longitude}`;
+  const routeKey = `${l.id}:${l.latitude}:${l.longitude}`;
 
-  if (rutaIncidente && mapa) {
-    mapa.removeLayer(rutaIncidente);
-    rutaIncidente = null;
+  if (incidentRoute && map) {
+    map.removeLayer(incidentRoute);
+    incidentRoute = null;
   }
-  rutaIncidenteKey = claveRuta;
+  incidentRouteKey = routeKey;
 
-  const rutaGuardada = rutasCalculadas.get(claveRuta);
-  if (rutaGuardada) {
-    dibujarRutaGuardada(rutaGuardada, false);
+  const savedRoute = calculatedRoutes.get(routeKey);
+  if (savedRoute) {
+    drawSavedRoute(savedRoute, false);
     return;
   }
-  if (rutasSolicitadas.has(claveRuta)) {
-    if (rutaEstado) rutaEstado.textContent = 'El intento anterior de calcular la ruta falló.';
-    if (botonReintentarRuta) botonReintentarRuta.hidden = false;
-    return;
-  }
-
-  if (!ubicacionActualOperador) {
-    if (rutaEstado) rutaEstado.textContent = 'Obteniendo tu ubicación para calcular la ruta…';
-    await obtenerUbicacionParaRuta();
-  }
-
-  if (solicitud !== solicitudRutaId) return;
-
-  const origen = ubicacionActualOperador;
-  if (!origen) {
-    if (rutaEstado) rutaEstado.textContent = 'No se pudo obtener tu ubicación. Puedes seleccionar “Ubicación actual”.';
-    if (botonReintentarRuta) botonReintentarRuta.hidden = false;
+  if (requestedRoutes.has(routeKey)) {
+    if (routeStatus) routeStatus.textContent = 'El intento anterior de calcular la ruta falló.';
+    if (retryRouteButton) retryRouteButton.hidden = false;
     return;
   }
 
-  if (rutaEstado) rutaEstado.textContent = 'Calculando ruta hacia el incidente…';
+  if (!currentOperatorLocation) {
+    if (routeStatus) routeStatus.textContent = 'Obteniendo tu ubicación para calcular la ruta…';
+    await getRouteOrigin();
+  }
+
+  if (requestId !== routeRequestId) return;
+
+  const origin = currentOperatorLocation;
+  if (!origin) {
+    if (routeStatus) routeStatus.textContent = 'No se pudo obtener tu ubicación. Puedes seleccionar “Ubicación actual”.';
+    if (retryRouteButton) retryRouteButton.hidden = false;
+    return;
+  }
+
+  if (routeStatus) routeStatus.textContent = 'Calculando ruta hacia el incidente…';
 
   try {
-    await configuracionPublicaPromise;
-    if (!configuracionPublica.routingUrl) {
-      if (rutaEstado) rutaEstado.textContent = 'El servicio de rutas no está configurado.';
+    await publicConfigurationPromise;
+    if (!publicConfiguration.routingUrl) {
+      if (routeStatus) routeStatus.textContent = 'El servicio de rutas no está configurado.';
       return;
     }
-    rutasSolicitadas.add(claveRuta);
-    const baseRuta = configuracionPublica.routingUrl.replace(/\/+$/, '');
-    const url = `${baseRuta}/route/v1/driving/${encodeURIComponent(origen.lng)},${encodeURIComponent(origen.lat)};${encodeURIComponent(l.longitude)},${encodeURIComponent(l.latitude)}?overview=full&geometries=geojson`;
+    requestedRoutes.add(routeKey);
+    const baseRoute = publicConfiguration.routingUrl.replace(/\/+$/, '');
+    const url = `${baseRoute}/route/v1/driving/${encodeURIComponent(origin.lng)},${encodeURIComponent(origin.lat)};${encodeURIComponent(l.longitude)},${encodeURIComponent(l.latitude)}?overview=full&geometries=geojson`;
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     if (data.code && data.code !== 'Ok') {
-      const mensajesRuta = {
+      const routeMessages = {
         NoRoute: 'El proveedor no encontró una ruta transitable entre tu ubicación y el incidente.',
         NoSegment: 'La ubicación está demasiado lejos de una vía transitable para calcular la ruta.',
         InvalidQuery: 'El proveedor rechazó las coordenadas enviadas para calcular la ruta.'
       };
-      throw new Error(mensajesRuta[data.code] || `El proveedor de rutas respondió: ${data.code}.`);
+      throw new Error(routeMessages[data.code] || `El proveedor de rutas respondió: ${data.code}.`);
     }
 
-    const route = data.routes?.[0] ?? data;
-    const coordinates = route.geometry?.coordinates ?? route.coordinates;
+    const providerRoute = data.routes?.[0] ?? data;
+    const coordinates = providerRoute.geometry?.coordinates ?? providerRoute.coordinates;
     if (!Array.isArray(coordinates) || coordinates.length < 2) {
       throw new Error('El proveedor no devolvió una ruta válida.');
     }
-    if (!Number.isFinite(Number(route.distance)) || !Number.isFinite(Number(route.duration))) {
+    if (!Number.isFinite(Number(providerRoute.distance)) || !Number.isFinite(Number(providerRoute.duration))) {
       throw new Error('El proveedor devolvió una ruta sin distancia o duración válidas.');
     }
 
-    const ruta = {
+    const routeResult = {
       coordinates,
-      distance: route.distance,
-      duration: route.duration
+      distance: providerRoute.distance,
+      duration: providerRoute.duration
     };
-    rutasCalculadas.set(claveRuta, ruta);
-    if (solicitud !== solicitudRutaId) return;
-    dibujarRutaGuardada(ruta, true);
+    calculatedRoutes.set(routeKey, routeResult);
+    if (requestId !== routeRequestId) return;
+    drawSavedRoute(routeResult, true);
   } catch (error) {
     console.warn('No se pudo calcular la ruta al incidente:', error);
-    if (solicitud !== solicitudRutaId) return;
-    const mensaje = error instanceof TypeError
+    if (requestId !== routeRequestId) return;
+    const message = error instanceof TypeError
       ? 'No se pudo conectar con el proveedor de rutas. Comprueba la conexión e inténtalo de nuevo.'
       : error.message === 'HTTP 429'
         ? 'El proveedor de rutas está temporalmente limitado. Inténtalo de nuevo más tarde.'
         : error.message.startsWith('HTTP 5')
           ? 'El proveedor de rutas no está disponible temporalmente.'
           : error.message || 'No se pudo calcular la ruta.';
-    if (rutaEstado) rutaEstado.textContent = mensaje;
-    if (botonReintentarRuta) botonReintentarRuta.hidden = false;
+    if (routeStatus) routeStatus.textContent = message;
+    if (retryRouteButton) retryRouteButton.hidden = false;
   }
 }
 
-function reintentarRutaSeleccionada() {
-  if (!llamadaSeleccionada) return;
-  const claveRuta = `${llamadaSeleccionada.id}:${llamadaSeleccionada.latitude}:${llamadaSeleccionada.longitude}`;
-  rutasSolicitadas.delete(claveRuta);
-  dibujarRutaAlIncidente(llamadaSeleccionada);
+function retrySelectedRoute() {
+  if (!selectedCall) return;
+  const routeKey = `${selectedCall.id}:${selectedCall.latitude}:${selectedCall.longitude}`;
+  requestedRoutes.delete(routeKey);
+  drawRouteToIncident(selectedCall);
 }
 
-function obtenerUbicacionParaRuta() {
+function getRouteOrigin() {
   return new Promise(resolve => {
     if (!navigator.geolocation) { resolve(null); return; }
     navigator.geolocation.getCurrentPosition(
       pos => {
-        ubicacionActualOperador = {
+        currentOperatorLocation = {
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
           accuracy: pos.coords.accuracy
         };
-        mostrarMarcadorUbicacion(ubicacionActualOperador);
-        resolve(ubicacionActualOperador);
+        showLocationMarker(currentOperatorLocation);
+        resolve(currentOperatorLocation);
       },
       () => resolve(null),
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 120000 }
@@ -1194,19 +1207,19 @@ function obtenerUbicacionParaRuta() {
   });
 }
 
-function mostrarMarcadorUbicacion(ubicacion) {
-  if (!mapa || !ubicacion) return;
-  const latLng = [ubicacion.lat, ubicacion.lng];
-  const accuracy = Math.max(ubicacion.accuracy || 100, 40);
-  if (marcadorDispositivo) mapa.removeLayer(marcadorDispositivo);
-  if (precisionDispositivo) mapa.removeLayer(precisionDispositivo);
-  precisionDispositivo = L.circle(latLng, { radius: accuracy, color: '#4da3ff', fillColor: '#4da3ff', fillOpacity: 0.14, weight: 1.5 }).addTo(mapa);
-  marcadorDispositivo = L.circleMarker(latLng, { radius: 8, color: '#ffffff', weight: 3, fillColor: '#1683ff', fillOpacity: 1 }).addTo(mapa).bindPopup(`Tu ubicación aproximada<br>Precisión: ${Math.round(accuracy)} m`);
+function showLocationMarker(location) {
+  if (!map || !location) return;
+  const latLng = [location.lat, location.lng];
+  const accuracy = Math.max(location.accuracy || 100, 40);
+  if (deviceMarker) map.removeLayer(deviceMarker);
+  if (deviceAccuracy) map.removeLayer(deviceAccuracy);
+  deviceAccuracy = L.circle(latLng, { radius: accuracy, color: '#4da3ff', fillColor: '#4da3ff', fillOpacity: 0.14, weight: 1.5 }).addTo(map);
+  deviceMarker = L.circleMarker(latLng, { radius: 8, color: '#ffffff', weight: 3, fillColor: '#1683ff', fillOpacity: 1 }).addTo(map).bindPopup(`Tu ubicación aproximada<br>Precisión: ${Math.round(accuracy)} m`);
 }
 
-function actualizarMapa(l) {
-  solicitudRutaId++;
-  if (rutaIncidente && mapa) { mapa.removeLayer(rutaIncidente); rutaIncidente = null; }
+function updateMap(l) {
+  routeRequestId++;
+  if (incidentRoute && map) { map.removeLayer(incidentRoute); incidentRoute = null; }
   if (!l) {
     $('mapa-titulo').textContent =
       'Sin incidente seleccionado';
@@ -1234,25 +1247,25 @@ function actualizarMapa(l) {
     return;
   }
 
-  initMapa();
+  initializeMap();
 
-  if (!mapa) return;
+  if (!map) return;
 
-  mapa.setView(
+  map.setView(
     [l.latitude, l.longitude],
     16
   );
 
-  if (marcador) {
-    mapa.removeLayer(marcador);
+  if (incidentMarker) {
+    map.removeLayer(incidentMarker);
   }
 
-  marcador =
+  incidentMarker =
     L.marker([
       l.latitude,
       l.longitude
     ])
-      .addTo(mapa)
+      .addTo(map)
       .bindPopup(
         escapeHtml(
           l.address ||
@@ -1261,16 +1274,16 @@ function actualizarMapa(l) {
         )
       );
 
-  dibujarRutaAlIncidente(l);
+  drawRouteToIncident(l);
 
   setTimeout(
-    () => mapa.invalidateSize(),
+    () => map.invalidateSize(),
     50
   );
 }
 
-function cambiarVista(vista) {
-  vistaActual = 'info';
+function changeView(viewName) {
+  currentView = 'info';
 
   $('mapa-container')
     ?.classList.add('visible');
@@ -1278,8 +1291,8 @@ function cambiarVista(vista) {
   $('info-container')
     ?.classList.remove('hidden-view');
 
-  initMapa();
-  setTimeout(() => mapa?.invalidateSize(true), 60);
+  initializeMap();
+  setTimeout(() => map?.invalidateSize(true), 60);
 }
 
 
@@ -1287,11 +1300,11 @@ function cambiarVista(vista) {
 // COLAS
 // ======================================================
 
-async function cargarCola() {
-  if (!sesion) return;
+async function loadQueue() {
+  if (!session) return;
 
   try {
-    const rutas = {
+    const routes = {
       pendientes:
         '/llamadas/pending',
 
@@ -1307,7 +1320,7 @@ async function cargarCola() {
       pr,
       c
     ] = await Promise.all(
-      Object.entries(rutas)
+      Object.entries(routes)
         .map(
           async ([k, r]) => {
             const resp =
@@ -1328,77 +1341,61 @@ async function cargarCola() {
     for (
       const [k, v] of [p, pr, c]
     ) {
-      cacheColas[k] = v;
+      queueCache[k] = v;
     }
 
-    notificarNuevasUrgencias([
+    notifyNewUrgencies([
       ...cacheColas.pendientes,
       ...cacheColas['en-curso'],
       ...cacheColas.cerradas
     ]);
-    colasInicializadas = true;
+    queuesInitialized = true;
 
-    actualizarContadores();
+    updateCounters();
 
-    renderizarLista();
+    renderList();
 
-    if (llamadaSeleccionada) {
-      const nueva =
-        Object.values(cacheColas)
+    if (selectedCall) {
+      const newValue =
+        Object.values(queueCache)
           .flat()
           .find(
             x =>
               x.id ===
-              llamadaSeleccionada.id
+              selectedCall.id
           );
 
-      llamadaSeleccionada =
-        nueva || null;
+      selectedCall =
+        newValue || null;
 
-      renderizarDetalle(
-        llamadaSeleccionada
+      renderDetails(
+        selectedCall
       );
 
-      if (!llamadaSeleccionada) actualizarMapa(null);
+      if (!selectedCall) updateMap(null);
     }
-
-    $('indicador-estado').className =
-      'indicador online';
-
-    $('estado-texto').textContent =
-      'Operativo';
 
   } catch (e) {
-    if (e.message !== 'No autenticado') {
-      $('indicador-estado').className =
-        'indicador';
-
-        $('estado-texto').textContent =
-          e.message === 'HTTP 403'
-            ? 'Sin permisos'
-            : e.message === 'HTTP 500'
-              ? 'Error del servidor'
-              : 'Sin conexión';
-    }
+    if (e.message !== 'No autenticado') console.error('No se pudieron cargar las llamadas.', e);
   }
 }
 
-function actualizarContadores() {
+function updateCounters() {
   $('cont-pendientes').textContent =
-    cacheColas.pendientes.length;
+    queueCache.pendientes.length;
 
   $('cont-en-curso').textContent =
-    cacheColas['en-curso'].length;
+    queueCache['en-curso'].length;
 
   $('cont-cerradas').textContent =
-    cacheColas.cerradas.length;
+    queueCache.cerradas.length;
 }
 
-function listaActual() {
-  return cacheColas[colaActual] || [];
+function currentList() {
+  return queueCache[currentQueue] || [];
 }
 
-function clasePrioridad(p) {
+function priorityClass(p) {
   return String(
     p || 'VERDE'
   ).toUpperCase();
@@ -1409,21 +1406,21 @@ function clasePrioridad(p) {
 // PALABRAS DESTACADAS
 // ======================================================
 
-function normalizarPalabrasDestacadas(valor) {
-  if (Array.isArray(valor)) {
-    return valor
+function normalizeHighlightedWords(value) {
+  if (Array.isArray(value)) {
+    return value
       .filter(Boolean)
       .map(String);
   }
 
-  if (valor == null) {
+  if (value == null) {
     return [];
   }
 
-  if (typeof valor === 'string') {
+  if (typeof value === 'string') {
     try {
       const parsed =
-        JSON.parse(valor);
+        JSON.parse(value);
 
       return Array.isArray(parsed)
         ? parsed
@@ -1439,12 +1436,12 @@ function normalizarPalabrasDestacadas(valor) {
   return [];
 }
 
-function etiquetaInstitucion(valor) {
+function institutionLabel(value) {
   return {
     carabineros: 'Carabineros',
     samu: 'SAMU',
     bomberos: 'Bomberos'
-  }[String(valor).toLowerCase()] || String(valor);
+  }[String(value).toLowerCase()] || String(value);
 }
 
 
@@ -1452,21 +1449,21 @@ function etiquetaInstitucion(valor) {
 // TRANSCRIPCIÓN
 // ======================================================
 
-function limpiarTranscripcion(valor) {
-  if (valor == null) {
+function cleanTranscription(value) {
+  if (value == null) {
     return '';
   }
 
-  if (typeof valor === 'object') {
+  if (typeof value === 'object') {
     return String(
-      valor.text ||
-      valor.transcript ||
+      value.text ||
+      value.transcript ||
       ''
     ).trim();
   }
 
   const s =
-    String(valor).trim();
+    String(value).trim();
 
   if (!s) {
     return '';
@@ -1499,13 +1496,13 @@ function limpiarTranscripcion(valor) {
   return s;
 }
 
-function truncar(valor, limite) {
-  const texto =
-    limpiarTranscripcion(valor);
+function truncateText(value, limit) {
+  const text =
+    cleanTranscription(value);
 
-  return texto.length > limite
-    ? texto.slice(0, limite) + '…'
-    : texto;
+  return text.length > limit
+    ? text.slice(0, limit) + '…'
+    : text;
 }
 
 
@@ -1513,9 +1510,9 @@ function truncar(valor, limite) {
 // TÍTULO OPERATIVO
 // ======================================================
 
-function obtenerTituloOperativo(l) {
-  const palabras =
-    normalizarPalabrasDestacadas(
+function getOperationalTitle(l) {
+  const words =
+    normalizeHighlightedWords(
       l.highlightedWords
     ).map(
       x =>
@@ -1523,7 +1520,7 @@ function obtenerTituloOperativo(l) {
     );
 
   if (
-    palabras.some(
+    words.some(
       x =>
         x.includes('incendi') ||
         x.includes('fuego')
@@ -1533,7 +1530,7 @@ function obtenerTituloOperativo(l) {
   }
 
   if (
-    palabras.some(
+    words.some(
       x =>
         x.includes('accidente') ||
         x.includes('choque') ||
@@ -1544,7 +1541,7 @@ function obtenerTituloOperativo(l) {
   }
 
   if (
-    palabras.some(
+    words.some(
       x =>
         x.includes('robo') ||
         x.includes('asalto')
@@ -1554,7 +1551,7 @@ function obtenerTituloOperativo(l) {
   }
 
   if (
-    palabras.some(
+    words.some(
       x =>
         x.includes('paro') ||
         x.includes('infarto') ||
@@ -1573,22 +1570,22 @@ function obtenerTituloOperativo(l) {
 // RENDERIZADO DE LLAMADAS
 // ======================================================
 
-function renderizarLista() {
-  const c =
+function renderList() {
+  const callListElement =
     $('lista-llamadas');
 
-  const lista =
-    listaActual();
+  const calls =
+    currentList();
 
-  if (!c) return;
+  if (!callListElement) return;
 
-  if (!lista.length) {
-    c.innerHTML = `
+  if (!calls.length) {
+    callListElement.innerHTML = `
       <p class="estado-vacio">
         ${
-          colaActual === 'pendientes'
+          currentQueue === 'pendientes'
             ? 'No hay llamadas sin asignar.'
-            : colaActual === 'en-curso'
+            : currentQueue === 'en-curso'
               ? 'No hay casos en curso.'
               : 'Aún no hay casos cerrados.'
         }
@@ -1598,90 +1595,90 @@ function renderizarLista() {
     return;
   }
 
-  const terminoBusqueda = $('busqueda-incidentes')?.value
+  const searchTerm = $('busqueda-incidentes')?.value
     .trim()
     .toLocaleLowerCase('es-CL') || '';
-  const listaFiltrada = terminoBusqueda
-    ? lista.filter(llamada => {
-        const buscarEn = [
-          llamada.id,
-          llamada.priority,
-          obtenerTituloOperativo(llamada),
-          llamada.address,
-          llamada.addressDetectada,
+  const filteredCalls = searchTerm
+    ? calls.filter(call => {
+        const searchIn = [
+          call.id,
+          call.priority,
+          getOperationalTitle(call),
+          call.address,
+          call.addressDetectada,
           'Llamada en vivo'
         ].filter(Boolean).join(' ').toLocaleLowerCase('es-CL');
-        return buscarEn.includes(terminoBusqueda);
+        return searchIn.includes(searchTerm);
       })
-    : lista;
+    : calls;
 
-  if (!listaFiltrada.length) {
-    c.innerHTML = '<p class="estado-vacio">No hay incidentes que coincidan con la búsqueda.</p>';
+  if (!filteredCalls.length) {
+    callListElement.innerHTML = '<p class="estado-vacio">No hay incidentes que coincidan con la búsqueda.</p>';
     return;
   }
 
-  c.innerHTML = listaFiltrada
+  callListElement.innerHTML = filteredCalls
     .map(l => {
 
-      const prioridad =
-        clasePrioridad(
+      const priority =
+        priorityClass(
           l.priority
         );
 
-      const direccion =
+      const address =
         l.address ||
         l.addressDetectada ||
         'Ubicación no identificada';
 
-      const seleccionada =
-        llamadaSeleccionada?.id ===
+      const isSelected =
+        selectedCall?.id ===
         l.id;
-      const estadoCaso = obtenerEstadoCaso(l);
-      const tipoIncidente = obtenerTituloOperativo(l)
+      const caseStatus = getCaseStatus(l);
+      const incidentType = getOperationalTitle(l)
         .replace(/\s+reportad[oa]$/i, '');
 
-      const claseUrgencia =
-        prioridad === 'URGENTE'
+      const priorityClass =
+        priority === 'URGENTE'
           ? 'alta'
-          : prioridad === 'ROJA'
+          : priority === 'ROJA'
             ? 'alta'
-            : prioridad === 'MEDIA'
+            : priority === 'MEDIA'
               ? 'media'
               : 'baja';
 
-      const etiquetaPrioridad =
-        prioridad === 'URGENTE'
+      const priorityLabel =
+        priority === 'URGENTE'
           ? 'Urgente'
-          : prioridad === 'ROJA'
+          : priority === 'ROJA'
             ? 'Roja'
-            : prioridad === 'MEDIA'
+            : priority === 'MEDIA'
               ? 'Media'
                 : 'Verde';
 
       return `
         <div
-          class="llamada-item ${seleccionada ? 'seleccionada' : ''} prioridad-${prioridad.toLowerCase()} estado-${estadoCaso.clase}"
+          class="llamada-item ${isSelected ? 'seleccionada' : ''} prioridad-${priority.toLowerCase()} estado-${caseStatus.className}"
           data-id="${escapeHtml(l.id)}"
           role="button"
           tabindex="0"
-          aria-label="Caso #${escapeHtml(l.id)}, ${escapeHtml(prioridad)}, ${escapeHtml(tipoIncidente)}, ${escapeHtml(direccion)}, ${escapeHtml(estadoCaso.etiqueta)}"
+          aria-label="Caso #${escapeHtml(l.id)}, ${escapeHtml(priority)}, ${escapeHtml(incidentType)}, ${escapeHtml(address)}, ${escapeHtml(caseStatus.label)}"
         >
 
           <div class="llamada-header">
-            <span class="llamada-urgencia ${claseUrgencia}">${escapeHtml(etiquetaPrioridad)}</span>
+            <span class="llamada-urgencia ${priorityClass}">${escapeHtml(priorityLabel)}</span>
             <span class="llamada-id">#${escapeHtml(l.id)}</span>
           </div>
 
-          <div class="llamada-titulo">${escapeHtml(capitalizarPrimeraLetra(tipoIncidente))}</div>
+          <div class="llamada-titulo">${escapeHtml(capitalizeFirstLetter(incidentType))}</div>
           <div class="llamada-ubicacion">
             <span class="llamada-ubicacion-label">Ubicación</span>
-            <span class="ubicacion" title="${escapeHtml(direccion)}">${escapeHtml(direccion)}</span>
+            <span class="ubicacion" title="${escapeHtml(address)}">${escapeHtml(address)}</span>
           </div>
           <div class="llamada-meta">
             <span>Llamada en vivo</span>
-            <time>${escapeHtml(formatearFecha(l.createdAt))}</time>
+            <time>${escapeHtml(formatDate(l.createdAt))}</time>
           </div>
-          <span class="llamada-estado ${estadoCaso.clase}">${escapeHtml(estadoCaso.etiqueta)}</span>
+          <span class="llamada-estado ${caseStatus.className}">${escapeHtml(caseStatus.label)}</span>
 
         </div>
       `;
@@ -1700,7 +1697,7 @@ function renderizarLista() {
     .forEach(item => {
 
       const abrir = () => {
-        seleccionarLlamada(
+        selectCall(
           Number(
             item.dataset.id
           )
@@ -1729,17 +1726,17 @@ function renderizarLista() {
     });
 }
 
-function obtenerEstadoCaso(llamada) {
-  if (llamada.closureDate || colaActual === 'cerradas') {
-    return { etiqueta: 'Cerrado', clase: 'cerrado' };
+function getCaseStatus(call) {
+  if (call.closureDate || currentQueue === 'cerradas') {
+    return { label: 'Cerrado', className: 'cerrado' };
   }
-  if (llamada.assigned || colaActual === 'en-curso') {
-    return { etiqueta: 'En curso', clase: 'en-curso' };
+  if (call.assigned || currentQueue === 'en-curso') {
+    return { label: 'En curso', className: 'en-curso' };
   }
-  return { etiqueta: 'Sin asignar', clase: 'sin-asignar' };
+  return { label: 'Sin asignar', className: 'sin-asignar' };
 }
 
-function formatearFecha(iso) {
+function formatDate(iso) {
   if (!iso) {
     return '';
   }
@@ -1764,71 +1761,71 @@ function formatearFecha(iso) {
 // SELECCIÓN Y DETALLE
 // ======================================================
 
-function seleccionarLlamada(id) {
-  llamadaSeleccionada =
-    Object.values(cacheColas)
+function selectCall(id) {
+  selectedCall =
+    Object.values(queueCache)
       .flat()
       .find(
         x =>
           x.id === id
       ) || null;
 
-  renderizarLista();
+  renderList();
 
-  renderizarDetalle(
-    llamadaSeleccionada
+  renderDetails(
+    selectedCall
   );
 
-  actualizarMapa(
-    llamadaSeleccionada
+  updateMap(
+    selectedCall
   );
 }
 
-function generarResumenLocal(l) {
-  const palabras =
-    normalizarPalabrasDestacadas(
+function generateLocalSummary(l) {
+  const words =
+    normalizeHighlightedWords(
       l.highlightedWords
     ).map(
       x =>
         String(x).toLowerCase()
     );
 
-  let tipo =
+  let type =
     'Emergencia reportada';
 
   if (
-    palabras.some(
+    words.some(
       x =>
         x.includes('incendi') ||
         x.includes('fuego')
     )
   ) {
-    tipo =
+    type =
       'Incendio reportado';
 
   } else if (
-    palabras.some(
+    words.some(
       x =>
         x.includes('accidente') ||
         x.includes('choque') ||
         x.includes('atropell')
     )
   ) {
-    tipo =
+    type =
       'Accidente reportado';
 
   } else if (
-    palabras.some(
+    words.some(
       x =>
         x.includes('robo') ||
         x.includes('asalto')
     )
   ) {
-    tipo =
+    type =
       'Robo o asalto reportado';
   }
 
-  const direccion =
+  const address =
     l.address ||
     l.addressDetectada
       ? ` en ${
@@ -1837,10 +1834,10 @@ function generarResumenLocal(l) {
         }`
       : '';
 
-  return `${tipo}${direccion}. Revisa la transcripción completa para el detalle de la llamada.`;
+  return `${type}${address}. Revisa la transcripción completa para el detalle de la llamada.`;
 }
 
-function renderizarDetalle(l) {
+function renderDetails(l) {
   const c = $('info-container');
   if (!c) return;
   if (!l) {
@@ -1848,84 +1845,108 @@ function renderizarDetalle(l) {
     return;
   }
 
-  const prioridad = clasePrioridad(l.priority);
-  const prioridadCss = ({
+  const priority = priorityClass(l.priority);
+  const priorityCssClass = ({
     URGENTE: 'urgente',
     ROJA: 'roja',
     MEDIA: 'media',
     VERDE: 'verde'
-  })[prioridad] || 'verde';
-  const puedeAsignar = colaActual === 'pendientes' && !vistaPreviaSoloLectura;
-  const puedeCerrar = colaActual === 'en-curso' && !vistaPreviaSoloLectura;
-  const resumen = l.operationalSummary || generarResumenLocal(l);
-  const transcripcion = limpiarTranscripcion(l.transcription);
-  const tieneUbicacionConfirmada = l.latitude != null &&
+  })[priority] || 'verde';
+  const canAssign = currentQueue === 'pendientes' && !readOnlyPreview;
+  const canClose = currentQueue === 'en-curso' && !readOnlyPreview;
+  const canAddInformation = currentQueue === 'en-curso' &&
+    l.closureDate == null &&
+    !readOnlyPreview &&
+    (['supervisor', 'administrator'].includes(session?.role) ||
+      (session?.role === 'operator' && l.assignedOperator === session.username));
+  const summary = l.operationalSummary || generateLocalSummary(l);
+  const transcription = cleanTranscription(l.transcription);
+  const updates = Array.isArray(l.informationUpdates) ? l.informationUpdates : [];
+  const hasConfirmedLocation = l.latitude != null &&
     l.longitude != null &&
     Number.isFinite(Number(l.latitude)) &&
     Number.isFinite(Number(l.longitude)) &&
     Math.abs(Number(l.latitude)) <= 90 &&
     Math.abs(Number(l.longitude)) <= 180;
-  const palabras = normalizarPalabrasDestacadas(l.highlightedWords);
-  const razones = normalizarPalabrasDestacadas(l.classificationReasons);
-  const instituciones = normalizarPalabrasDestacadas(l.suggestedInstitutions);
-  const direccion = l.address || l.addressDetectada || 'Ubicación no identificada';
-  const estadoCaso = obtenerEstadoCaso(l);
-  const tipoEmergencia = obtenerTituloOperativo(l).replace(/\s+reportad[oa]$/i, '');
+  const words = normalizeHighlightedWords(l.highlightedWords);
+  const reasons = normalizeHighlightedWords(l.classificationReasons);
+  const institutions = normalizeHighlightedWords(l.suggestedInstitutions);
+  const recommendations = Array.isArray(l.institutionRecommendations)
+    ? l.institutionRecommendations
+    : [];
+  const address = l.address || l.addressDetectada || 'Ubicación no identificada';
+  const caseStatus = getCaseStatus(l);
+  const emergencyType = getOperationalTitle(l).replace(/\s+reportad[oa]$/i, '');
 
   c.innerHTML = `
     <article class="detalle-contenido">
       <header class="detalle-cabecera">
         <div class="detalle-caso-id">
           <strong>Caso #${escapeHtml(l.id)}</strong>
-          <span>${escapeHtml(formatearFecha(l.createdAt))}</span>
+          <span>${escapeHtml(formatDate(l.createdAt))}</span>
           ${l.assignedOperator ? `<span>Asignado a ${escapeHtml(l.assignedOperator)}</span>` : ''}
         </div>
         <div class="detalle-cabecera-badges">
-          <span class="detalle-prioridad ${prioridadCss}">
+          <span class="detalle-prioridad ${priorityCssClass}">
             <span class="detalle-prioridad-punto" aria-hidden="true"></span>
-            ${escapeHtml(capitalizarPrimeraLetra(prioridad.toLocaleLowerCase('es-CL')))}
+            ${escapeHtml(capitalizeFirstLetter(priority.toLocaleLowerCase('es-CL')))}
           </span>
-          <span class="detalle-tipo-emergencia">${escapeHtml(capitalizarPrimeraLetra(tipoEmergencia))}</span>
+          <span class="detalle-tipo-emergencia">${escapeHtml(capitalizeFirstLetter(emergencyType))}</span>
         </div>
       </header>
 
       <section class="detalle-ubicacion" aria-label="Ubicación del incidente">
         <div>
           <span class="detalle-etiqueta">Ubicación</span>
-          <h1>${escapeHtml(direccion)}</h1>
+          <h1>${escapeHtml(address)}</h1>
         </div>
-        <span class="detalle-ubicacion-estado ${tieneUbicacionConfirmada ? 'confirmada' : 'no-identificada'}">
-          ${tieneUbicacionConfirmada ? 'Confirmada' : 'No identificada'}
+        <span class="detalle-ubicacion-estado ${hasConfirmedLocation ? 'confirmada' : 'no-identificada'}">
+          ${hasConfirmedLocation ? 'Confirmada' : 'No identificada'}
         </span>
       </section>
 
       <section class="detalle-estado-linea">
         <span class="detalle-etiqueta">Estado</span>
-        <span class="detalle-estado ${estadoCaso.clase}">${escapeHtml(estadoCaso.etiqueta)}</span>
+        <span class="detalle-estado ${caseStatus.className}">${escapeHtml(caseStatus.label)}</span>
       </section>
 
       <section class="detalle-resumen">
         <h2 class="detalle-seccion-titulo">Resumen operativo</h2>
-        <p>${escapeHtml(capitalizarPrimeraLetra(resumen))}</p>
+        <p>${escapeHtml(capitalizeFirstLetter(summary))}</p>
       </section>
 
       <section class="detalle-clasificacion" aria-label="Clasificación automática">
         <div class="detalle-evidencia">
           <h2 class="detalle-seccion-titulo">Motivos detectados</h2>
           <div class="detalle-evidencia-valores">
-            ${palabras.length
-              ? palabras.map(p => `<span class="detalle-chip">${escapeHtml(capitalizarPrimeraLetra(p))}</span>`).join('')
+            ${words.length
+              ? words.map(p => `<span class="detalle-chip">${escapeHtml(capitalizeFirstLetter(p))}</span>`).join('')
               : '<span class="detalle-vacio">Sin motivos detectados</span>'}
           </div>
-          ${razones.length
-            ? `<p class="detalle-justificacion">${escapeHtml(razones.map(capitalizarPrimeraLetra).join(' · '))}</p>`
+          ${reasons.length
+            ? `<p class="detalle-justificacion">${escapeHtml(reasons.map(capitalizeFirstLetter).join(' · '))}</p>`
             : ''}
         </div>
         <div class="detalle-evidencia">
-          <h2 class="detalle-seccion-titulo">Respuesta sugerida <span class="detalle-sugerencia-label">Sugerencia del sistema</span></h2>
+          <h2 class="detalle-seccion-titulo">Instituciones sugeridas <span class="detalle-sugerencia-label">Revisar antes de activar</span></h2>
           <div class="detalle-evidencia-valores">
-            ${instituciones.length
-              ? instituciones.map(i => `<span class="detalle-chip">${escapeHtml(capitalizarPrimeraLetra(etiquetaInstitucion(i)))}</span>`).join('')
+            ${recommendations.length
+              ? recommendations.map(r => {
+                  const role = r.role === 'PRIMARY' ? 'Principal' : 'Secundaria';
+                  const severity = ['URGENTE', 'ROJA', 'MEDIA', 'VERDE'].includes(r.severity)
+                    ? r.severity
+                    : 'VERDE';
+                  return `<article class="detalle-recomendacion">
+                    <div class="detalle-recomendacion-cabecera">
+                      <strong>${escapeHtml(institutionLabel(r.institution))}</strong>
+                      <span>${role}</span>
+                      <span class="detalle-recomendacion-prioridad ${severity.toLowerCase()}">${escapeHtml(severity)}</span>
+                    </div>
+                    <p>${escapeHtml(r.reason || 'Recomendación automática; validar con el operador.')}</p>
+                  </article>`;
+                }).join('')
+              : institutions.length
+                ? institutions.map(i => `<span class="detalle-chip">${escapeHtml(capitalizeFirstLetter(institutionLabel(i)))}</span>`).join('')
               : '<span class="detalle-vacio">Sin institución sugerida</span>'}
           </div>
         </div>
@@ -1936,30 +1957,57 @@ function renderizarDetalle(l) {
           <h2 class="detalle-seccion-titulo">Relato de la llamada</h2>
           <span class="detalle-transcripcion-meta">Transcripción ASR · Llamada en vivo</span>
         </div>
-        <p class="detalle-transcripcion">${escapeHtml(transcripcion || 'Transcripción no disponible.')}</p>
+        <p class="detalle-transcripcion">${escapeHtml(transcription || 'Transcripción no disponible.')}</p>
       </section>
+
+      ${updates.length ? `
+        <section class="detalle-actualizaciones" aria-label="Información complementaria">
+          <h2 class="detalle-seccion-titulo">Información complementaria</h2>
+          <ol class="detalle-actualizaciones-lista">
+            ${updates.map(update => `
+              <li>
+                <p>${escapeHtml(update.information || '')}</p>
+                <span>${escapeHtml(update.createdBy || 'Operador')} · ${escapeHtml(formatDate(update.createdAt))}</span>
+              </li>
+            `).join('')}
+          </ol>
+        </section>
+      ` : ''}
+
+      ${canAddInformation ? `
+        <form class="detalle-actualizacion-form" id="form-informacion-complementaria">
+          <label for="input-informacion-complementaria">Agregar información al caso</label>
+          <textarea id="input-informacion-complementaria" maxlength="5000" required
+            placeholder="Registra nuevos antecedentes recibidos. No se creará un caso nuevo."></textarea>
+          <button class="btn-accion secundario" type="submit">Guardar información</button>
+        </form>
+      ` : ''}
 
       ${l.closureComment ? `
         <section class="detalle-resolucion">
           <span class="detalle-etiqueta">Resolución</span>
-          <p>${escapeHtml(capitalizarPrimeraLetra(l.closureComment))}</p>
+          <p>${escapeHtml(capitalizeFirstLetter(l.closureComment))}</p>
         </section>
       ` : ''}
 
       <div class="detalle-acciones">
-        ${puedeAsignar ? '<button class="btn-accion primario accion-principal" id="accion-asignar">Tomar caso</button>' : ''}
-        ${puedeCerrar ? '<button class="btn-accion primario" id="accion-cerrar">Cerrar caso</button>' : ''}
+        ${canAssign ? '<button class="btn-accion primario accion-principal" id="accion-asignar">Tomar caso</button>' : ''}
+        ${canClose ? '<button class="btn-accion primario" id="accion-cerrar">Cerrar caso</button>' : ''}
       </div>
     </article>
   `;
 
-  $('accion-asignar')?.addEventListener('click', () => asignarCaso(l.id));
-  $('accion-cerrar')?.addEventListener('click', () => abrirModalCerrar(l.id));
+  $('accion-asignar')?.addEventListener('click', () => assignCase(l.id));
+  $('accion-cerrar')?.addEventListener('click', () => openCloseModal(l.id));
+  $('form-informacion-complementaria')?.addEventListener('submit', event => {
+    event.preventDefault();
+    appendCaseInformation(l.id);
+  });
 }
 
-function capitalizarPrimeraLetra(valor) {
-  const texto = String(valor ?? '').trim();
-  return texto ? texto.charAt(0).toLocaleUpperCase('es-CL') + texto.slice(1) : texto;
+function capitalizeFirstLetter(value) {
+  const text = String(value ?? '').trim();
+  return text ? text.charAt(0).toLocaleUpperCase('es-CL') + text.slice(1) : text;
 }
 
 
@@ -1967,7 +2015,50 @@ function capitalizarPrimeraLetra(valor) {
 // GESTIÓN DE CASOS
 // ======================================================
 
-async function asignarCaso(id) {
+async function appendCaseInformation(id) {
+  const input = $('input-informacion-complementaria');
+  const information = String(input?.value || '').trim();
+  if (!information) {
+    showAlert('Escribe la información complementaria antes de guardarla.', 'error');
+    return;
+  }
+
+  try {
+    const updateId = generateUpdateId();
+    const response = await apiFetch(`/api/llamadas/${id}/updates`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updateId, information })
+    });
+    const data = await readResponse(response);
+    if (!response.ok) {
+      throw new Error(data.error || data.message || 'No se pudo actualizar el caso.');
+    }
+
+    for (const queue of Object.values(queueCache)) {
+      const index = queue.findIndex(call => call.id === id);
+      if (index >= 0) queue[index] = data;
+    }
+    selectedCall = data;
+    renderList();
+    renderDetails(data);
+    showAlert('Información agregada al caso existente.', 'ok');
+  } catch (error) {
+    if (error.message !== 'No autenticado') {
+      showAlert(error.message, 'error');
+    }
+  }
+}
+
+function generateUpdateId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, character => {
+    const random = Math.floor(Math.random() * 16);
+    return (character === 'x' ? random : (random & 0x3) | 0x8).toString(16);
+  });
+}
+
+async function assignCase(id) {
   try {
     const r =
       await apiFetch(
@@ -1978,7 +2069,7 @@ async function asignarCaso(id) {
       );
 
     const d =
-      await leerRespuesta(r);
+      await readResponse(r);
 
     if (!r.ok) {
       throw new Error(
@@ -1987,34 +2078,34 @@ async function asignarCaso(id) {
       );
     }
 
-    mostrarAlerta(
+    showAlert(
       (d.mensaje || d.message) ||
       'Caso asignado.',
       'ok'
     );
 
-    registrarEvento(
+    recordEvent(
       (d.mensaje || d.message) ||
       `Caso #${id} asignado.`
     );
 
-    await cargarCola();
+    await loadQueue();
 
-    colaActual =
+    currentQueue =
       'en-curso';
 
-    actualizarTabs();
+    updateTabs();
 
-    renderizarLista();
+    renderList();
 
-    seleccionarLlamada(id);
+    selectCall(id);
 
   } catch (e) {
     if (
       e.message !==
       'No autenticado'
     ) {
-      mostrarAlerta(
+      showAlert(
         e.message,
         'error'
       );
@@ -2022,7 +2113,7 @@ async function asignarCaso(id) {
   }
 }
 
-function abrirModalCerrar(id) {
+function openCloseModal(id) {
   $('modal-titulo').textContent =
     `Cerrar caso #${id}`;
 
@@ -2055,12 +2146,12 @@ function abrirModalCerrar(id) {
   $('btn-confirmar-cerrar').onclick =
     async () => {
 
-      const comentario =
+      const comment =
         $('input-comentario')
           .value
           .trim();
 
-      if (!comentario) {
+      if (!comment) {
         return;
       }
 
@@ -2076,13 +2167,13 @@ function abrirModalCerrar(id) {
               },
               body:
                 JSON.stringify({
-                  comment: comentario
+                  comment
                 })
             }
           );
 
         const d =
-          await leerRespuesta(r);
+          await readResponse(r);
 
         if (!r.ok) {
           throw new Error(
@@ -2094,32 +2185,32 @@ function abrirModalCerrar(id) {
         $('modal').hidden =
           true;
 
-        mostrarAlerta(
+        showAlert(
           (d.mensaje || d.message) ||
           'Caso cerrado.',
           'ok'
         );
 
-        registrarEvento(
+        recordEvent(
           (d.mensaje || d.message) ||
           `Caso #${id} cerrado.`
         );
 
-        colaActual =
+        currentQueue =
           'cerradas';
 
-        await cargarCola();
+        await loadQueue();
 
-        actualizarTabs();
+        updateTabs();
 
-        seleccionarLlamada(id);
+        selectCall(id);
 
       } catch (e) {
         if (
           e.message !==
           'No autenticado'
         ) {
-          mostrarAlerta(
+          showAlert(
             e.message,
             'error'
           );
@@ -2133,8 +2224,8 @@ function abrirModalCerrar(id) {
 // MÉTRICAS
 // ======================================================
 
-async function actualizarMetricas() {
-  if (!sesion) {
+async function updateMetrics() {
+  if (!session) {
     return;
   }
 
@@ -2173,7 +2264,7 @@ async function actualizarMetricas() {
   }
 }
 
-function actualizarTabs() {
+function updateTabs() {
   document
     .querySelectorAll(
       '.tab'
@@ -2183,7 +2274,7 @@ function actualizarTabs() {
         b.classList.toggle(
           'activo',
           b.dataset.tab ===
-            colaActual
+            currentQueue
         )
     );
 }
@@ -2193,14 +2284,14 @@ function actualizarTabs() {
 // USUARIOS / ADMINISTRADOR
 // ======================================================
 
-async function abrirVistaPrevia(institucion) {
+async function openPreviewSession(institution) {
   try {
     const r = await apiFetch(
-      `/api/admin/preview-session/${institucion}`,
+      `/api/admin/preview-session/${institution}`,
       { method: 'POST' }
     );
 
-    const d = await leerRespuesta(r);
+    const d = await readResponse(r);
 
     if (!r.ok) {
       throw new Error(d.error || 'No se pudo abrir la vista previa.');
@@ -2220,35 +2311,35 @@ async function abrirVistaPrevia(institucion) {
     );
 
     if (!ventana) {
-      mostrarAlerta(
+      showAlert(
         'El navegador bloqueó la pestaña nueva. Habilita las ventanas emergentes para este sitio e inténtalo de nuevo.',
         'error'
       );
       return;
     }
 
-    mostrarAlerta(
-      `Vista previa de ${etiquetaInstitucion(institucion)} abierta en una pestaña nueva (expira en ${d.expiresInMinutes} min, solo lectura).`,
+    showAlert(
+      `Vista previa de ${institutionLabel(institution)} abierta en una pestaña nueva (expira en ${d.expiresInMinutes} min, solo lectura).`,
       'ok'
     );
   } catch (e) {
     if (e.message !== 'No autenticado') {
-      mostrarAlerta(e.message, 'error');
+      showAlert(e.message, 'error');
     }
   }
 }
 
-function etiquetaInstitucion(institucion) {
+function institutionLabel(institution) {
   return (
     { bomberos: 'Bomberos', carabineros: 'Carabineros', samu: 'SAMU' }[
-      institucion
-    ] || institucion
+      institution
+    ] || institution
   );
 }
 
-async function cargarUsuarios() {
+async function loadUsers() {
   if (
-    sesion?.role !==
+    session?.role !==
     'administrator'
   ) {
     return;
@@ -2261,7 +2352,7 @@ async function cargarUsuarios() {
       );
 
     const d =
-      await leerRespuesta(r);
+      await readResponse(r);
 
     if (!r.ok) {
       throw new Error(
@@ -2270,7 +2361,7 @@ async function cargarUsuarios() {
       );
     }
 
-    renderizarUsuarios(d);
+    renderUsers(d);
 
   } catch (e) {
     if (
@@ -2287,7 +2378,7 @@ async function cargarUsuarios() {
   }
 }
 
-function renderizarUsuarios(usuarios) {
+function renderUsers(usuarios) {
   $('usuarios-total').textContent =
     `${usuarios.length} ${usuarios.length === 1 ? 'usuario' : 'usuarios'}`;
 
@@ -2306,13 +2397,13 @@ function renderizarUsuarios(usuarios) {
     usuarios
       .map(
         u => {
-          const estado = u.active
-            ? { texto: 'Activo', clase: 'activo' }
-            : { texto: 'Inactivo', clase: 'inactivo' };
-          const institucion = u.institution
-            ? etiquetaInstitucion(u.institution)
+          const status = u.active
+            ? { label: 'Activo', className: 'activo' }
+            : { label: 'Inactivo', className: 'inactivo' };
+          const institution = u.institution
+            ? institutionLabel(u.institution)
             : 'Administración general';
-          const esUsuarioActual = u.username === sesion.username;
+          const isCurrentUser = u.username === session.username;
 
           return `
             <article class="usuario-card">
@@ -2328,20 +2419,20 @@ function renderizarUsuarios(usuarios) {
               </div>
 
               <div class="usuario-etiquetas" aria-label="Rol, institución y estado">
-                <span class="usuario-etiqueta rol">${escapeHtml(etiquetaRol(u.role))}</span>
-                <span class="usuario-etiqueta institucion">${escapeHtml(institucion)}</span>
-                <span class="usuario-etiqueta estado ${estado.clase}">
-                  <span aria-hidden="true"></span>${estado.texto}
+                <span class="usuario-etiqueta rol">${escapeHtml(roleLabel(u.role))}</span>
+                <span class="usuario-etiqueta institucion">${escapeHtml(institution)}</span>
+                <span class="usuario-etiqueta estado ${status.className}">
+                  <span aria-hidden="true"></span>${status.label}
                 </span>
                 ${u.testAccount
                   ? '<span class="usuario-etiqueta prueba" title="Cuenta de solo lectura usada para vista previa">Cuenta de vista previa</span>'
                   : ''}
-                ${esUsuarioActual ? '<span class="usuario-etiqueta actual">Tu cuenta</span>' : ''}
+                ${isCurrentUser ? '<span class="usuario-etiqueta actual">Tu cuenta</span>' : ''}
               </div>
 
               <div class="acciones" aria-label="Acciones de usuario">
                 ${u.active
-                  ? `<button class="btn-accion peligro" data-accion="desactivar" data-id="${u.id}" ${esUsuarioActual ? 'disabled title="No puedes desactivar tu propia cuenta"' : ''}>Desactivar cuenta</button>`
+                  ? `<button class="btn-accion peligro" data-accion="desactivar" data-id="${u.id}" ${isCurrentUser ? 'disabled title="No puedes desactivar tu propia cuenta"' : ''}>Desactivar cuenta</button>`
                   : `<button class="btn-accion primario" data-accion="activar" data-id="${u.id}">Activar cuenta</button>`}
                 ${u.testAccount
                   ? ''
@@ -2363,8 +2454,8 @@ function renderizarUsuarios(usuarios) {
           'click',
           () =>
             b.dataset.accion === 'reset-clave'
-              ? restablecerClaveUsuario(Number(b.dataset.id))
-              : cambiarEstadoUsuario(
+              ? resetUserPassword(Number(b.dataset.id))
+              : changeUserStatus(
               Number(
                 b.dataset.id
               ),
@@ -2374,21 +2465,21 @@ function renderizarUsuarios(usuarios) {
     );
 }
 
-async function restablecerClaveUsuario(id) {
+async function resetUserPassword(id) {
   if (!confirm('¿Generar una contraseña temporal para este usuario? La actual dejará de funcionar y sus sesiones abiertas se cerrarán.')) return;
   try {
     const r = await apiFetch(`/api/users/${id}/reset-password`, { method: 'PATCH' });
-    const d = await leerRespuesta(r);
+    const d = await readResponse(r);
     if (!r.ok) throw new Error(d.error || 'No se pudo restablecer la contraseña');
     // prompt() permite seleccionar y copiar la clave temporal; solo se muestra una vez.
     window.prompt(`${d.message}\n\nContraseña temporal (cópiala ahora):`, d.temporaryPassword);
-    registrarEvento('Se generó una contraseña temporal para un usuario.');
+    recordEvent('Se generó una contraseña temporal para un usuario.');
   } catch (e) {
-    if (e.message !== 'No autenticado') mostrarAlerta(e.message, 'error');
+    if (e.message !== 'No autenticado') showAlert(e.message, 'error');
   }
 }
 
-async function cambiarEstadoUsuario(
+async function changeUserStatus(
   id,
   accion
 ) {
@@ -2402,7 +2493,7 @@ async function cambiarEstadoUsuario(
       );
 
     const d =
-      await leerRespuesta(r);
+      await readResponse(r);
 
     if (!r.ok) {
       throw new Error(
@@ -2411,7 +2502,7 @@ async function cambiarEstadoUsuario(
       );
     }
 
-    mostrarAlerta(
+    showAlert(
       `${d.username}: ${
         d.active
           ? 'activado'
@@ -2420,7 +2511,7 @@ async function cambiarEstadoUsuario(
       'ok'
     );
 
-    registrarEvento(
+    recordEvent(
       `${d.username} fue ${
         d.active
           ? 'activado'
@@ -2428,14 +2519,14 @@ async function cambiarEstadoUsuario(
       }.`
     );
 
-    await cargarUsuarios();
+    await loadUsers();
 
   } catch (e) {
     if (
       e.message !==
       'No autenticado'
     ) {
-      mostrarAlerta(
+      showAlert(
         e.message,
         'error'
       );
@@ -2443,13 +2534,13 @@ async function cambiarEstadoUsuario(
   }
 }
 
-function cambiarAdminTab(tab) {
-  if (tab === 'usuarios' && sesion?.role !== 'administrator') {
-    adminTabActual = 'incidentes';
+function changeAdminTab(tab) {
+  if (tab === 'usuarios' && session?.role !== 'administrator') {
+    currentAdminTab = 'incidentes';
     return;
   }
 
-  adminTabActual =
+  currentAdminTab =
     tab;
 
   document
@@ -2465,11 +2556,11 @@ function cambiarAdminTab(tab) {
         )
     );
 
-  const esUsuarios =
+  const isUsersView =
     tab === 'usuarios';
 
   $('panel-cola').style.display =
-    esUsuarios
+    isUsersView
       ? 'none'
       : 'flex';
 
@@ -2479,18 +2570,18 @@ function cambiarAdminTab(tab) {
   $('gestion-usuarios')
     .classList.toggle(
       'visible',
-      esUsuarios
+      isUsersView
     );
 
   $('detalle-menu').style.display =
-    esUsuarios
+    isUsersView
       ? 'none'
       : 'flex';
 
   $('info-container')
     .classList.toggle(
       'hidden-view',
-      esUsuarios
+      isUsersView
     );
 
   $('mapa-container')
@@ -2499,33 +2590,33 @@ function cambiarAdminTab(tab) {
       false
     );
 
-  if (esUsuarios) {
-    cargarUsuarios();
+  if (isUsersView) {
+    loadUsers();
   }
 }
 
-function actualizarTodo() {
-  if (!sesion) {
+function updateAll() {
+  if (!session) {
     return;
   }
 
-  actualizarUsuarioUI();
+  updateUserUi();
 
   if (
-    sesion.role !==
+    session.role !==
     'administrator'
   ) {
-    cambiarAdminTab(
+    changeAdminTab(
       'incidentes'
     );
   }
 
-  renderizarLista();
+  renderList();
 
-  actualizarContadores();
+  updateCounters();
 
-  renderizarDetalle(
-    llamadaSeleccionada
+  renderDetails(
+    selectedCall
   );
 }
 
@@ -2542,15 +2633,15 @@ let live = {
   startedAt: null,
   timer: null,
   stopping: false,
-  ubicacionOperador: {
+  operatorLocation: {
     lat: null,
     lng: null
   }
 };
 
 function setLiveStatus(
-  texto,
-  estado = ''
+  text,
+  status = ''
 ) {
   const el =
     $('live-status');
@@ -2558,17 +2649,17 @@ function setLiveStatus(
   if (!el) return;
 
   el.textContent =
-    texto;
+    text;
 
   el.className =
-    `live-status ${estado}`;
+    `live-status ${status}`;
 
   // El estado de reposo ("Listo") no aporta nada: solo se muestra cuando hay algo que informar.
-  el.hidden = texto === 'Listo';
+  el.hidden = text === 'Listo';
 }
 
 function setLiveTranscript(
-  texto
+  text
 ) {
   const el =
     $('live-transcripcion');
@@ -2576,14 +2667,14 @@ function setLiveTranscript(
   if (!el) return;
 
   el.textContent =
-    texto ||
+    text ||
     'Escuchando…';
 
   el.scrollTop =
     el.scrollHeight;
 }
 
-function actualizarLiveTimer() {
+function updateLiveTimer() {
   if (!live.startedAt) {
     return;
   }
@@ -2611,9 +2702,9 @@ function actualizarLiveTimer() {
     `${mm}:${ss}`;
 }
 
-function abrirLive() {
-  if (!sesion) {
-    return mostrarAlerta(
+function openLive() {
+  if (!session) {
+    return showAlert(
       'Debes iniciar sesión primero.',
       'error'
     );
@@ -2627,7 +2718,7 @@ function abrirLive() {
   );
 
   $('live-provider').textContent =
-    configuracionPublica.transcriptionConfigured
+    publicConfiguration.transcriptionConfigured
       ? 'Groq Whisper configurado'
       : 'Falta configurar Groq';
 
@@ -2642,14 +2733,14 @@ function abrirLive() {
     true;
 
   $('live-nota').textContent =
-    configuracionPublica.transcriptionConfigured
+    publicConfiguration.transcriptionConfigured
       ? 'La transcripción se procesa en el servidor con Groq Whisper al guardar la grabación.'
       : 'Falta configurar GROQ_API_KEY en el servidor para crear llamadas desde audio.';
 }
 
-function cerrarLive() {
+function closeLiveCall() {
   if (live.startedAt || live.stopping) {
-    mostrarAlerta(
+    showAlert(
       'Espera a que termine la grabación o el guardado antes de cerrar esta ventana.',
       'error'
     );
@@ -2661,7 +2752,7 @@ function cerrarLive() {
     true;
 }
 
-function obtenerUbicacionOperador() {
+function getOperatorLocation() {
   return new Promise(
     resolve => {
 
@@ -2703,10 +2794,10 @@ function obtenerUbicacionOperador() {
   );
 }
 
-async function iniciarLive() {
+async function startLiveCall() {
   if (
     live.startedAt ||
-    !sesion
+    !session
   ) {
     return;
   }
@@ -2720,7 +2811,7 @@ async function iniciarLive() {
   live.chunks =
     [];
 
-  live.ubicacionOperador = {
+  live.operatorLocation = {
     lat: null,
     lng: null
   };
@@ -2752,7 +2843,7 @@ async function iniciarLive() {
         }
       );
 
-    const mimeGrabacion =
+    const recordingMimeType =
       MediaRecorder.isTypeSupported(
         'audio/webm;codecs=opus'
       )
@@ -2764,7 +2855,7 @@ async function iniciarLive() {
         live.stream,
         {
           mimeType:
-            mimeGrabacion
+            recordingMimeType
         }
       );
 
@@ -2789,7 +2880,7 @@ async function iniciarLive() {
 
     live.timer =
       setInterval(
-        actualizarLiveTimer,
+        updateLiveTimer,
         250
       );
 
@@ -2797,11 +2888,11 @@ async function iniciarLive() {
      * La ubicación del operador es contexto opcional para el mapa; la
      * grabación ya está activa y no espera el permiso de geolocalización.
      */
-    live.ubicacionOperador =
-      await obtenerUbicacionOperador();
+    live.operatorLocation =
+      await getOperatorLocation();
 
     $('live-nota').textContent =
-      live.ubicacionOperador
+      live.operatorLocation
         ? 'Micrófono conectado · ubicación del equipo disponible como contexto del mapa.'
         : 'Micrófono conectado · sin ubicación del equipo; la búsqueda del mapa seguirá funcionando.';
 
@@ -2817,14 +2908,14 @@ async function iniciarLive() {
       'Grabando audio… la transcripción aparecerá al detener y guardar.'
     );
 
-    registrarEvento(
+    recordEvent(
       'Grabación de llamada iniciada.',
       'admin'
     );
 
   } catch (err) {
 
-    detenerLive(
+    stopLiveCall(
       false
     );
 
@@ -2839,7 +2930,7 @@ async function iniciarLive() {
     $('live-detener').disabled =
       true;
 
-    const mensaje =
+    const message =
       err?.name === 'NotAllowedError'
         ? 'El navegador bloqueó el micrófono.'
         : err instanceof Error
@@ -2847,16 +2938,16 @@ async function iniciarLive() {
           : 'No se pudo iniciar la grabación.';
 
     $('live-nota').textContent =
-      mensaje;
+      message;
 
-    mostrarAlerta(
-      mensaje,
+    showAlert(
+      message,
       'error'
     );
   }
 }
 
-async function detenerLive(
+async function stopLiveCall(
   guardar = true
 ) {
   if (
@@ -2868,7 +2959,7 @@ async function detenerLive(
   live.stopping =
     true;
 
-  let guardarFallido =
+  let saveFailed =
     false;
 
   $('live-iniciar').disabled =
@@ -2884,7 +2975,7 @@ async function detenerLive(
   live.timer =
     null;
 
-  let grabacionPromise =
+  let recordingPromise =
     Promise.resolve();
 
   if (
@@ -2893,7 +2984,7 @@ async function detenerLive(
       'inactive'
   ) {
 
-    grabacionPromise =
+    recordingPromise =
       new Promise(
         resolve => {
 
@@ -2929,10 +3020,10 @@ async function detenerLive(
       );
   }
 
-  await grabacionPromise;
+  await recordingPromise;
 
   const transcript =
-    limpiarTranscripcion(
+    cleanTranscription(
       live.transcript
     );
 
@@ -2961,7 +3052,7 @@ async function detenerLive(
       transcript: '',
       stopping: false,
 
-      ubicacionOperador: {
+      operatorLocation: {
         lat: null,
         lng: null
       }
@@ -2975,7 +3066,7 @@ async function detenerLive(
     const form =
       new FormData();
 
-    const datos =
+    const requestData =
       new Blob(
         [
           JSON.stringify({
@@ -2983,13 +3074,13 @@ async function detenerLive(
 
             latitudOperador:
               live
-                .ubicacionOperador
+                .operatorLocation
                 ?.lat ??
               null,
 
             longitudOperador:
               live
-                .ubicacionOperador
+                .operatorLocation
                 ?.lng ??
               null
           })
@@ -3002,7 +3093,7 @@ async function detenerLive(
 
     form.append(
       'datos',
-      datos,
+      requestData,
       'datos.json'
     );
 
@@ -3038,11 +3129,11 @@ async function detenerLive(
       }
     }
 
-    const audioAdjunto = form.get('audio');
-    if (!(audioAdjunto instanceof Blob) || audioAdjunto.size === 0) {
+    const attachedAudio = form.get('audio');
+    if (!(attachedAudio instanceof Blob) || attachedAudio.size === 0) {
       throw new Error('No se pudo preparar el audio. Inicia el micrófono y vuelve a grabar.');
     }
-    if (audioAdjunto.size > 25 * 1024 * 1024) {
+    if (attachedAudio.size > 25 * 1024 * 1024) {
       throw new Error('La grabación supera el límite de 25 MB de Groq. Detén antes y vuelve a intentarlo.');
     }
 
@@ -3056,7 +3147,7 @@ async function detenerLive(
       );
 
     const d =
-      await leerRespuesta(r);
+      await readResponse(r);
 
     if (!r.ok) {
       throw new Error(
@@ -3076,27 +3167,27 @@ async function detenerLive(
         'clasificando'
       }`;
 
-    mostrarAlerta(
+    showAlert(
       `Llamada en vivo convertida en caso #${d.id} · ${d.priority}`,
       'ok'
     );
 
-    registrarEvento(
+    recordEvent(
       `Llamada en vivo guardada como caso #${d.id} (${d.priority}).`,
       'admin'
     );
 
-    llamadaSeleccionada =
+    selectedCall =
       d;
 
-    colaActual =
+    currentQueue =
       'pendientes';
 
-    await cargarCola();
+    await loadQueue();
 
-    actualizarTabs();
+    updateTabs();
 
-    seleccionarLlamada(
+    selectCall(
       d.id
     );
 
@@ -3121,7 +3212,7 @@ async function detenerLive(
 
   } catch (e) {
 
-    guardarFallido =
+    saveFailed =
       true;
 
     setLiveStatus(
@@ -3132,7 +3223,7 @@ async function detenerLive(
     $('live-provider').textContent =
       'Audio conservado para reintentar';
 
-    mostrarAlerta(
+    showAlert(
       e.message ||
       'No se pudo guardar la llamada.',
       'error'
@@ -3159,12 +3250,12 @@ async function detenerLive(
 
     stream: null,
     mediaRecorder: null,
-    chunks: guardarFallido ? live.chunks : [],
-    transcript: guardarFallido ? live.transcript : '',
+    chunks: saveFailed ? live.chunks : [],
+    transcript: saveFailed ? live.transcript : '',
     stopping: false,
 
-    ubicacionOperador: guardarFallido
-      ? live.ubicacionOperador
+    operatorLocation: saveFailed
+      ? live.operatorLocation
       : { lat: null, lng: null }
   };
 }
@@ -3175,14 +3266,14 @@ async function detenerLive(
 // ======================================================
 
 // script.js se carga dinámicamente (tras Leaflet): DOMContentLoaded puede haber pasado ya.
-const __alCargarDom = (fn) => document.readyState === 'loading'
+const onDomReady = (fn) => document.readyState === 'loading'
   ? document.addEventListener('DOMContentLoaded', fn)
   : fn();
-__alCargarDom(
+onDomReady(
   () => {
 
-    inicializarTema();
-    inicializarCaptcha();
+    initializeTheme();
+    initializeCaptcha();
 
     document
       .querySelectorAll(
@@ -3206,7 +3297,7 @@ __alCargarDom(
                     )
                 );
 
-              mostrarAuthVista(tab.dataset.tab);
+              showAuthView(tab.dataset.tab);
 
               $('login-error').hidden =
                 true;
@@ -3218,7 +3309,7 @@ __alCargarDom(
                 true;
 
               if (tab.dataset.tab === 'registro') {
-                renderizarCaptcha('register');
+                renderCaptcha('register');
               }
             }
           )
@@ -3227,52 +3318,52 @@ __alCargarDom(
     $('form-login')
       ?.addEventListener(
         'submit',
-        iniciarSesion
+        login
       );
 
     $('form-registro')
       ?.addEventListener(
         'submit',
-        registrarCuenta
+        registerAccount
       );
 
-    $('btn-olvido-password')?.addEventListener('click', () => mostrarAuthVista('recuperar'));
-    $('btn-volver-login')?.addEventListener('click', () => mostrarAuthVista('login'));
-    $('form-recuperar')?.addEventListener('submit', solicitarRecuperacion);
-    $('form-reset')?.addEventListener('submit', restablecerPassword);
-    $('btn-reset-login')?.addEventListener('click', () => { history.replaceState({}, '', location.pathname); mostrarAuthVista('login'); });
-    if (new URLSearchParams(location.search).has('resetToken')) mostrarAuthVista('reset');
+    $('btn-olvido-password')?.addEventListener('click', () => showAuthView('recuperar'));
+    $('btn-volver-login')?.addEventListener('click', () => showAuthView('login'));
+    $('form-recuperar')?.addEventListener('submit', requestPasswordRecovery);
+    $('form-reset')?.addEventListener('submit', resetPassword);
+    $('btn-reset-login')?.addEventListener('click', () => { history.replaceState({}, '', location.pathname); showAuthView('login'); });
+    if (new URLSearchParams(location.search).has('resetToken')) showAuthView('reset');
 
 
     $('btn-salir')
       ?.addEventListener(
         'click',
-        cerrarSesion
+        logout
       );
 
     $('btn-llamada-en-vivo')
       ?.addEventListener(
         'click',
-        abrirLive
+        openLive
       );
 
     $('live-iniciar')
       ?.addEventListener(
         'click',
-        iniciarLive
+        startLiveCall
       );
 
     $('live-detener')
       ?.addEventListener(
         'click',
         () =>
-          detenerLive(true)
+          stopLiveCall(true)
       );
 
     $('live-cerrar')
       ?.addEventListener(
         'click',
-        cerrarLive
+        closeLiveCall
       );
 
     $('modal-live')
@@ -3284,7 +3375,7 @@ __alCargarDom(
             e.target ===
             $('modal-live')
           ) {
-            cerrarLive();
+            closeLiveCall();
           }
 
         }
@@ -3324,24 +3415,24 @@ __alCargarDom(
             'click',
             () => {
 
-              colaActual =
+              currentQueue =
                 b.dataset.tab;
 
-              actualizarTabs();
+              updateTabs();
 
-              renderizarLista();
+              renderList();
 
-              llamadaSeleccionada =
+              selectedCall =
                 null;
 
-              renderizarDetalle(
+              renderDetails(
                 null
               );
             }
           )
       );
 
-    $('busqueda-incidentes')?.addEventListener('input', renderizarLista);
+    $('busqueda-incidentes')?.addEventListener('input', renderList);
 
     document
       .querySelectorAll(
@@ -3352,7 +3443,7 @@ __alCargarDom(
           b.addEventListener(
             'click',
             () =>
-              cambiarAdminTab(
+              changeAdminTab(
                 b.dataset.adminTab
               )
           )
@@ -3367,7 +3458,7 @@ __alCargarDom(
           b.addEventListener(
             'click',
             () =>
-              abrirVistaPrevia(
+              openPreviewSession(
                 b.dataset.previewInstitucion
               )
           )
@@ -3376,31 +3467,31 @@ __alCargarDom(
     window.addEventListener(
       'resize',
       () => {
-        setTimeout(() => mapa?.invalidateSize(true), 100);
+        setTimeout(() => map?.invalidateSize(true), 100);
       }
     );
 
-    renderizarFeed();
+    renderFeed();
 
-    const parametrosUrl = new URLSearchParams(location.search);
-    const previewToken = parametrosUrl.get('previewToken');
+    const urlParams = new URLSearchParams(location.search);
+    const previewToken = urlParams.get('previewToken');
 
     if (previewToken) {
       // Pestaña abierta desde "Vista previa de operador": entra
       // directamente con el token de solo lectura, sin pasar por el
       // formulario de login.
-      vistaPreviaSoloLectura = true;
+      readOnlyPreview = true;
 
-      sesion = {
+      session = {
         token: previewToken,
-        username: parametrosUrl.get('previewUsername') || 'preview',
+        username: urlParams.get('previewUsername') || 'preview',
         role: 'operator',
         expiresInMinutes:
-          Number(parametrosUrl.get('previewExpira')) || 20
+          Number(urlParams.get('previewExpira')) || 20
       };
 
-      const institucionPreview =
-        parametrosUrl.get('previewInstitution') || '';
+      const previewInstitution =
+        urlParams.get('previewInstitution') || '';
 
       if ($('banner-vista-previa')) {
         $('banner-vista-previa').hidden = false;
@@ -3408,7 +3499,7 @@ __alCargarDom(
 
       if ($('banner-vista-previa-institucion')) {
         $('banner-vista-previa-institucion').textContent =
-          etiquetaInstitucion(institucionPreview);
+          institutionLabel(previewInstitution);
       }
 
       if ($('btn-llamada-en-vivo')) {
@@ -3419,8 +3510,8 @@ __alCargarDom(
       // comparta por accidente al copiar el link de la pestaña.
       history.replaceState({}, '', location.pathname);
 
-      ocultarPantallaAuth();
-      entrarConsola();
+      hideAuthScreen();
+      enterConsole();
     } else if ($('pantalla-auth')) {
       $('pantalla-auth').hidden =
         false;
@@ -3436,67 +3527,67 @@ __alCargarDom(
 setInterval(
   async () => {
 
-    if (!sesion) {
+    if (!session) {
       return;
     }
 
-    await cargarCola();
+    await loadQueue();
 
-    await actualizarMetricas();
+    await updateMetrics();
 
     if (
-      sesion.role ===
+      session.role ===
         'administrator' &&
-      adminTabActual ===
+      currentAdminTab ===
         'usuarios'
     ) {
-      await cargarUsuarios();
+      await loadUsers();
     }
 
   },
-  REFRESCO_MS
+  REFRESH_INTERVAL_MS
 );
-document.getElementById('btn-cambiar-clave')?.addEventListener('click', cambiarClave);
+document.getElementById('btn-cambiar-clave')?.addEventListener('click', changePassword);
 
 /* ===== MENÚ DE USUARIO (desplegable en la esquina superior derecha) ===== */
-(function inicializarMenuUsuario() {
-  const contenedor = document.getElementById('menu-usuario');
-  const boton = document.getElementById('btn-menu-usuario');
+(function initializeUserMenu() {
+  const container = document.getElementById('menu-usuario');
+  const menuButton = document.getElementById('btn-menu-usuario');
   const panel = document.getElementById('dropdown-usuario');
-  if (!contenedor || !boton || !panel) return;
+  if (!container || !menuButton || !panel) return;
 
-  function cerrarMenu() {
+  function closeMenu() {
     panel.hidden = true;
-    boton.setAttribute('aria-expanded', 'false');
+    menuButton.setAttribute('aria-expanded', 'false');
   }
 
-  function abrirMenu() {
+  function openMenu() {
     panel.hidden = false;
-    boton.setAttribute('aria-expanded', 'true');
+    menuButton.setAttribute('aria-expanded', 'true');
   }
 
-  boton.addEventListener('click', (evento) => {
-    evento.stopPropagation();
+  menuButton.addEventListener('click', (event) => {
+    event.stopPropagation();
     if (panel.hidden) {
-      abrirMenu();
+      openMenu();
     } else {
-      cerrarMenu();
+      closeMenu();
     }
   });
 
-  document.addEventListener('click', (evento) => {
-    if (!panel.hidden && !contenedor.contains(evento.target)) {
-      cerrarMenu();
+  document.addEventListener('click', (event) => {
+    if (!panel.hidden && !container.contains(event.target)) {
+      closeMenu();
     }
   });
 
-  document.addEventListener('keydown', (evento) => {
-    if (evento.key === 'Escape') cerrarMenu();
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeMenu();
   });
 
   // Cerrar el menú al usar cualquier acción dentro de él.
   panel.querySelectorAll('button').forEach((btn) => {
-    btn.addEventListener('click', () => cerrarMenu());
+    btn.addEventListener('click', () => closeMenu());
   });
 })();
 
@@ -3506,15 +3597,38 @@ document.getElementById('btn-cambiar-clave')?.addEventListener('click', cambiarC
    cerraron la página y se apaga solo, liberando el puerto
    8000. Se manda con keepalive para que el último aviso salga incluso
    si el navegador ya está cerrando la pestaña. */
-(function iniciarLatidoDePagina() {
-  const INTERVALO_MS = 5000;
+(function startPageHeartbeat() {
+  const INTERVAL_MS = 5000;
+  let heartbeatInProgress = false;
 
-  function latir() {
-    fetch(`${API_URL}/heartbeat`, { method: 'POST', keepalive: true }).catch(() => {});
+  function updateConnectionStatus(connected) {
+    const indicator = $('indicador-estado');
+    const statusText = $('estado-texto');
+    if (!indicator || !statusText) return;
+
+    indicator.className = `indicador ${connected ? 'online' : ''}`;
+    statusText.textContent = connected ? 'Operativo' : 'Sin conexión';
   }
 
-  latir();
-  setInterval(latir, INTERVALO_MS);
+  async function sendHeartbeat() {
+    if (heartbeatInProgress) return;
+    heartbeatInProgress = true;
+    try {
+      const response = await fetch(`${API_URL}/heartbeat`, {
+        method: 'POST',
+        keepalive: true
+      });
+      updateConnectionStatus(response.ok);
+    } catch {
+      updateConnectionStatus(false);
+    } finally {
+      heartbeatInProgress = false;
+    }
+  }
+
+  updateConnectionStatus(false);
+  sendHeartbeat();
+  setInterval(sendHeartbeat, INTERVAL_MS);
   // Al volver a la pestaña (o al despertar el PC) avisa de inmediato.
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) latir(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) sendHeartbeat(); });
 })();

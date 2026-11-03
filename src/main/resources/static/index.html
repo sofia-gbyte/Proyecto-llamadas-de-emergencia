@@ -24,14 +24,20 @@
 
             <form class="auth-form" id="form-login">
                 <div class="campo">
-                    <label for="login-usuario">Usuario o Correo</label>
-                    <input id="login-usuario" type="text" placeholder="ej. operador@codes.cl" required autofocus />
+                    <label for="login-username">Usuario o Correo</label>
+                    <input id="login-username" type="text" placeholder="ej. operador@codes.cl" required autofocus />
                 </div>
                 <div class="campo">
                     <label for="login-password">Contraseña</label>
                     <input id="login-password" type="password" placeholder="••••••••" required />
                 </div>
-                <div id="captcha-login" class="captcha-widget" aria-label="Verificación de seguridad"></div>
+                <div id="captcha-login" class="captcha-widget" aria-label="Verificación de seguridad">
+                    <altcha-widget id="captcha-login-widget" class="altcha-widget"
+                        challenge="/api/auth/captcha-challenge?purpose=login"
+                        type="checkbox" auto="off" language="es-419" name="captchaToken" workers="1"
+                        configuration='{"hideLogo":true,"hideFooter":true,"retryOnOutOfMemoryError":true}'>
+                    </altcha-widget>
+                </div>
                 <p class="auth-error" id="login-error" hidden></p>
                 <button class="btn-auth" type="submit">Ingresar a CODES</button>
                 <button class="auth-link" id="btn-olvido-password" type="button">¿Olvidaste tu contraseña?</button>
@@ -76,22 +82,22 @@
             <form class="auth-form" id="form-registro" hidden>
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.8rem;">
                     <div class="campo">
-                        <label for="reg-nombre">Nombre</label>
-                        <input id="reg-nombre" type="text" placeholder="Ana" required />
+                        <label for="reg-first-name">Nombre</label>
+                        <input id="reg-first-name" type="text" placeholder="Ana" required />
                     </div>
                     <div class="campo">
-                        <label for="reg-apellido">Apellido</label>
-                        <input id="reg-apellido" type="text" placeholder="Pérez" required />
+                        <label for="reg-last-name">Apellido</label>
+                        <input id="reg-last-name" type="text" placeholder="Pérez" required />
                     </div>
                 </div>
                 <div class="campo">
                     <label for="reg-usuario">Usuario</label>
-                    <input id="reg-usuario" type="text" placeholder="ana.perez" required pattern="[a-zA-Z0-9._-]{3,30}" title="3-30 caracteres: letras, números, . _ -" />
+                    <input id="reg-username" type="text" placeholder="ana.perez" required pattern="[a-zA-Z0-9._\-]{3,30}" title="3-30 caracteres: letras, números, . _ -" />
                     <small style="color:#3d4d66; font-size:0.55rem;">3-30 caracteres: letras, números, . _ -</small>
                 </div>
                 <div class="campo">
-                    <label for="reg-correo">Correo</label>
-                    <input id="reg-correo" type="email" placeholder="ana@codes.cl" required />
+                    <label for="reg-email">Correo</label>
+                    <input id="reg-email" type="email" placeholder="ana@codes.cl" required />
                 </div>
                 <div class="campo">
                     <label for="reg-password">Contraseña</label>
@@ -102,15 +108,21 @@
                     <input id="reg-password-confirm" type="password" placeholder="Repite tu contraseña" required minlength="6" />
                 </div>
                 <div class="campo">
-                    <label for="reg-institucion">Institución</label>
-                    <select id="reg-institucion" required>
+                    <label for="reg-institution">Institución</label>
+                    <select id="reg-institution" required>
                         <option value="">Selecciona tu institución</option>
                         <option value="bomberos">Bomberos</option>
                         <option value="carabineros">Carabineros</option>
                         <option value="samu">SAMU</option>
                     </select>
                 </div>
-                <div id="captcha-register" class="captcha-widget" aria-label="Verificación de seguridad"></div>
+                <div id="captcha-register" class="captcha-widget" aria-label="Verificación de seguridad">
+                    <altcha-widget id="captcha-register-widget" class="altcha-widget"
+                        challenge="/api/auth/captcha-challenge?purpose=register"
+                        type="checkbox" auto="off" language="es-419" name="captchaToken" workers="1"
+                        configuration='{"hideLogo":true,"hideFooter":true,"retryOnOutOfMemoryError":true}'>
+                    </altcha-widget>
+                </div>
                 <p class="auth-error" id="registro-error" hidden></p>
                 <p class="auth-success" id="registro-success" hidden></p>
                 <button class="btn-auth" type="submit">Crear cuenta</button>
@@ -149,8 +161,8 @@
             <button class="btn-accion primario btn-live" id="btn-llamada-en-vivo" type="button">Llamada en vivo</button>
 
             <div class="sistema-estado">
-                <span class="indicador online" id="indicador-estado"></span>
-                <span id="estado-texto">Operativo</span>
+                <span class="indicador" id="indicador-estado"></span>
+                <span id="estado-texto">Conectando…</span>
                 <span class="ultima-actualizacion" id="ultima-actualizacion" hidden>· --:--:--</span>
             </div>
 
@@ -351,38 +363,54 @@
 </div>
 
 <script>
-/* Carga Leaflet con respaldo: 1) local (webjar o /vendor), 2) CDN. Luego arranca script.js. */
+window.altchaReadyPromise = import('/vendor/altcha/altcha.min.js')
+  .then(() => new Promise((resolve, reject) => {
+    const localeScript = document.createElement('script');
+    localeScript.src = '/vendor/altcha/es-419.js';
+    localeScript.onload = resolve;
+    localeScript.onerror = () => reject(new Error('No se pudo cargar la traducción ALTCHA.'));
+    document.head.appendChild(localeScript);
+  }))
+  .then(() => customElements.whenDefined('altcha-widget'))
+  .then(() => {
+    if (!window.$altcha) throw new Error('No se pudo inicializar ALTCHA.');
+    window.$altcha.algorithms.set(
+      'ARGON2ID',
+      () => new Worker('/vendor/altcha/argon2id.js')
+    );
+  });
+
+/* Carga Leaflet local primero y usa CDN solo como respaldo; luego arranca script.js. */
 (function () {
-  var fuentes = [
-    { css: '/vendor/leaflet/leaflet.css', js: '/vendor/leaflet/leaflet.js' },
-    { css: '/webjars/leaflet/1.9.4/dist/leaflet.css', js: '/webjars/leaflet/1.9.4/dist/leaflet.js' },
+  var providers = [
+    { css: '/webjars/leaflet/1.9.4/leaflet.css', js: '/webjars/leaflet/1.9.4/leaflet.js' },
     { css: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', js: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js' },
     { css: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css', js: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js' },
     { css: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css', js: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js' }
   ];
-  function iniciarApp() {
+  function initializeApp() {
     var s = document.createElement('script');
-    s.src = 'script.js?v=20261101-web-desktop-9';
+    s.src = 'script.js?v=20261102-altcha-argon2id-1';
     document.body.appendChild(s);
   }
-  function probar(i) {
-    if (window.L) return iniciarApp();
-    if (i >= fuentes.length) {
+  function tryProvider(i) {
+    if (window.L) return initializeApp();
+    if (i >= providers.length) {
       console.error('No se pudo cargar Leaflet desde ninguna fuente.');
-      return iniciarApp();
+      return initializeApp();
     }
-    var f = fuentes[i];
+    var provider = providers[i];
     var css = document.createElement('link');
     css.rel = 'stylesheet';
-    css.href = f.css;
+    css.href = provider.css;
     document.head.appendChild(css);
     var js = document.createElement('script');
-    js.src = f.js;
-    js.onload = function () { if (window.L) iniciarApp(); else { css.remove(); probar(i + 1); } };
-    js.onerror = function () { css.remove(); js.remove(); probar(i + 1); };
+    js.src = provider.js;
+    js.onload = function () { if (window.L) initializeApp(); else { css.remove(); tryProvider(i + 1); } };
+    js.onerror = function () { css.remove(); js.remove(); tryProvider(i + 1); };
     document.body.appendChild(js);
   }
-  probar(0);
+  tryProvider(0);
 })();
 </script>
 </body>

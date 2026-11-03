@@ -39,10 +39,10 @@ public class AdminController {
 
     // Únicas instituciones reconocidas por el clasificador y los formularios
     // de registro/creación de usuarios (ver CreateUserRequest/RegisterRequest).
-    private static final List<String> INSTITUCIONES_VALIDAS = List.of("bomberos", "carabineros", "samu");
+    private static final List<String> VALID_INSTITUTIONS = List.of("bomberos", "carabineros", "samu");
 
     // Corta a propósito: es solo para mirar la pantalla, no para un turno.
-    private static final long PREVIEW_EXPIRACION_MINUTOS = 20;
+    private static final long PREVIEW_EXPIRATION_MINUTES = 20;
 
     private final SelfTestService selfTestService;
     private final UserRepository userRepository;
@@ -73,14 +73,14 @@ public class AdminController {
         body.put("uptimeMinutos", ManagementFactory.getRuntimeMXBean().getUptime() / 60000);
         body.put("usuariosTotales", userRepository.count());
         body.put("llamadasTotales", callRepository.count());
-        body.put("ultimoAutochequeo", selfTestService.ultimo());
+        body.put("ultimoAutochequeo", selfTestService.latest());
         return body;
     }
 
     /** Fuerza un autochequeo inmediato (además del que corre solo cada cierto tiempo). */
     @PostMapping("/selftest")
     public SelfTestService.SelfTestResult selftest() {
-        return selfTestService.ejecutar();
+        return selfTestService.runSelfTest();
     }
 
     /**
@@ -97,32 +97,32 @@ public class AdminController {
      * llamadas por ser testAccount: solo puede consultar colas y métricas.
      */
     @PostMapping("/preview-session/{institution}")
-    public ResponseEntity<?> abrirSesionDePrueba(
+    public ResponseEntity<?> openPreviewSession(
             @PathVariable String institution,
             Authentication auth,
             HttpServletRequest request
     ) {
-        String institucionNormalizada = institution == null ? "" : institution.strip().toLowerCase(Locale.ROOT);
-        if (!INSTITUCIONES_VALIDAS.contains(institucionNormalizada)) {
+        String normalizedInstitution = institution == null ? "" : institution.strip().toLowerCase(Locale.ROOT);
+        if (!VALID_INSTITUTIONS.contains(normalizedInstitution)) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("error", "Institución no válida. Debe ser una de: " + INSTITUCIONES_VALIDAS));
+                    .body(Map.of("error", "Institución no válida. Debe ser una de: " + VALID_INSTITUTIONS));
         }
 
-        String previewUsername = "preview_" + institucionNormalizada;
+        String previewUsername = "preview_" + normalizedInstitution;
         User previewUser = userRepository.findByUsername(previewUsername).orElseGet(() -> {
-            User nuevo = new User();
-            nuevo.setUsername(previewUsername);
+            User newUser = new User();
+            newUser.setUsername(previewUsername);
             // Contraseña aleatoria que nadie conoce: esta cuenta nunca debe
             // poder hacer login normal por /api/auth/login, solo recibir
             // tokens emitidos acá.
-            nuevo.setPasswordHash(securityService.hashPassword(claveAleatoriaInutilizable()));
-            nuevo.setRole("operator");
-            nuevo.setInstitution(institucionNormalizada);
-            nuevo.setActive(true);
-            nuevo.setTestAccount(true);
-            nuevo.setFirstName("Vista previa");
-            nuevo.setLastName(institucionNormalizada);
-            return userRepository.save(nuevo);
+            newUser.setPasswordHash(securityService.hashPassword(unusableRandomPassword()));
+            newUser.setRole("operator");
+            newUser.setInstitution(normalizedInstitution);
+            newUser.setActive(true);
+            newUser.setTestAccount(true);
+            newUser.setFirstName("Vista previa");
+            newUser.setLastName(normalizedInstitution);
+            return userRepository.save(newUser);
         });
 
         if (!previewUser.isTestAccount()) {
@@ -130,26 +130,26 @@ public class AdminController {
             // pero por seguridad no reutilizamos una cuenta que no sea
             // sintética).
             return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(Map.of("error", "No se pudo crear la cuenta de vista previa para " + institucionNormalizada + "."));
+                    .body(Map.of("error", "No se pudo crear la cuenta de vista previa para " + normalizedInstitution + "."));
         }
         if (!previewUser.isActive()) {
             previewUser.setActive(true);
             userRepository.save(previewUser);
         }
 
-        String token = jwtService.generateToken(previewUsername, "operator", PREVIEW_EXPIRACION_MINUTOS);
-        auditLogService.registrar(auth.getName(), "start-preview-session", "institution", institucionNormalizada, request.getRemoteAddr(), "success");
+        String token = jwtService.generateToken(previewUsername, "operator", PREVIEW_EXPIRATION_MINUTES);
+        auditLogService.recordEvent(auth.getName(), "start-preview-session", "institution", normalizedInstitution, request.getRemoteAddr(), "success");
 
         return ResponseEntity.ok(new PreviewSessionResponse(
-                token, previewUsername, institucionNormalizada, "operator", PREVIEW_EXPIRACION_MINUTOS, true
+                token, previewUsername, normalizedInstitution, "operator", PREVIEW_EXPIRATION_MINUTES, true
         ));
     }
 
-    private String claveAleatoriaInutilizable() {
-        String alfabeto = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%^&*";
+    private String unusableRandomPassword() {
+        String alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%^&*";
         SecureRandom random = new SecureRandom();
-        StringBuilder clave = new StringBuilder(40);
-        for (int i = 0; i < 40; i++) clave.append(alfabeto.charAt(random.nextInt(alfabeto.length())));
-        return clave.toString();
+        StringBuilder password = new StringBuilder(40);
+        for (int i = 0; i < 40; i++) password.append(alphabet.charAt(random.nextInt(alphabet.length())));
+        return password.toString();
     }
 }

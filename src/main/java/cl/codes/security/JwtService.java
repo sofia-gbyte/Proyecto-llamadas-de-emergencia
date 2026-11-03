@@ -18,16 +18,16 @@ import java.util.Date;
 @Service
 public class JwtService {
 
-    private final SecretKey clave;
-    private final long expiracionMinutos;
+    private final SecretKey signingKey;
+    private final long sessionExpirationMinutes;
 
     public JwtService(
-            @Value("${app.jwt-secret:}") String secretoBase64,
-            @Value("${app.jwt-expiracion-minutos:480}") long expiracionMinutos // 8 horas = un turno
+            @Value("${app.jwt-secret:}") String base64Secret,
+            @Value("${app.jwt-expiracion-minutos:480}") long sessionExpirationMinutes // 8 horas = un turno
     ) {
         String resolvedSecret = LocalSecretBootstrap.resolveOrGenerate(
                 "CODES_JWT_SECRET",
-                secretoBase64,
+                base64Secret,
                 JwtService::generateSecret
         );
 
@@ -38,11 +38,11 @@ public class JwtService {
         }
 
         try {
-            this.clave = Keys.hmacShaKeyFor(Base64.getDecoder().decode(resolvedSecret));
+            this.signingKey = Keys.hmacShaKeyFor(Base64.getDecoder().decode(resolvedSecret));
         } catch (IllegalArgumentException e) {
             throw new IllegalStateException("La variable CODES_JWT_SECRET no es un valor Base64 válido para JWT.", e);
         }
-        this.expiracionMinutos = expiracionMinutos;
+        this.sessionExpirationMinutes = sessionExpirationMinutes;
     }
 
     /** Genera un secreto HMAC-SHA256 nuevo, codificado en Base64. */
@@ -52,7 +52,7 @@ public class JwtService {
     }
 
     public String generateToken(String username, String role) {
-        return generateToken(username, role, expiracionMinutos);
+        return generateToken(username, role, sessionExpirationMinutes);
     }
 
     /**
@@ -61,23 +61,23 @@ public class JwtService {
      * para las sesiones de "vista previa" que un ADMINISTRATOR abre para
      * ver la interfaz de una institución sin credenciales reales.
      */
-    public String generateToken(String username, String role, long expiracionMinutosPersonalizada) {
+    public String generateToken(String username, String role, long expirationMinutes) {
         Date now = new Date();
-        Date expiresAt = new Date(now.getTime() + expiracionMinutosPersonalizada * 60_000);
+        Date expiresAt = new Date(now.getTime() + expirationMinutes * 60_000);
 
         return Jwts.builder()
                 .subject(username)
                 .claim("rol", role)
                 .issuedAt(now)
                 .expiration(expiresAt)
-                .signWith(clave)
+                .signWith(signingKey)
                 .compact();
     }
 
     public Claims validateAndGetClaims(String token) {
         try {
             return Jwts.parser()
-                    .verifyWith(clave)
+                    .verifyWith(signingKey)
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();
@@ -87,8 +87,6 @@ public class JwtService {
     }
 
     public long getExpirationMinutes() {
-        return expiracionMinutos;
+        return sessionExpirationMinutes;
     }
 }
-
-

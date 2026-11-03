@@ -1,8 +1,8 @@
-# CODES 1.0.0 — Sistema de llamadas de emergencia
+# CODES 1.0.2 — Sistema de llamadas de emergencia
 
 CODES es una aplicación web para apoyar la recepción, registro y gestión de llamadas de emergencia. El sistema permite trabajar con llamadas en vivo, transcripción con Groq Whisper, clasificación inicial, geocodificación con Geoapify y seguimiento de los casos desde una interfaz web.
 
-**Versión del proyecto: `1.0.0`.** Consulta el [historial de cambios](CHANGELOG.md) para ver las novedades de esta versión y las notas de compatibilidad.
+**Versión del proyecto: `1.0.2`.** Consulta el [historial de cambios](CHANGELOG.md) para ver las novedades de esta versión y las notas de compatibilidad.
 
 El proyecto está orientado a uso local o dentro de una red interna controlada. **Aún no está listo para exponerse directamente a Internet.**
 
@@ -24,11 +24,12 @@ El proyecto está orientado a uso local o dentro de una red interna controlada. 
 
 ---
 
-> **Alcance de la versión 1.0.0:** versión funcional para demostración y uso local controlado. No implica que CODES esté preparado para su exposición directa a Internet ni para despachos de emergencia reales sin las revisiones operativas, legales, de privacidad y disponibilidad descritas en [operación local](OPERACION_LOCAL.md).
+> **Alcance de la versión 1.0.2:** versión funcional para demostración y uso local controlado. No implica que CODES esté preparado para su exposición directa a Internet ni para despachos de emergencia reales sin las revisiones operativas, legales, de privacidad y disponibilidad descritas en [operación local](OPERACION_LOCAL.md).
 
 ## Funcionalidades principales
 
 - Gestión de llamadas pendientes, en curso y cerradas.
+- Registro trazable de información complementaria en casos abiertos, sin crear llamadas duplicadas.
 - CRUD de usuarios para administración y gestión de llamadas con aislamiento institucional.
 - Archivo lógico de llamadas pendientes no asignadas para preservar la trazabilidad; los casos en curso o cerrados no se eliminan.
 - Registro manual y recepción de llamadas en vivo.
@@ -60,7 +61,7 @@ El proyecto está orientado a uso local o dentro de una red interna controlada. 
 - H2 Database
 - JSON Web Token (JJWT)
 - Leaflet
-- Cloudflare Turnstile opcional (desactivado por defecto)
+- ALTCHA autoalojado para proteger el inicio de sesión y el registro
 - Groq Whisper para transcripción
 - Geoapify para geocodificación
 
@@ -74,7 +75,7 @@ Se mantiene el monolito porque los flujos de registro, clasificación y despacho
 
 ## API REST y contratos
 
-La API está orientada a los recursos `users` y `llamadas`. Las operaciones administrativas de usuarios requieren el rol `administrator`; el detalle de una llamada respeta el aislamiento institucional y las modificaciones operativas se reservan a supervisores y administradores.
+La API está orientada a los recursos `users` y `llamadas`. Las operaciones administrativas de usuarios requieren el rol `administrator`; el detalle de una llamada respeta el aislamiento institucional. La corrección del resumen y la dirección se reserva a supervisores y administradores; la información complementaria puede agregarla el operador asignado o un supervisor autorizado, siempre en un caso abierto.
 
 | Recurso | Operación | Ruta | Acceso / resultado |
 |---|---|---|---|
@@ -85,6 +86,7 @@ La API está orientada a los recursos `users` y `llamadas`. Las operaciones admi
 | Llamadas | Crear en vivo | `POST /api/llamadas/live` | Operador, supervisor o administrador; `201 Created` y `Location` |
 | Llamadas | Listar / consultar | `GET /api/llamadas/pending`, `/in-progress`, `/closed`, `GET /api/llamadas/{id}` | Autenticado; `200 OK`, filtrado por institución |
 | Llamadas | Corregir resumen y dirección | `PUT /api/llamadas/{id}` | Supervisor o administrador; `200 OK`; solo casos abiertos |
+| Llamadas | Agregar información al caso existente | `POST /api/llamadas/{id}/updates` | Operador asignado, supervisor o administrador; caso abierto y autorización institucional |
 | Llamadas | Retirar de operación | `DELETE /api/llamadas/{id}` | Administrador; `204 No Content`; archiva lógicamente solo llamadas pendientes sin asignar |
 
 Las peticiones JSON usan `Content-Type: application/json` y las operaciones protegidas requieren `Authorization: Bearer <JWT>`. La creación de llamadas en vivo usa `multipart/form-data`: la parte `datos` contiene la transcripción y coordenadas del operador, y `audio` es opcional.
@@ -120,7 +122,15 @@ PUT /api/llamadas/34
 }
 ```
 
-La creación de llamadas devuelve la representación `CallResponse` después de transcribir, clasificar y geocodificar. Los valores de prioridad y puntuaciones son resultados de clasificación; el `PUT` de llamada solo corrige el resumen operativo y la dirección para evitar alterar manualmente esa clasificación.
+```json
+POST /api/llamadas/34/updates
+{
+  "updateId": "ec6de66d-c7d4-4d38-97ad-1afbf15ecf00",
+  "information": "Hay personas atrapadas en el segundo piso."
+}
+```
+
+`updateId` debe ser un UUID generado por el cliente y debe reutilizarse al reintentar la misma petición. El servidor también evita guardar dos veces el mismo texto normalizado. El historial queda asociado al mismo caso, conserva quién y cuándo lo agregó, actualiza la clasificación y las recomendaciones, y no activa despachos ni crea una llamada nueva. Se limita cada aporte a 5.000 caracteres y el historial acumulado a 20.000 caracteres. La creación de llamadas devuelve la representación `CallResponse` después de transcribir, clasificar y geocodificar. Los valores de prioridad y puntuaciones son resultados de clasificación; el `PUT` de llamada solo corrige el resumen operativo y la dirección para evitar alterar manualmente esa clasificación.
 
 Los errores siguen un contrato JSON: `400` para validación o datos inválidos, `401` para falta de autenticación, `403` para rol no autorizado, `404` para recurso inexistente o no visible por institución, `409` para conflictos de estado o unicidad, `413` para cargas demasiado grandes y `500` para errores inesperados (con una referencia de correlación). Las llamadas retiradas se conservan en H2 para no perder la trazabilidad; no aparecen en colas ni métricas operativas.
 
@@ -205,11 +215,11 @@ Cuando se inicia mediante los scripts de Windows, CODES puede crear o reutilizar
 data\.codes-secrets.ps1
 ```
 
-Ese archivo contiene secretos persistentes del entorno local.
+Ese archivo contiene secretos persistentes del entorno local. El arranque directo del app-image también puede leer asignaciones simples entre comillas sin ejecutar el script; cuando CODES genera valores, los persiste además en `data\.codes-secrets.properties`.
 
 - No debe subirse al repositorio.
 - No debe compartirse.
-- Debe incluirse en los mecanismos de respaldo seguros que correspondan.
+- Ambos archivos contienen secretos en texto plano y deben incluirse solo en mecanismos de respaldo cifrados y de acceso restringido.
 - La pérdida de `CODES_ENCRYPT_KEY` puede impedir recuperar los audios cifrados.
 
 En una instalación nueva, el script genera una contraseña inicial aleatoria para el administrador y la muestra durante el primer arranque. Después de entrar al sistema conviene cambiarla.
@@ -233,23 +243,27 @@ $env:GEOAPIFY_API_KEY = 'tu_clave_de_geoapify'
 
 Guarda el archivo y vuelve a iniciar `CODES.bat`. No pongas las claves en `application.properties`, en JavaScript ni en el navegador; nunca las compartas ni las subas al repositorio. Para iniciar desde una terminal sin el lanzador, exporta esas mismas variables de entorno antes de ejecutar Maven.
 
----
+## App-image para Windows
 
-# Verificación anti-bots (opcional)
-
-Turnstile está desactivado por defecto. Login y registro conservan los límites de intentos del servidor. Para habilitar la verificación externa:
-
-Para una instalación real con Turnstile se deben configurar:
+Con JDK 21 o superior, Maven y `jpackage` disponibles en el `PATH`, crea el app-image autocontenido ejecutando:
 
 ```powershell
-$env:CODES_TURNSTILE_SITE_KEY="..."
-$env:CODES_TURNSTILE_SECRET_KEY="..."
-$env:CODES_TURNSTILE_ENABLED="true"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\package_codes_windows.ps1
 ```
 
-La `SITE_KEY` puede utilizarse en el cliente. La `SECRET_KEY` debe permanecer únicamente en el servidor.
+El ejecutable queda en `dist\CODES\CODES.exe` y el runtime Java queda dentro de `dist\CODES\runtime`; se debe distribuir la carpeta completa, no solo el `.exe`. La app-image validada de la versión 1.0.2 también se incluye en `dist\release-1.0.2\CODES`. El ejecutable incorpora el icono de Windows de `tools\assets\CODES.ico`. Cuando Spring Boot termina de iniciar y el servidor está listo, el app-image abre `http://127.0.0.1:8000` en el navegador predeterminado (primero con la API de escritorio de Java y, si no está disponible, mediante el manejador de URL del sistema operativo). CODES guarda la base H2, audios cifrados, caché y secretos en `%LOCALAPPDATA%\CODES\data` (o en `CODES_DATA_DIR` si se define externamente). El usuario inicial y su contraseña generada se conservan en los archivos locales de secretos de esa carpeta. Las claves de Groq y Geoapify se pueden agregar como asignaciones simples a `.codes-secrets.ps1`; CODES las lee sin ejecutar el archivo. No incluyas archivos de datos o secretos al distribuir el app-image.
 
-Al habilitarlo, Turnstile requiere acceso a Cloudflare desde el navegador y el backend. Para una instalación pública sin ese proveedor, configura protección equivalente en el proxy/WAF y conserva los límites del servidor; no expongas el login sin controles anti-abuso.
+Para crear una copia de prueba sin sobrescribir un app-image existente, indica otro directorio padre; por ejemplo, `powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\package_codes_windows.ps1 -DestinationDirectory dist\phase2` genera `dist\phase2\CODES`. La app-image es una carpeta completa y no un `CODES.exe` autónomo: el usuario final puede iniciar el ejecutable incluido sin abrir PowerShell, Maven ni configurar Java, pero debe conservar y distribuir junto con él todo el directorio, incluido `runtime`.
+
+El app-image no es un instalador firmado ni convierte CODES en un sistema listo para exposición a Internet o despacho real. La operación sigue sujeta a las advertencias de seguridad, privacidad y disponibilidad de este README.
+
+---
+
+# Verificación anti-bots (ALTCHA)
+
+Login y registro usan ALTCHA v2 autoalojado con Argon2id (1 iteración, 8 MiB y paralelismo 1); el widget, worker y traducción española se sirven desde archivos locales de CODES. Cada desafío está firmado, vence en cinco minutos y queda ligado a su propósito (login o registro). No se envían datos a un proveedor de CAPTCHA. `CODES.bat` genera y conserva `CODES_ALTCHA_SECRET` en `data\.codes-secrets.ps1`; al ejecutar Spring Boot directamente, define una clave aleatoria de al menos 32 bytes. ALTCHA está activo por defecto y puede desactivarse explícitamente con `CODES_ALTCHA_ENABLED=false`.
+
+El uso de cada desafío se registra en H2 con una restricción única, por lo que el rechazo de repeticiones sobrevive reinicios y es atómico. La verificación Argon2id limita a dos sus cálculos simultáneos para acotar memoria del servidor. Argon2id encarece el cálculo automatizado y dificulta la aceleración con GPU, pero CAPTCHA no demuestra que un cliente sea humano ni elimina bots sofisticados. Mantén controles anti-abuso adicionales. El widget oficial requiere un contexto seguro: HTTPS en la LAN (HTTP solo en `localhost`).
 
 ---
 
@@ -283,14 +297,14 @@ para incluir exclusivamente los orígenes reales que utilizarán los equipos de 
 Ejemplo:
 
 ```text
-app.cors-allowed-origins=http://192.168.1.10:8000,http://192.168.1.11:8000
+app.cors-allowed-origins=https://codes.example.internal
 ```
 
 ## HTTP y HTTPS
 
 La configuración actual no implementa HTTPS directamente.
 
-Para una LAN pequeña y realmente controlada puede utilizarse HTTP si el tráfico hacia el servidor está restringido y no existe exposición directa a Internet. Si CODES sale de esa red, o si la red no puede considerarse confiable, debe colocarse un reverse proxy con HTTPS delante de la aplicación.
+Para la autenticación ALTCHA, los navegadores requieren HTTPS desde otros equipos; HTTP solo funciona en `localhost`. Coloca Caddy o Nginx con un certificado confiable delante de Spring Boot y conserva el puerto 8000 inaccesible desde la red. HTTPS protege también contraseñas y tokens durante el transporte.
 
 El puerto web configurado para Spring Boot debe mantenerse dentro de la red autorizada o detrás del proxy HTTPS.
 
@@ -377,7 +391,7 @@ $env:CODES_SMTP_PORT="587"
 $env:CODES_SMTP_USERNAME="usuario"
 $env:CODES_SMTP_PASSWORD="password"
 $env:CODES_MAIL_FROM="codes@example.com"
-$env:CODES_PUBLIC_BASE_URL="http://servidor:8000"
+$env:CODES_PUBLIC_BASE_URL="https://codes.example.internal"
 ```
 
 Sin SMTP configurado, la solicitud de recuperación no puede enviar el correo. En ese caso, la administración de cuentas debe realizarse mediante las funciones administrativas disponibles.
@@ -537,7 +551,8 @@ POST   /api/auth/register
 POST   /api/auth/forgot-password
 POST   /api/auth/reset-password
 POST   /api/auth/change-password
-GET/POST /api/auth/captcha-site-key
+GET    /api/auth/captcha-config
+GET    /api/auth/captcha-challenge?purpose=login|register
 
 GET    /api/users
 POST   /api/users
@@ -589,9 +604,8 @@ CODES_ENCRYPT_KEY
 CODES_ADMIN_USER
 CODES_ADMIN_PASSWORD
 
-CODES_TURNSTILE_SITE_KEY
-CODES_TURNSTILE_SECRET_KEY
-CODES_TURNSTILE_ENABLED
+CODES_ALTCHA_SECRET
+CODES_ALTCHA_ENABLED
 
 CODES_MAP_TILES_URL
 CODES_ROUTING_URL
@@ -725,7 +739,7 @@ CODES maneja información potencialmente sensible. Antes de utilizarlo operativa
 - política de retención y eliminación de llamadas y audios;
 - protección y rotación de logs;
 - configuración de SMTP;
-- protección anti-abuso para login/registro (Turnstile o controles equivalentes);
+- protección anti-abuso para login/registro (ALTCHA, límites del servidor y controles del proxy);
 - límites y condiciones de los servicios públicos de mapas/geocodificación/rutas, o despliegue de instancias propias;
 - revisión de los modelos y condiciones de Groq Whisper;
 - monitoreo del servidor y los proveedores externos;

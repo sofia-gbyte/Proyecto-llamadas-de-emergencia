@@ -59,7 +59,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 String username = claims.getSubject();
                 Optional<User> user = userRepository.findByUsername(username);
 
-                if (user.isPresent() && user.get().isActive() && sesionSigueValida(user.get(), claims)) {
+                if (user.isPresent() && user.get().isActive() && isSessionStillValid(user.get(), claims)) {
                     String role = user.get().getRole();
                     List<GrantedAuthority> authorities =
                             List.of(new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()));
@@ -77,7 +77,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
      * (logout, cambio de contraseña, o un administrador cerrando sesiones).
      * Si el usuario no tiene esa marca, no hay restricción adicional.
      */
-    private boolean sesionSigueValida(User user, Claims claims) {
+    private boolean isSessionStillValid(User user, Claims claims) {
         if (user.getSessionsValidFrom() == null) return true;
         java.util.Date emitido = claims.getIssuedAt();
         if (emitido == null) return true;
@@ -85,5 +85,4 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         return !emitidoEn.isBefore(user.getSessionsValidFrom());
     }
 }
-
 
