@@ -1,0 +1,36 @@
+# Build and generated output
+/target/
+/dist/
+.github/
+.vscode/
+logs/
+*.log
+*.log.*
+/backups/
+__pycache__/
+*.pyc
+
+# Local app data
+/data/
+**/*.mv.db
+**/*.mv.db-*
+**/*.trace.db
+**/*.trace.db-*
+**/geocache.json
+**/audios_crudos/
+**/audios_encriptados/
+
+# IDE / OS
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Local ASR artifacts
+/tools/asr/models/
+/tools/asr/asr.log
+/tools/asr/*.tar.bz2
+# Local secrets
+**/.codes-secrets.ps1
+**/application-local.properties
+**/application-*.local.properties
