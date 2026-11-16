@@ -1,8 +1,8 @@
-# CODES 1.1.1 — Sistema de llamadas de emergencia
+# CODES 1.1.2 — Sistema de llamadas de emergencia
 
 CODES es una aplicación web para apoyar la recepción, registro y gestión de llamadas de emergencia. El sistema permite trabajar con llamadas en vivo, transcripción con Groq Whisper, clasificación inicial, geocodificación con Geoapify y seguimiento de los casos desde una interfaz web.
 
-**Versión del proyecto: `1.1.1`.** Consulta el [historial de cambios](CHANGELOG.md) para ver las novedades de esta versión y las notas de compatibilidad.
+**Versión del proyecto: `1.1.2`.** Consulta el [historial de cambios](CHANGELOG.md) para ver las novedades de esta versión y las notas de compatibilidad.
 
 La aplicación se limita a uso local en el mismo equipo. No admite acceso desde una LAN ni exposición a Internet.
 
@@ -24,7 +24,7 @@ La aplicación se limita a uso local en el mismo equipo. No admite acceso desde 
 
 ---
 
-> **Alcance de la versión 1.1.1:** versión para pruebas locales de baja capacidad, con datos sintéticos y servicios externos aprobados por el operador. No implica que CODES esté preparado para su exposición a Internet ni para despachos reales sin las revisiones operativas, legales, de privacidad y disponibilidad descritas en [operación local](OPERACION_LOCAL.md).
+> **Alcance de la versión 1.1.2:** versión para pruebas locales de baja capacidad, con datos sintéticos y servicios externos aprobados por el operador. No implica que CODES esté preparado para su exposición a Internet ni para despachos reales sin las revisiones operativas, legales, de privacidad y disponibilidad descritas en [operación local](OPERACION_LOCAL.md).
 
 ## Funcionalidades principales
 
@@ -39,7 +39,7 @@ La aplicación se limita a uso local en el mismo equipo. No admite acceso desde 
 - Clasificación inicial de llamadas mediante lógica heurística.
 - Mapa basado en **Leaflet** (incluido dentro del JAR), geocodificación con Geoapify y rutas con OSRM o Geoapify.
 - Usuarios con roles `operator`, `supervisor` y `administrator`.
-- Activación administrativa de cuentas registradas.
+- Confirmación de correo y aprobación administrativa de cuentas registradas.
 - Aislamiento de llamadas y métricas por institución para usuarios no administradores.
 - Cambio y recuperación de contraseña.
 - Invalidación de sesiones JWT al cerrar sesión, cambiar contraseña, desactivar una cuenta o forzar el cierre de sesiones.
@@ -160,7 +160,7 @@ Para usar el app-image validado de esta entrega, inicia:
 dist\CODES\CODES.exe
 ```
 
-El menú del EXE inicia/detiene CODES, diagnostica la configuración local, crea respaldos y limpia archivos regenerables. Conserva toda la carpeta `CODES` y su subdirectorio `runtime`; el EXE no es autónomo. El app-image incluye Java y es el único punto de entrada para usuarios. Para construir otro paquete desde el código fuente, consulta [App-image para Windows](#app-image-para-windows).
+El menú del EXE abre maximizado e inicia/detiene CODES, muestra un diagnóstico local resumido, configura integraciones, crea respaldos y limpia archivos regenerables. Las pestañas de configuración se ajustan al espacio disponible y permiten desplazarse si hace falta. Conserva toda la carpeta `CODES` y su subdirectorio `runtime`; el EXE no es autónomo. El app-image incluye Java y es el único punto de entrada para usuarios. Para construir otro paquete desde el código fuente, consulta [App-image para Windows](#app-image-para-windows).
 
 Por defecto, la aplicación queda disponible en:
 
@@ -280,7 +280,7 @@ Para una prueba local sin servicios de terceros, inicia desde el EXE, utiliza la
 
 La API utiliza autenticación mediante JWT.
 
-Las contraseñas se almacenan mediante BCrypt y las cuentas registradas como operadores quedan inicialmente inactivas. Un administrador debe activarlas antes de que puedan iniciar sesión.
+Las contraseñas se almacenan mediante BCrypt. Para iniciar sesión, las cuentas registradas como operadores deben confirmar primero su correo y luego ser activadas por un administrador. Las cuentas existentes se conservan verificadas al actualizar desde versiones anteriores.
 
 Roles disponibles:
 
@@ -328,12 +328,19 @@ Registro:
 POST /api/auth/register
 ```
 
-Una cuenta nueva queda inactiva hasta que un administrador la habilita.
+Una cuenta nueva queda inactiva y sin verificar. Tras registrarse, la persona recibe un enlace de confirmación de un solo uso, válido por 24 horas. Confirmar el correo no activa la cuenta: un administrador también debe habilitarla. Si el mensaje no llega o vence, puede solicitar otro desde **¿No recibiste el correo de confirmación?**.
 
 Login:
 
 ```text
 POST /api/auth/login
+```
+
+Confirmación y reenvío del correo:
+
+```text
+POST /api/auth/verify-email
+POST /api/auth/resend-verification
 ```
 
 Recuperación:
@@ -349,7 +356,7 @@ Cambio de contraseña autenticado:
 POST /api/auth/change-password
 ```
 
-Para habilitar recuperación por correo hay que configurar SMTP:
+Para habilitar la confirmación de cuentas y la recuperación de contraseña por correo hay que configurar SMTP y activar los proveedores externos:
 
 ```powershell
 $env:CODES_SMTP_HOST="smtp.example.com"
@@ -357,10 +364,10 @@ $env:CODES_SMTP_PORT="587"
 $env:CODES_SMTP_USERNAME="usuario"
 $env:CODES_SMTP_PASSWORD="password"
 $env:CODES_MAIL_FROM="codes@example.com"
-$env:CODES_PUBLIC_BASE_URL="https://codes.example.internal"
+$env:CODES_PUBLIC_BASE_URL="http://localhost:8000"
 ```
 
-Sin SMTP configurado, la solicitud de recuperación no puede enviar el correo. En ese caso, la administración de cuentas debe realizarse mediante las funciones administrativas disponibles.
+Los correos HTML incluyen el logo de CODES y una alternativa de texto plano. Como CODES solo acepta conexiones locales, los enlaces deben abrirse en el mismo equipo donde se ejecuta la aplicación. Sin SMTP configurado y proveedores externos habilitados, no se puede registrar una cuenta nueva ni enviar recuperaciones por correo.
 
 ---
 
@@ -699,7 +706,7 @@ El repositorio contiene pruebas automatizadas, pero una compilación o ejecució
 
 # Uso local y preparación operativa
 
-El app-image `1.1.1` está preparado para pruebas locales de baja capacidad, no certificado como sistema de producción para datos personales reales ni para despacho de emergencias. El EXE inicia una interfaz local y el servidor se limita a `127.0.0.1`; no habilites acceso LAN/Internet, redirección de puertos ni reglas de firewall para exponerlo. Las integraciones externas están desactivadas por defecto y la interfaz no contacta a proveedores si no se habilitan. Las actualizaciones mantienen una única ubicación de distribución, `dist\CODES`; reemplazar la carpeta del app-image no reemplaza los datos persistidos bajo `%LOCALAPPDATA%\CODES\data`.
+El app-image `1.1.2` está preparado para pruebas locales de baja capacidad, no certificado como sistema de producción para datos personales reales ni para despacho de emergencias. El EXE inicia una interfaz local y el servidor se limita a `127.0.0.1`; no habilites acceso LAN/Internet, redirección de puertos ni reglas de firewall para exponerlo. Las integraciones externas están desactivadas por defecto y la interfaz no contacta a proveedores si no se habilitan. Las actualizaciones mantienen una única ubicación de distribución, `dist\CODES`; reemplazar la carpeta del app-image no reemplaza los datos persistidos bajo `%LOCALAPPDATA%\CODES\data`.
 
 Antes de una prueba, configura un usuario Windows dedicado con acceso restringido al equipo, conserva el paquete íntegro y verifica el manifiesto/hash desde un canal confiable. El EXE de esta entrega no está firmado digitalmente; los hashes detectan cambios solo si el manifiesto llega por un canal confiable y no autentican al editor.
 
@@ -707,7 +714,7 @@ Antes de una prueba, configura un usuario Windows dedicado con acceso restringid
 
 Para un uso operativo con datos sensibles todavía se requiere, como mínimo, definir e implementar cifrado en reposo para H2 y secretos, protección y recuperación de claves, política de retención/eliminación, restauración probada de respaldos, control de acceso del sistema operativo, distribución firmada y revisión de privacidad/legal de cada flujo externo. La app no sustituye un sistema de despacho certificado ni el criterio de un operador.
 
-La versión `1.1.1` se validó con `mvn clean verify` y con el manifiesto del app-image generado por el script de empaquetado. La validación no es una certificación de seguridad ni reemplaza pruebas en el equipo de destino.
+La versión `1.1.2` se validó con `mvn clean verify` y con el manifiesto del app-image generado por el script de empaquetado. La validación no es una certificación de seguridad ni reemplaza pruebas en el equipo de destino.
 
 La configuración actual utiliza H2 con:
 

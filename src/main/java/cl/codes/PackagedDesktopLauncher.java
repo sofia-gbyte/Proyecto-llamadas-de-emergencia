@@ -24,8 +24,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 import javax.imageio.ImageIO;
 
 /**
@@ -69,10 +67,14 @@ final class PackagedDesktopLauncher {
         frame.setContentPane(buildMainPanel());
         loadWindowIcon();
         updateDashboard();
-        frame.setMinimumSize(new Dimension(900, 600));
-        frame.setPreferredSize(new Dimension(1040, 700));
+        Rectangle usableBounds = usableScreenBounds(frame);
+        int maxWidth = Math.max(1, usableBounds.width - 32);
+        int maxHeight = Math.max(1, usableBounds.height - 64);
+        frame.setMinimumSize(new Dimension(Math.min(900, maxWidth), Math.min(600, maxHeight)));
+        frame.setPreferredSize(new Dimension(Math.min(1040, maxWidth), Math.min(700, maxHeight)));
         frame.pack();
         frame.setLocationRelativeTo(null);
+        frame.setExtendedState(JFrame.MAXIMIZED_BOTH);
         frame.addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
             public void windowClosing(java.awt.event.WindowEvent event) {
@@ -447,33 +449,25 @@ final class PackagedDesktopLauncher {
     }
 
     private void showDiagnostics() {
-        StringBuilder report = new StringBuilder("Diagnóstico local (sin conexiones a terceros)\n\n");
-        report.append("Runtime incluido: Java ").append(System.getProperty("java.version")).append('\n');
-        report.append("App-image: ").append(isPackagedRuntime() ? "sí" : "no detectado").append('\n');
+        StringBuilder report = new StringBuilder("Diagnóstico local\n\n");
+        report.append("CODES: ").append(applicationContext == null ? "detenido" : "en ejecución").append('\n');
         report.append("Puerto local ").append(serverPort()).append(": ")
                 .append(isPortInUse(serverPort()) ? "ocupado" : "disponible").append('\n');
-        report.append("Directorio de datos: ").append(dataDirectory()).append('\n');
-        report.append("Directorio de datos escribible: ").append(isWritableDataDirectory() ? "sí" : "no").append('\n');
+        report.append("Datos locales: ").append(isWritableDataDirectory() ? "escribibles" : "sin acceso de escritura").append('\n');
         report.append("Servicios externos: ").append(externalServicesStatus()).append('\n');
-        report.append("GROQ_API_KEY: ").append(hasConfiguredSecret("GROQ_API_KEY") ? "configurada" : "no configurada").append('\n');
-        report.append("GEOAPIFY_API_KEY: ").append(hasConfiguredSecret("GEOAPIFY_API_KEY") ? "configurada" : "no configurada").append('\n');
-        report.append("GEOAPIFY_PLACES_API_KEY: ")
-                .append(hasConfiguredSecret("GEOAPIFY_PLACES_API_KEY") || hasConfiguredSecret("GEOAPIFY_API_KEY")
-                        ? "configurada o heredada de Geocoding" : "no configurada").append('\n');
-        report.append("GEOAPIFY_ROUTING_API_KEY: ")
-                .append(hasConfiguredSecret("GEOAPIFY_ROUTING_API_KEY") ? "configurada" : "no configurada").append('\n');
-        report.append("GEOAPIFY_MAPS_API_KEY: ")
-                .append(hasConfiguredSecret("GEOAPIFY_MAPS_API_KEY") ? "configurada" : "no configurada").append('\n');
-        report.append("Java y Maven del sistema no son necesarios para ejecutar el app-image.\n")
-                .append("Las integraciones externas no se prueban ni se contactan desde este diagnóstico.");
+        report.append("Claves API: Groq ")
+                .append(hasConfiguredSecret("GROQ_API_KEY") ? "configurada" : "no configurada")
+                .append("; Geoapify ")
+                .append(hasConfiguredSecret("GEOAPIFY_API_KEY") ? "configurada" : "no configurada").append('\n');
+        report.append("\nNo se realizan conexiones a proveedores externos.");
         showMessage(report.toString(), "Diagnóstico de CODES", JOptionPane.INFORMATION_MESSAGE);
     }
 
     private String externalServicesStatus() {
         String value = cl.codes.config.LocalSecretBootstrap.getLocalSetting("CODES_EXTERNAL_SERVICES_ENABLED");
         return Boolean.parseBoolean(value)
-                ? "habilitados; el servidor y navegador pueden enviar datos a proveedores configurados"
-                : "deshabilitados por defecto; no se envían datos a proveedores externos";
+                ? "habilitados; podrían enviar datos a proveedores"
+                : "deshabilitados";
     }
 
     private boolean hasConfiguredSecret(String key) {
@@ -614,15 +608,16 @@ final class PackagedDesktopLauncher {
                 "Dirección incluida en los enlaces de recuperación; use localhost.");
 
         JTabbedPane tabs = new JTabbedPane();
-        tabs.addTab("Mapa y geocodificación", new JScrollPane(mapsPanel));
-        tabs.addTab("Transcripción", new JScrollPane(transcriptionPanel));
-        tabs.addTab("Correo", new JScrollPane(mailPanel));
+        tabs.addTab("Mapa y geocodificación", settingsScrollPane(mapsPanel));
+        tabs.addTab("Transcripción", settingsScrollPane(transcriptionPanel));
+        tabs.addTab("Correo", settingsScrollPane(mailPanel));
         JPanel content = new JPanel(new BorderLayout(8, 8));
         content.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         content.add(enabled, BorderLayout.NORTH);
         content.add(tabs, BorderLayout.CENTER);
-        content.add(new JLabel("Los cambios se guardan en el perfil local de Windows, con permisos restringidos. "
-                + "Requieren cerrar y volver a abrir CODES."), BorderLayout.SOUTH);
+        content.add(new JLabel("<html><div style='width:440px'>"
+                + "Los cambios se guardan en el perfil local de Windows, con permisos restringidos. "
+                + "Requieren cerrar y volver a abrir CODES.</div></html>"), BorderLayout.SOUTH);
 
         JDialog dialog = new JDialog(frame, "Configurar integraciones y API", true);
         dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
@@ -713,9 +708,8 @@ final class PackagedDesktopLauncher {
         buttons.add(cancel);
         buttons.add(save);
         dialog.add(buttons, BorderLayout.SOUTH);
-        dialog.setMinimumSize(new Dimension(760, 500));
         dialog.pack();
-        dialog.setLocationRelativeTo(frame);
+        fitDialogToScreen(dialog);
         dialog.setVisible(true);
     }
 
@@ -759,12 +753,44 @@ final class PackagedDesktopLauncher {
         constraints.weightx = 1;
         constraints.fill = GridBagConstraints.HORIZONTAL;
         panel.add(field, constraints);
+        JLabel hintLabel = new JLabel("<html><div style='width:440px'>" + escapeHtml(hint) + "</div></html>");
+        hintLabel.setForeground(MUTED);
+        hintLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));
         constraints.gridx = 1;
         constraints.gridy = row + 1;
         constraints.weightx = 1;
         constraints.insets = new Insets(0, 8, 6, 8);
-        panel.add(new JLabel(hint), constraints);
+        panel.add(hintLabel, constraints);
         return row + 2;
+    }
+
+    private static JScrollPane settingsScrollPane(JPanel panel) {
+        JScrollPane scrollPane = new JScrollPane(panel,
+                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(18);
+        return scrollPane;
+    }
+
+    private static Rectangle usableScreenBounds(Window window) {
+        GraphicsConfiguration configuration = window.getGraphicsConfiguration();
+        Rectangle screenBounds = configuration.getBounds();
+        Insets insets = Toolkit.getDefaultToolkit().getScreenInsets(configuration);
+        return new Rectangle(screenBounds.x + insets.left, screenBounds.y + insets.top,
+                Math.max(1, screenBounds.width - insets.left - insets.right),
+                Math.max(1, screenBounds.height - insets.top - insets.bottom));
+    }
+
+    private static void fitDialogToScreen(JDialog dialog) {
+        Rectangle bounds = usableScreenBounds(dialog);
+        int maxWidth = Math.max(1, bounds.width - 32);
+        int maxHeight = Math.max(1, bounds.height - 48);
+        int width = Math.min(Math.max(dialog.getWidth(), Math.min(760, maxWidth)), maxWidth);
+        int height = Math.min(Math.max(dialog.getHeight(), Math.min(500, maxHeight)), maxHeight);
+        dialog.setMinimumSize(new Dimension(Math.min(700, maxWidth), Math.min(440, maxHeight)));
+        dialog.setSize(width, height);
+        dialog.setLocation(bounds.x + (bounds.width - width) / 2,
+                bounds.y + (bounds.height - height) / 2);
     }
 
     private void validateProviderSettings(JTextField mapTiles, JComboBox<String> mapProvider,
@@ -919,11 +945,11 @@ final class PackagedDesktopLauncher {
         }
         preview.append(String.format(Locale.ROOT, "\nEspacio estimado: %.1f MB%n", bytes / (1024d * 1024d)));
         preview.append("\nNunca se eliminan la base de datos, secretos ni audios. Los registros solo se incluyen si se eligieron expresamente.");
-        Object[] options = {"Solo vista previa", "Borrar elementos listados", "Borrar y crear ZIP del app-image", "Volver"};
+        Object[] options = {"Solo vista previa", "Borrar elementos listados", "Volver"};
         int choice = JOptionPane.showOptionDialog(frame, preview.toString(), "Limpieza / liberar espacio",
                 JOptionPane.DEFAULT_OPTION, JOptionPane.WARNING_MESSAGE, null, options, options[0]);
-        if (choice == 0 || choice == 3 || choice == JOptionPane.CLOSED_OPTION) return;
-        if (candidates.isEmpty() && choice != 2) {
+        if (choice == 0 || choice == 2 || choice == JOptionPane.CLOSED_OPTION) return;
+        if (candidates.isEmpty()) {
             showMessage("No hay elementos que limpiar.", "Limpieza", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
@@ -935,10 +961,6 @@ final class PackagedDesktopLauncher {
             for (Path candidate : candidates) deleteTree(candidate);
             String result = "Limpieza completada; espacio estimado liberado: "
                     + String.format(Locale.ROOT, "%.1f MB.", bytes / (1024d * 1024d));
-            if (choice == 2) {
-                Path archive = exportAppImage();
-                result += "\nCopia comprimida del app-image: " + archive;
-            }
             appendStatus(result);
             showMessage(result, "Limpieza", JOptionPane.INFORMATION_MESSAGE);
         } catch (IOException | SecurityException exception) {
@@ -1033,24 +1055,6 @@ final class PackagedDesktopLauncher {
         }
     }
 
-    private Path exportAppImage() throws IOException {
-        Path appImage = appImageDirectory();
-        if (appImage == null || !Files.isDirectory(appImage)) {
-            throw new IOException("Cannot locate the current app-image.");
-        }
-        Path archive = appImage.getParent().resolve("CODES_liviano_" + timestamp() + ".zip");
-        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive));
-             Stream<Path> paths = Files.walk(appImage)) {
-            for (Path path : paths.filter(Files::isRegularFile).sorted().toList()) {
-                String entryName = appImage.getParent().relativize(path).toString().replace('\\', '/');
-                zip.putNextEntry(new ZipEntry(entryName));
-                Files.copy(path, zip);
-                zip.closeEntry();
-            }
-        }
-        return archive;
-    }
-
     private void exit() {
         if (starting.get()) {
             showMessage("CODES todavía está iniciando. Espere a que finalice el inicio antes de salir.",
@@ -1099,11 +1103,6 @@ final class PackagedDesktopLauncher {
         } catch (IOException exception) {
             return false;
         }
-    }
-
-    private static boolean isPackagedRuntime() {
-        return Boolean.getBoolean("codes.packaged")
-                && Files.isDirectory(appImageDirectory() == null ? Path.of(".") : appImageDirectory().resolve("runtime"));
     }
 
     static Path appImageDirectory() {

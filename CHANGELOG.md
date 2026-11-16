@@ -2,6 +2,26 @@
 
 Este archivo resume los cambios funcionales y de operación relevantes por versión de CODES. Las versiones de las bibliotecas se mantienen documentadas por separado en [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) y en `pom.xml`.
 
+## [1.1.2] - 2026-11-16
+
+### Cuentas y correo
+
+- El registro requiere confirmar la dirección de correo; el inicio de sesión también conserva la aprobación administrativa como requisito.
+- Se agregan correos CODES para confirmar cuentas y recuperar contraseñas, con el logo, enlace alternativo y avisos de expiración. La confirmación vence en 24 horas y la recuperación en 15 minutos.
+- La pantalla de registro mantiene visible la confirmación e instrucciones después de crear la cuenta, sin cambiar automáticamente a inicio de sesión.
+- Las cuentas existentes se mantienen verificadas al actualizar desde versiones anteriores; editar el correo de un usuario invalida la verificación previa.
+
+### Interfaz y distribución
+
+- El EXE abre maximizado, el diagnóstico local prioriza la información relevante y las pestañas de configuración se ajustan al espacio disponible.
+- Se retira del menú la opción de crear un ZIP del app-image que no correspondía a las necesidades de la aplicación.
+- Los correos adoptan la paleta azul oscuro y turquesa de CODES y presentan el logo como imagen en línea.
+
+### Validación y distribución
+
+- El proyecto, la caché web y el empaquetador Windows se alinean a `1.1.2`.
+- `mvn clean verify` pasó con 117 pruebas; el app-image Windows contiene 207 archivos verificados contra el manifiesto y sus SHA-256.
+
 ## [1.1.1] - 2026-11-11
 
 ### Geocodificación y cobertura

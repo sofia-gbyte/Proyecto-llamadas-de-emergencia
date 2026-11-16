@@ -34,6 +34,9 @@ public class User {
 
     private boolean active = true;
 
+    @Column(name = "email_verified", nullable = false, columnDefinition = "boolean default true")
+    private boolean emailVerified = true;
+
     // Cuenta sintética creada para que un ADMINISTRATOR pueda ver la
     // interfaz de operador de una institución ("modo prueba") sin usar
     // credenciales reales. Nunca se loguea con contraseña (el hash es
@@ -78,6 +81,9 @@ public class User {
 
     public boolean isActive() { return active; }
     public void setActive(boolean active) { this.active = active; }
+
+    public boolean isEmailVerified() { return emailVerified; }
+    public void setEmailVerified(boolean emailVerified) { this.emailVerified = emailVerified; }
 
     public boolean isTestAccount() { return testAccount; }
     public void setTestAccount(boolean testAccount) { this.testAccount = testAccount; }

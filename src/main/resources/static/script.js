@@ -512,14 +512,14 @@ function updateUserUi() {
 }
 
 function showAuthView(viewName) {
-  const views = ['login', 'registro', 'recuperar', 'reset'];
+  const views = ['login', 'registro', 'recuperar', 'verificar-correo', 'reenviar-verificacion', 'reset'];
   views.forEach(view => {
     const form = $(`form-${view}`);
     if (form) form.hidden = view !== viewName;
   });
   document.querySelectorAll('.auth-tab').forEach(tab => tab.classList.toggle('activo', tab.dataset.tab === viewName));
   const tabs = $('auth-tabs');
-  if (tabs) tabs.hidden = viewName === 'recuperar' || viewName === 'reset';
+  if (tabs) tabs.hidden = !['login', 'registro'].includes(viewName);
 }
 
 async function requestPasswordRecovery(e) {
@@ -544,6 +544,68 @@ async function requestPasswordRecovery(e) {
     success.hidden = false;
   } catch (err) {
     error.textContent = err.message || 'No se pudo procesar la solicitud.';
+    error.hidden = false;
+  }
+}
+
+async function verifyEmail(e) {
+  e.preventDefault();
+  const error = $('verificacion-error');
+  const success = $('verificacion-success');
+  const button = $('btn-confirmar-correo');
+  error.hidden = true;
+  success.hidden = true;
+  const token = new URLSearchParams(location.search).get('verifyToken');
+  if (!token) {
+    error.textContent = 'El enlace de confirmación no es válido.';
+    error.hidden = false;
+    return;
+  }
+
+  button.disabled = true;
+  try {
+    const response = await fetch(`${API_URL}/auth/verify-email`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ token })
+    });
+    const data = await readResponse(response);
+    if (!response.ok) throw new Error(data.error || 'No se pudo confirmar el correo.');
+    success.textContent = data.message;
+    success.hidden = false;
+    button.hidden = true;
+    history.replaceState({}, '', location.pathname);
+  } catch (err) {
+    error.textContent = err.message || 'No se pudo confirmar el correo.';
+    error.hidden = false;
+    button.disabled = false;
+  }
+}
+
+async function resendVerificationEmail(e) {
+  e.preventDefault();
+  const error = $('reenviar-verificacion-error');
+  const success = $('reenviar-verificacion-success');
+  error.hidden = true;
+  success.hidden = true;
+  try {
+    await publicConfigurationPromise;
+    if (!publicConfiguration.externalServicesEnabled) {
+      error.textContent = 'El envío de correo está desactivado. Contacta al administrador local.';
+      error.hidden = false;
+      return;
+    }
+    const response = await fetch(`${API_URL}/auth/resend-verification`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ email: $('verification-email').value.trim() })
+    });
+    const data = await readResponse(response);
+    if (!response.ok) throw new Error(data.error || 'No se pudo solicitar otro enlace.');
+    success.textContent = data.message;
+    success.hidden = false;
+  } catch (err) {
+    error.textContent = err.message || 'No se pudo solicitar otro enlace.';
     error.hidden = false;
   }
 }
@@ -753,22 +815,12 @@ async function registerAccount(e) {
       return;
     }
 
-    ok.textContent = 'Cuenta creada. Un administrador debe activarla antes de iniciar sesión.';
+    ok.textContent = `Cuenta creada. Enviamos un correo a ${payload.correo}. Ábrelo y pulsa «Confirmar correo». Si no lo encuentras, revisa Spam o Promociones. El enlace vence en 24 horas. Después de confirmar, un administrador deberá aprobar tu cuenta.`;
 
     ok.hidden = false;
 
     e.target.reset();
     resetCaptcha('register');
-
-    setTimeout(
-      () =>
-        document
-          .querySelector(
-            '.auth-tab[data-tab="login"]'
-          )
-          ?.click(),
-      1800
-    );
 
   } catch (err) {
     error.textContent =
@@ -2485,6 +2537,9 @@ function renderUsers(usuarios) {
                 <span class="usuario-etiqueta estado ${status.className}">
                   <span aria-hidden="true"></span>${status.label}
                 </span>
+                <span class="usuario-etiqueta estado ${u.emailVerified ? 'activo' : 'inactivo'}">
+                  <span aria-hidden="true"></span>${u.emailVerified ? 'Correo confirmado' : 'Correo pendiente'}
+                </span>
                 ${u.testAccount
                   ? '<span class="usuario-etiqueta prueba" title="Cuenta de solo lectura usada para vista previa">Cuenta de vista previa</span>'
                   : ''}
@@ -3415,10 +3470,17 @@ onDomReady(
 
     $('btn-olvido-password')?.addEventListener('click', () => showAuthView('recuperar'));
     $('btn-volver-login')?.addEventListener('click', () => showAuthView('login'));
+    $('btn-reenviar-verificacion')?.addEventListener('click', () => showAuthView('reenviar-verificacion'));
+    $('btn-volver-login-verificacion')?.addEventListener('click', () => {
+      history.replaceState({}, '', location.pathname);
+      showAuthView('login');
+    });
+    $('btn-volver-login-reenvio')?.addEventListener('click', () => showAuthView('login'));
     $('form-recuperar')?.addEventListener('submit', requestPasswordRecovery);
+    $('form-verificar-correo')?.addEventListener('submit', verifyEmail);
+    $('form-reenviar-verificacion')?.addEventListener('submit', resendVerificationEmail);
     $('form-reset')?.addEventListener('submit', resetPassword);
     $('btn-reset-login')?.addEventListener('click', () => { history.replaceState({}, '', location.pathname); showAuthView('login'); });
-    if (new URLSearchParams(location.search).has('resetToken')) showAuthView('reset');
 
 
     $('btn-salir')
@@ -3601,6 +3663,10 @@ onDomReady(
 
       hideAuthScreen();
       enterConsole();
+    } else if (urlParams.has('verifyToken')) {
+      showAuthView('verificar-correo');
+    } else if (urlParams.has('resetToken')) {
+      showAuthView('reset');
     } else if ($('pantalla-auth')) {
       $('pantalla-auth').hidden =
         false;

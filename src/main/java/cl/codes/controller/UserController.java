@@ -84,11 +84,17 @@ public class UserController {
             throw new IllegalStateException("At least one active administrator must remain");
         }
 
+        String updatedEmail = normalizeOptional(req.email());
+        if (updatedEmail == null) {
+            user.setEmailVerified(true);
+        } else if (user.getEmail() == null || !user.getEmail().equalsIgnoreCase(updatedEmail)) {
+            user.setEmailVerified(false);
+        }
         user.setRole(req.rol());
         user.setInstitution(req.institution());
         user.setFirstName(normalizeOptional(req.firstName()));
         user.setLastName(normalizeOptional(req.lastName()));
-        user.setEmail(normalizeOptional(req.email()));
+        user.setEmail(updatedEmail);
         user.setSessionsValidFrom(LocalDateTime.now());
         UserResponse response = UserResponse.from(repo.save(user));
         auditLogService.recordEvent(auth.getName(), "update-user", "user", user.getUsername(), request.getRemoteAddr(), "success");

@@ -8,16 +8,22 @@ import cl.codes.exception.ResourceNotFoundException;
 import cl.codes.controller.dto.ChangePasswordRequest;
 import cl.codes.controller.dto.ForgotPasswordRequest;
 import cl.codes.controller.dto.ResetPasswordRequest;
+import cl.codes.controller.dto.VerifyEmailRequest;
+import cl.codes.exception.EmailDeliveryException;
 import cl.codes.service.PasswordResetService;
 import cl.codes.model.User;
 import cl.codes.repository.UserRepository;
 import cl.codes.service.SecurityService;
 import cl.codes.service.AuditLogService;
+import cl.codes.service.AccountRegistrationService;
+import cl.codes.service.EmailVerificationService;
 import cl.codes.security.JwtService;
 import cl.codes.security.AuthRateLimitService;
 import cl.codes.security.LoginAttemptService;
 import cl.codes.security.AltchaService;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.CacheControl;
@@ -40,6 +46,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
+    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
 
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
@@ -50,6 +57,8 @@ public class AuthController {
     private final AltchaService altchaService;
     private final PasswordResetService passwordResetService;
     private final AuditLogService auditLogService;
+    private final AccountRegistrationService accountRegistrationService;
+    private final EmailVerificationService emailVerificationService;
 
     public AuthController(
             AuthenticationManager authenticationManager,
@@ -60,7 +69,9 @@ public class AuthController {
             SecurityService securityService,
             AltchaService altchaService,
             PasswordResetService passwordResetService,
-            AuditLogService auditLogService
+            AuditLogService auditLogService,
+            AccountRegistrationService accountRegistrationService,
+            EmailVerificationService emailVerificationService
     ) {
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
@@ -71,6 +82,8 @@ public class AuthController {
         this.altchaService = altchaService;
         this.passwordResetService = passwordResetService;
         this.auditLogService = auditLogService;
+        this.accountRegistrationService = accountRegistrationService;
+        this.emailVerificationService = emailVerificationService;
     }
 
     @PostMapping("/login")
@@ -133,11 +146,44 @@ public class AuthController {
     public ResponseEntity<?> forgotPassword(@Valid @RequestBody ForgotPasswordRequest req, HttpServletRequest request) {
         if (!authRateLimitService.allowRecovery(request.getRemoteAddr())) return tooManyRequests();
         // Respuesta idéntica exista o no la cuenta: evita enumeración de correos.
-        try { passwordResetService.requestReset(req.email()); } catch (RuntimeException ignored) {
-            // No revelar si el correo existe ni detalles del proveedor SMTP.
+        try {
+            passwordResetService.requestReset(req.email());
+        } catch (EmailDeliveryException exception) {
+            log.warn("Password recovery email delivery failed: {}", exception.getClass().getSimpleName());
         }
         auditLogService.recordEvent(req.email(), "forgot-password-request", "user", null, request.getRemoteAddr(), "requested");
         return ResponseEntity.ok(Map.of("message", "Si existe una cuenta activa con ese correo, recibirás instrucciones de recuperación."));
+    }
+
+    @PostMapping("/verify-email")
+    public ResponseEntity<?> verifyEmail(@Valid @RequestBody VerifyEmailRequest req, HttpServletRequest request) {
+        if (!authRateLimitService.allowRecovery(request.getRemoteAddr())) return tooManyRequests();
+        if (!emailVerificationService.verify(req.token())) {
+            auditLogService.recordEvent(null, "verify-email", "user", null, request.getRemoteAddr(), "failure");
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "El enlace de confirmación no es válido, ya fue utilizado o expiró."
+            ));
+        }
+        auditLogService.recordEvent(null, "verify-email", "user", null, request.getRemoteAddr(), "success");
+        return ResponseEntity.ok(Map.of(
+                "message", "Correo confirmado. Un administrador debe aprobar la cuenta antes de iniciar sesión."
+        ));
+    }
+
+    @PostMapping("/resend-verification")
+    public ResponseEntity<?> resendVerification(@Valid @RequestBody ForgotPasswordRequest req,
+                                               HttpServletRequest request) {
+        if (!authRateLimitService.allowRecovery(request.getRemoteAddr())) return tooManyRequests();
+        try {
+            emailVerificationService.resend(req.email());
+        } catch (EmailDeliveryException exception) {
+            log.warn("Verification email resend failed: {}", exception.getClass().getSimpleName());
+        }
+        auditLogService.recordEvent(req.email(), "resend-verification-request", "user", null,
+                request.getRemoteAddr(), "requested");
+        return ResponseEntity.ok(Map.of(
+                "message", "Si la cuenta necesita confirmación y el correo está disponible, enviaremos un nuevo enlace."
+        ));
     }
 
     @PostMapping("/reset-password")
@@ -158,27 +204,19 @@ public class AuthController {
         if (!altchaService.verify(req.captchaToken(), "register")) {
             return captchaRequired();
         }
-        String user = req.username().strip();
-        String email = req.email().strip().toLowerCase();
-        if (userRepository.existsByUsername(user)) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "A user with that username already exists"));
+        User account;
+        try {
+            account = accountRegistrationService.register(req);
+        } catch (EmailDeliveryException exception) {
+            log.warn("Registration verification email failed: {}", exception.getClass().getSimpleName());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
+                    "error", "No se pudo enviar el correo de confirmación. Revisa la configuración SMTP e inténtalo nuevamente."
+            ));
         }
-        if (userRepository.existsByEmailIgnoreCase(email)) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "An account with that email already exists"));
-        }
-        User account = new User();
-        account.setUsername(user);
-        account.setPasswordHash(securityService.hashPassword(req.password()));
-        account.setRole("operator");
-        account.setActive(false);
-        account.setFirstName(req.firstName().strip());
-        account.setLastName(req.lastName().strip());
-        account.setEmail(email);
-        account.setInstitution(req.institution());
-        userRepository.save(account);
+        String user = account.getUsername();
         auditLogService.recordEvent(user, "register", "user", user, request.getRemoteAddr(), "success");
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
-                "message", "Account created successfully. An administrator must activate it before login.",
+                "message", "Cuenta creada. Confirma tu correo; después, un administrador deberá aprobarla.",
                 "user", UserResponse.from(account)
         ));
     }

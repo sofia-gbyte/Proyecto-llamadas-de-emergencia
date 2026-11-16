@@ -1,6 +1,7 @@
 package cl.codes.controller;
 
 import cl.codes.exception.ExternalServiceException;
+import cl.codes.exception.EmailDeliveryException;
 import cl.codes.exception.ResourceNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,6 +52,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<?> handleExternalServiceError(ExternalServiceException e) {
         log.warn("External service request failed: {}", e.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("error", e.getMessage()));
+    }
+
+    @ExceptionHandler(EmailDeliveryException.class)
+    public ResponseEntity<?> handleEmailDeliveryError(EmailDeliveryException e) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
+                "error", "El servicio de correo no está disponible. Revisa la configuración SMTP e inténtalo nuevamente."
+        ));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>CODES · Centro de Operaciones y Despacho de Emergencias</title>
 <link rel="stylesheet" href="styles.css" />
-<link rel="stylesheet" href="console-redesign.css?v=1.1.1" />
+<link rel="stylesheet" href="console-redesign.css?v=1.1.2" />
 <link rel="stylesheet" href="/webjars/leaflet/1.9.4/leaflet.css" />
 </head>
 <body>
@@ -42,9 +42,10 @@
                 <p class="auth-error" id="login-error" hidden></p>
                 <button class="btn-auth" type="submit">Ingresar a CODES</button>
                 <button class="auth-link" id="btn-olvido-password" type="button">¿Olvidaste tu contraseña?</button>
+                <button class="auth-link" id="btn-reenviar-verificacion" type="button">¿No recibiste el correo de confirmación?</button>
                 <div class="auth-demo-hint">
                     <div class="demo-label">Acceso seguro</div>
-                    <div class="row">La cuenta debe estar activa para ingresar. Si te registras, un administrador deberá activarla.</div>
+                    <div class="row">Para ingresar, confirma tu correo y espera la aprobación de un administrador.</div>
                 </div>
             </form>
 
@@ -60,6 +61,30 @@
                 <p class="auth-success" id="recovery-success" hidden></p>
                 <button class="btn-auth" type="submit">Enviar enlace de recuperación</button>
                 <button class="auth-link" id="btn-volver-login" type="button">← Volver a iniciar sesión</button>
+            </form>
+
+            <form class="auth-form auth-recovery" id="form-verificar-correo" hidden>
+                <div class="auth-recovery-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m3.5 7 8.5 6 8.5-6"/><path d="m9 15 2 2 4-4"/></svg></div>
+                <h2>Confirmar correo</h2>
+                <p class="auth-recovery-copy">Confirma que esta dirección te pertenece. Por seguridad, abre el enlace en el mismo equipo donde se ejecuta CODES.</p>
+                <p class="auth-error" id="verificacion-error" hidden></p>
+                <p class="auth-success" id="verificacion-success" hidden></p>
+                <button class="btn-auth" id="btn-confirmar-correo" type="submit">Confirmar dirección</button>
+                <button class="auth-link" id="btn-volver-login-verificacion" type="button">← Volver a iniciar sesión</button>
+            </form>
+
+            <form class="auth-form auth-recovery" id="form-reenviar-verificacion" hidden>
+                <div class="auth-recovery-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m3.5 7 8.5 6 8.5-6"/><path d="M17 3v4m-2-2h4"/></svg></div>
+                <h2>Reenviar confirmación</h2>
+                <p class="auth-recovery-copy">Ingresa el correo usado al registrarte. Si la cuenta aún necesita confirmación, enviaremos un nuevo enlace.</p>
+                <div class="campo">
+                    <label for="verification-email">Correo</label>
+                    <input id="verification-email" type="email" placeholder="ana@codes.cl" required autocomplete="email" />
+                </div>
+                <p class="auth-error" id="reenviar-verificacion-error" hidden></p>
+                <p class="auth-success" id="reenviar-verificacion-success" hidden></p>
+                <button class="btn-auth" type="submit">Enviar nuevo enlace</button>
+                <button class="auth-link" id="btn-volver-login-reenvio" type="button">← Volver a iniciar sesión</button>
             </form>
 
             <form class="auth-form auth-recovery" id="form-reset" hidden>
@@ -125,11 +150,10 @@
                     </altcha-widget>
                 </div>
                 <p class="auth-error" id="registro-error" hidden></p>
-                <p class="auth-success" id="registro-success" hidden></p>
+                <p class="auth-success" id="registro-success" role="status" aria-live="polite" hidden></p>
                 <button class="btn-auth" type="submit">Crear cuenta</button>
                 <p style="color: #3d4d66; font-size:0.6rem; text-align:center; margin-top:0.5rem;">
-                    Las cuentas se crean en estado <strong>pendiente</strong>.
-                    Un administrador debe activarlas.
+                    Debes confirmar tu correo y esperar la aprobación de un administrador.
                 </p>
             </form>
 
@@ -407,6 +431,6 @@ window.altchaReadyPromise = import('/vendor/altcha/altcha.min.js')
 
 </script>
 <script src="/webjars/leaflet/1.9.4/leaflet.js"></script>
-<script src="script.js?v=1.1.1"></script>
+<script src="script.js?v=1.1.2"></script>
 </body>
 </html>
