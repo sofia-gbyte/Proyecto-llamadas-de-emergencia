@@ -2553,6 +2553,9 @@ function renderUsers(usuarios) {
                 ${u.testAccount
                   ? ''
                   : `<button class="btn-accion secundario" data-accion="reset-clave" data-id="${u.id}" title="Genera una contraseña temporal para este usuario">Restablecer contraseña</button>`}
+                ${String(u.role || '').toLowerCase() === 'operator' && !u.testAccount
+                  ? `<button class="btn-accion secundario" data-accion="reset-mfa" data-id="${u.id}" title="El operador tendrá que volver a configurar su app autenticadora">Restablecer MFA móvil</button>`
+                  : ''}
               </div>
             </article>
           `;
@@ -2571,6 +2574,8 @@ function renderUsers(usuarios) {
           () =>
             b.dataset.accion === 'reset-clave'
               ? resetUserPassword(Number(b.dataset.id))
+              : b.dataset.accion === 'reset-mfa'
+                ? resetMobileMfa(Number(b.dataset.id))
               : changeUserStatus(
               Number(
                 b.dataset.id
@@ -2590,6 +2595,19 @@ async function resetUserPassword(id) {
     // prompt() permite seleccionar y copiar la clave temporal; solo se muestra una vez.
     window.prompt(`${d.message}\n\nContraseña temporal (cópiala ahora):`, d.temporaryPassword);
     recordEvent('Se generó una contraseña temporal para un usuario.');
+  } catch (e) {
+    if (e.message !== 'No autenticado') showAlert(e.message, 'error');
+  }
+}
+
+async function resetMobileMfa(id) {
+  if (!confirm('¿Restablecer la verificación móvil de este operador? Sus sesiones se cerrarán y deberá configurar de nuevo su app autenticadora.')) return;
+  try {
+    const r = await apiFetch(`/api/users/${id}/reset-mobile-mfa`, { method: 'PATCH' });
+    const d = await readResponse(r);
+    if (!r.ok) throw new Error(d.error || 'No se pudo restablecer la verificación móvil');
+    showAlert(d.message, 'ok');
+    recordEvent('Se restableció la autenticación móvil de un operador.');
   } catch (e) {
     if (e.message !== 'No autenticado') showAlert(e.message, 'error');
   }

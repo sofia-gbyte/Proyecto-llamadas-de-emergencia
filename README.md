@@ -1,10 +1,10 @@
-# CODES 1.1.2 — Sistema de llamadas de emergencia
+# CODES 1.1.3 — Sistema de llamadas de emergencia
 
 CODES es una aplicación web para apoyar la recepción, registro y gestión de llamadas de emergencia. El sistema permite trabajar con llamadas en vivo, transcripción con Groq Whisper, clasificación inicial, geocodificación con Geoapify y seguimiento de los casos desde una interfaz web.
 
-**Versión del proyecto: `1.1.2`.** Consulta el [historial de cambios](CHANGELOG.md) para ver las novedades de esta versión y las notas de compatibilidad.
+**Versión del proyecto: `1.1.3`.** Consulta el [historial de cambios](CHANGELOG.md) para ver las novedades de esta versión y las notas de compatibilidad.
 
-La aplicación se limita a uso local en el mismo equipo. No admite acceso desde una LAN ni exposición a Internet.
+La interfaz de escritorio y su API principal se limitan al mismo equipo. Como opción separada, el APK de operadores puede conectarse por HTTPS desde la misma subred privada; no se admite exposición a Internet.
 
 > Leaflet se incluye dentro de la aplicación. Por privacidad, las integraciones externas (mapas, rutas, geocodificación, transcripción y correo) están desactivadas por defecto; no se envían datos a terceros a menos que un administrador habilite explícitamente los proveedores. Ver [operación local](OPERACION_LOCAL.md) y el [inventario de licencias y servicios](THIRD_PARTY_LICENSES.md).
 
@@ -16,7 +16,8 @@ La aplicación se limita a uso local en el mismo equipo. No admite acceso desde 
 - [Mapa y servicios cartográficos](#mapa-y-servicios-cartográficos)
 - [Llamadas en vivo y transcripción](#llamadas-en-vivo-y-transcripción)
 - [Direcciones y datos OSM](#direcciones-y-geocodificación)
-- [Red y acceso desde otros equipos](#red-y-acceso-desde-otros-equipos)
+- [Red y acceso desde otros equipos](#red-local-y-acceso)
+- [APK de operadores Android](#apk-de-operadores-android)
 - [Desarrollo y pruebas](#desarrollo-y-pruebas)
 - [Producción](#antes-de-usarlo-en-producción)
 - [Licencias y asistencia de IA](THIRD_PARTY_LICENSES.md)
@@ -24,7 +25,7 @@ La aplicación se limita a uso local en el mismo equipo. No admite acceso desde 
 
 ---
 
-> **Alcance de la versión 1.1.2:** versión para pruebas locales de baja capacidad, con datos sintéticos y servicios externos aprobados por el operador. No implica que CODES esté preparado para su exposición a Internet ni para despachos reales sin las revisiones operativas, legales, de privacidad y disponibilidad descritas en [operación local](OPERACION_LOCAL.md).
+> **Alcance de la versión 1.1.3:** versión para pruebas locales de baja capacidad, con datos sintéticos y servicios externos aprobados por el operador. No implica que CODES esté preparado para su exposición a Internet ni para despachos reales sin las revisiones operativas, legales, de privacidad y disponibilidad descritas en [operación local](OPERACION_LOCAL.md).
 
 ## Funcionalidades principales
 
@@ -48,6 +49,7 @@ La aplicación se limita a uso local en el mismo equipo. No admite acceso desde 
 - Autochequeo interno de base de datos, disco, claves de proveedores externos y caché de geocodificación.
 - Cifrado AES-256-GCM para los audios almacenados.
 - Base de datos H2 en archivo, sin necesidad de instalar un servidor de base de datos adicional.
+- APK Android opcional para operadores: consultar casos, asignarse casos pendientes, navegar a la dirección y cerrarlos.
 
 ---
 
@@ -157,7 +159,7 @@ Las llamadas en vivo se envían a Groq al detener y guardar la grabación. El l�
 Para usar el app-image validado de esta entrega, inicia:
 
 ```text
-dist\CODES\CODES.exe
+dist\1.1.3\CODES\CODES.exe
 ```
 
 El menú del EXE abre maximizado e inicia/detiene CODES, muestra un diagnóstico local resumido, configura integraciones, crea respaldos y limpia archivos regenerables. Las pestañas de configuración se ajustan al espacio disponible y permiten desplazarse si hace falta. Conserva toda la carpeta `CODES` y su subdirectorio `runtime`; el EXE no es autónomo. El app-image incluye Java y es el único punto de entrada para usuarios. Para construir otro paquete desde el código fuente, consulta [App-image para Windows](#app-image-para-windows).
@@ -210,7 +212,7 @@ Para H2 local, el nombre de usuario predeterminado es `sa` y la contraseña qued
 
 ## Inicio de CODES en Windows
 
-El punto de entrada para usuarios es `dist\CODES\CODES.exe`, incluido en el app-image. Su menú usa el logo de CODES y agrupa las acciones por propósito: iniciar el sistema, configurar servicios, revisar diagnóstico y administrar datos/respaldos. No copies ni distribuyas solo el EXE: conserva la carpeta completa con `runtime`. El menú no incluye una acción que pueda borrar todos los casos y audios. Se retiró el lanzador por lotes; los scripts `.ps1` de compilación y mantenimiento no forman parte del paquete entregable.
+El punto de entrada para usuarios es `dist\1.1.3\CODES\CODES.exe`, incluido en el app-image. Su menú usa el logo de CODES y agrupa las acciones por propósito: iniciar el sistema, configurar servicios, revisar diagnóstico y administrar datos/respaldos. No copies ni distribuyas solo el EXE: conserva la carpeta completa con `runtime`. El menú no incluye una acción que pueda borrar todos los casos y audios. Se retiró el lanzador por lotes; los scripts `.ps1` de compilación y mantenimiento no forman parte del paquete entregable.
 
 El app-image puede crear o reutilizar estos archivos locales:
 
@@ -246,7 +248,7 @@ Para construir o actualizar el app-image desde el código fuente se necesita Win
 .\tools\package_codes_windows.ps1 -ReplaceExisting
 ```
 
-Si PowerShell bloquea el script, no uses `ExecutionPolicy Bypass` ni reduzcas la política de seguridad; solicita el procedimiento autorizado al administrador del equipo. El ejecutable de una compilación nueva queda en `dist\CODES\CODES.exe`, y el runtime Java en `dist\CODES\runtime`. Distribuye la carpeta completa, no solo el `.exe`; el usuario final no necesita scripts de compilación o mantenimiento. Al iniciar el sistema desde el menú, el EXE abre `http://127.0.0.1:8000` cuando el servidor está listo. La base H2, los audios, la caché y los secretos se guardan fuera del paquete en `%LOCALAPPDATA%\CODES\data` (o en `CODES_DATA_DIR` si se define). No incluyas archivos de datos o secretos al distribuir el app-image.
+Si PowerShell bloquea el script, no uses `ExecutionPolicy Bypass` ni reduzcas la política de seguridad; solicita el procedimiento autorizado al administrador del equipo. El ejecutable de esta versión queda en `dist\1.1.3\CODES\CODES.exe`, y el runtime Java en `dist\1.1.3\CODES\runtime`. Distribuye la carpeta completa, no solo el `.exe`; el usuario final no necesita scripts de compilación o mantenimiento. Al iniciar el sistema desde el menú, el EXE abre `http://127.0.0.1:8000` cuando el servidor está listo. La base H2, los audios, la caché y los secretos se guardan fuera del paquete en `%LOCALAPPDATA%\CODES\data` (o en `CODES_DATA_DIR` si se define). No incluyas archivos de datos o secretos al distribuir el app-image.
 
 El script genera `package-manifest.json` con la lista de archivos, tamaños y SHA-256, además de `SHA256SUMS.txt`. Una segunda compilación puede usar otro destino (`-DestinationDirectory dist\phase2`) o reemplazar un app-image previo creado por el mismo script con `-ReplaceExisting`. El paquete se inspecciona para rechazar scripts y datos locales. Para usar CODES, el usuario final solo abre `CODES.exe`; no necesita ejecutar scripts, instalar Maven/Java ni configurar Java. La app-image es una carpeta autocontenida para distribución, no un EXE independiente: conserva su carpeta completa y el subdirectorio `runtime`.
 
@@ -270,7 +272,56 @@ El ejecutable está limitado deliberadamente a conexiones desde el mismo equipo:
 127.0.0.1:8000
 ```
 
-La aplicación rechaza una dirección `server.address` que no sea loopback y fuerza la escucha en `127.0.0.1`. No configures `CODES_SERVER_ADDRESS` para una IP de LAN, no abras puertos del firewall y no publiques el servicio mediante un proxy. La configuración de red multi-equipo no forma parte de este ejecutable.
+La API principal rechaza una dirección `server.address` que no sea loopback y fuerza la escucha en `127.0.0.1`. La única excepción es el listener HTTPS independiente y opcional del APK, descrito a continuación. No configures `CODES_SERVER_ADDRESS` para una IP de LAN ni publiques ningún listener mediante un proxy o redirección de puertos.
+
+## APK de operadores Android
+
+El APK es una interfaz móvil reducida para cuentas de operador. Permite consultar casos pendientes y propios en curso, asignarse un caso, abrir su dirección en una aplicación de mapas y cerrar un caso asignado con un comentario. No incluye administración, recepción de llamadas, micrófono, grabación ni permisos de ubicación. Actualiza los casos cada 10 segundos mientras la pantalla está abierta.
+
+La conexión es opcional, solo por HTTPS dentro de la misma subred privada y con certificado fijado por su huella SHA-256. El listener usa el puerto `8443`; la interfaz web y la API principal siguen en loopback. No habilites reenvío de puertos ni acceso desde Internet. Usa una Wi-Fi privada de confianza; las redes de invitados pueden impedir la comunicación entre dispositivos. Si Windows Firewall pregunta, permite la conexión solo en redes privadas.
+
+En Android, la dirección y la huella se cifran con AES-GCM usando una clave no exportable del Android Keystore. El JWT de la sesión permanece en memoria, no en preferencias ni en el almacenamiento web; dura como máximo 2 horas y **Cerrar sesión** lo invalida en el servidor. La app desactiva HTTP sin cifrar, cookies, caché y almacenamiento web, y excluye sus datos de respaldos. La pantalla móvil usa una política CSP para limitar recursos al propio servidor. JavaScript se habilita únicamente para la interfaz web servida por CODES; la navegación a otros hosts se bloquea.
+
+El acceso móvil combina contraseña, ALTCHA y TOTP. En el primer inicio de sesión la app obliga a configurar una aplicación autenticadora compatible; los siguientes inicios piden el código temporal de 6 dígitos. Los secretos TOTP se cifran con AES-GCM antes de guardarse en H2 y se usa una clave local independiente. Los códigos tienen tolerancia de un intervalo y no se aceptan de nuevo tras su uso. Esta MFA aplica al APK; el inicio de sesión de escritorio no cambia. Si un operador pierde su autenticador, un administrador puede restablecer su MFA con `PATCH /api/users/{id}/reset-mobile-mfa`; al volver a entrar por móvil tendrá que inscribirlo otra vez. La cuenta también debe tener correo confirmado y aprobación administrativa.
+
+### Conectar el APK
+
+1. En CODES para escritorio, detén el servidor y abre **Conexión móvil**.
+2. Selecciona la interfaz de red que comparte el teléfono y pulsa **Mostrar dirección y huella HTTPS**. Copia la IPv4 privada y la huella SHA-256 antes de cerrar la ventana.
+3. Activa **Permitir conexión desde el APK por HTTPS**, guarda la configuración y reinicia CODES. El servidor y el teléfono deben permanecer en la misma red.
+4. Abre el APK, introduce esa dirección y huella exactamente y pulsa **Conectar a CODES**. Inicia sesión con una cuenta activa de operador; las cuentas de prueba, supervisores y administradores no pueden iniciar sesión en el APK.
+
+Si la IP de la computadora cambia, detén CODES, selecciona la nueva interfaz/dirección, vuelve a mostrar la huella y actualiza ambos valores en el APK. La huella solo cambia si se elimina o reemplaza el certificado local guardado en el directorio de datos.
+
+Para obtener el EXE de escritorio que incluye esta opción sin reemplazar un app-image existente:
+
+```powershell
+.\tools\package_codes_windows.ps1 -DestinationDirectory 'dist\1.1.3'
+```
+
+El ejecutable queda en `dist\1.1.3\CODES\CODES.exe`; conserva toda la carpeta `CODES`, incluido el runtime.
+
+### Construir el APK de prueba
+
+En Windows se requiere Android SDK (API 37) y JDK 17 o superior. Desde la raíz del repositorio:
+
+```powershell
+.\android\gradlew.bat -p .\android assembleDebug
+```
+
+El APK de depuración `1.1.3` queda en `android\app\build\outputs\apk\debug\app-debug.apk`; también se copia a `dist\1.1.3\CODES-1.1.3.apk` para preparar la carpeta de entrega. Incluye firma de desarrollo y sirve para pruebas, no para distribución. Google Play Protect puede seguir mostrando avisos al instalar APK descargados o poco conocidos; **ninguna modificación del código puede garantizar que desaparezcan**. Una firma propia identifica el paquete y permite actualizaciones coherentes, pero no equivale a una revisión ni reputación de Google Play.
+
+Los builds `release` activan R8 (minificación/ofuscación) y reducción de recursos, y fallan si no se configura una firma de release. Define las cuatro variables de entorno con una clave privada tuya que guardes fuera del repositorio:
+
+```powershell
+$env:CODES_ANDROID_KEYSTORE="C:\ruta-segura\codes-release.jks"
+$env:CODES_ANDROID_KEYSTORE_PASSWORD="<contraseña-del-keystore>"
+$env:CODES_ANDROID_KEY_ALIAS="codes"
+$env:CODES_ANDROID_KEY_PASSWORD="<contraseña-de-la-clave>"
+.\android\gradlew.bat -p .\android assembleRelease
+```
+
+El resultado firmado queda en `android\app\build\outputs\apk\release\app-release.apk`. Conserva una copia de respaldo segura de la clave y sus contraseñas: sin ellas no podrás firmar actualizaciones que Android acepte como la misma app. Nunca las subas al repositorio. La firma de release y la distribución a través de Google Play son pasos distintos.
 
 Para una prueba local sin servicios de terceros, inicia desde el EXE, utiliza la interfaz en `http://127.0.0.1:8000` y crea una llamada con transcripción manual; omite geocodificación, transcripción remota, mapa/rutas y correo. No uses datos reales sensibles. Las fallas de inicio muestran pasos de recuperación sin mostrar secretos; si aparece una referencia local, revisa los registros bajo el directorio de datos y comparte únicamente los tipos de error, nunca su contenido sensible.
 
@@ -706,7 +757,7 @@ El repositorio contiene pruebas automatizadas, pero una compilación o ejecució
 
 # Uso local y preparación operativa
 
-El app-image `1.1.2` está preparado para pruebas locales de baja capacidad, no certificado como sistema de producción para datos personales reales ni para despacho de emergencias. El EXE inicia una interfaz local y el servidor se limita a `127.0.0.1`; no habilites acceso LAN/Internet, redirección de puertos ni reglas de firewall para exponerlo. Las integraciones externas están desactivadas por defecto y la interfaz no contacta a proveedores si no se habilitan. Las actualizaciones mantienen una única ubicación de distribución, `dist\CODES`; reemplazar la carpeta del app-image no reemplaza los datos persistidos bajo `%LOCALAPPDATA%\CODES\data`.
+El app-image `1.1.3` está preparado para pruebas locales de baja capacidad, no certificado como sistema de producción para datos personales reales ni para despacho de emergencias. El EXE mantiene su interfaz y API principal en `127.0.0.1`; solo el APK puede habilitar, de forma explícita, un listener HTTPS restringido a una interfaz y subred privadas. No habilites acceso a Internet, redirección de puertos ni reglas de firewall públicas. Las integraciones externas están desactivadas por defecto y la interfaz no contacta a proveedores si no se habilitan. El app-image de esta versión está en `dist\1.1.3\CODES`; reemplazar la carpeta del app-image no reemplaza los datos persistidos bajo `%LOCALAPPDATA%\CODES\data`.
 
 Antes de una prueba, configura un usuario Windows dedicado con acceso restringido al equipo, conserva el paquete íntegro y verifica el manifiesto/hash desde un canal confiable. El EXE de esta entrega no está firmado digitalmente; los hashes detectan cambios solo si el manifiesto llega por un canal confiable y no autentican al editor.
 
@@ -714,7 +765,7 @@ Antes de una prueba, configura un usuario Windows dedicado con acceso restringid
 
 Para un uso operativo con datos sensibles todavía se requiere, como mínimo, definir e implementar cifrado en reposo para H2 y secretos, protección y recuperación de claves, política de retención/eliminación, restauración probada de respaldos, control de acceso del sistema operativo, distribución firmada y revisión de privacidad/legal de cada flujo externo. La app no sustituye un sistema de despacho certificado ni el criterio de un operador.
 
-La versión `1.1.2` se validó con `mvn clean verify` y con el manifiesto del app-image generado por el script de empaquetado. La validación no es una certificación de seguridad ni reemplaza pruebas en el equipo de destino.
+La versión `1.1.3` se validó con `mvn clean verify` y con el manifiesto del app-image generado por el script de empaquetado. La validación no es una certificación de seguridad ni reemplaza pruebas en el equipo de destino.
 
 La configuración actual utiliza H2 con:
 

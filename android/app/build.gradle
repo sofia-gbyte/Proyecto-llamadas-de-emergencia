@@ -1,0 +1,77 @@
+plugins {
+    id 'com.android.application'
+}
+
+def releaseStoreFile = System.getenv('CODES_ANDROID_KEYSTORE')
+def releaseStorePassword = System.getenv('CODES_ANDROID_KEYSTORE_PASSWORD')
+def releaseKeyAlias = System.getenv('CODES_ANDROID_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('CODES_ANDROID_KEY_PASSWORD')
+def releaseSigningValues = [
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+]
+def hasReleaseSigning = releaseSigningValues.every { it != null && !it.isBlank() }
+def hasPartialReleaseSigning = releaseSigningValues.any { it != null && !it.isBlank() }
+
+if (hasPartialReleaseSigning && !hasReleaseSigning) {
+    throw new GradleException('Configura todas las variables CODES_ANDROID_* para firmar el APK de release.')
+}
+
+android {
+    namespace 'cl.codes.mobile'
+    compileSdk 37
+
+    defaultConfig {
+        applicationId 'cl.codes.mobile'
+        minSdk 26
+        targetSdk 35
+        versionCode 5
+        versionName '1.1.3'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    if (hasReleaseSigning) {
+        signingConfigs {
+            release {
+                storeFile file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+}
+
+tasks.register('verifyReleaseSigning') {
+    doLast {
+        if (!hasReleaseSigning) {
+            throw new GradleException(
+                'Release no firmado: configura CODES_ANDROID_KEYSTORE, CODES_ANDROID_KEYSTORE_PASSWORD, '
+                    + 'CODES_ANDROID_KEY_ALIAS y CODES_ANDROID_KEY_PASSWORD.'
+            )
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name == 'packageRelease') {
+        dependsOn tasks.named('verifyReleaseSigning')
+    }
+}

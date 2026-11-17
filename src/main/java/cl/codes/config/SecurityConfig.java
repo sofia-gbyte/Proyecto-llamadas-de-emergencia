@@ -98,7 +98,13 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // preflight CORS
                 .requestMatchers(HttpMethod.GET, "/api/maps/tiles/**").permitAll()
-                .requestMatchers("/", "/index.html", "/styles.css", "/console-redesign.css", "/script.js", "/favicon.ico", "/vendor/altcha/**", "/webjars/**", "/error", "/api/auth/login", "/api/auth/register", "/api/auth/verify-email", "/api/auth/resend-verification", "/api/auth/captcha-config", "/api/auth/captcha-challenge", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/health", "/api/heartbeat", "/api/public-config").permitAll()
+                .requestMatchers("/", "/index.html", "/styles.css", "/console-redesign.css", "/script.js",
+                        "/mobile.html", "/mobile-app.css", "/mobile-app.js", "/codes-logo.png", "/favicon.ico",
+                        "/vendor/altcha/**", "/webjars/**", "/error", "/api/auth/login",
+                        "/api/auth/mobile/login", "/api/auth/register", "/api/auth/verify-email",
+                        "/api/auth/resend-verification", "/api/auth/captcha-config",
+                        "/api/auth/captcha-challenge", "/api/auth/forgot-password",
+                        "/api/auth/reset-password", "/api/health", "/api/heartbeat", "/api/public-config").permitAll()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

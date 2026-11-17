@@ -52,6 +52,15 @@ public class User {
     @Column(name = "sessions_valid_from")
     private LocalDateTime sessionsValidFrom;
 
+    @Column(name = "mobile_totp_secret", length = 120)
+    private String mobileTotpSecret;
+
+    @Column(name = "mobile_totp_enabled", nullable = false, columnDefinition = "boolean default false")
+    private boolean mobileTotpEnabled;
+
+    @Column(name = "mobile_totp_last_accepted_step")
+    private Long mobileTotpLastAcceptedStep;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 
@@ -90,6 +99,17 @@ public class User {
 
     public LocalDateTime getSessionsValidFrom() { return sessionsValidFrom; }
     public void setSessionsValidFrom(LocalDateTime sessionsValidFrom) { this.sessionsValidFrom = sessionsValidFrom; }
+
+    public String getMobileTotpSecret() { return mobileTotpSecret; }
+    public void setMobileTotpSecret(String mobileTotpSecret) { this.mobileTotpSecret = mobileTotpSecret; }
+
+    public boolean isMobileTotpEnabled() { return mobileTotpEnabled; }
+    public void setMobileTotpEnabled(boolean mobileTotpEnabled) { this.mobileTotpEnabled = mobileTotpEnabled; }
+
+    public Long getMobileTotpLastAcceptedStep() { return mobileTotpLastAcceptedStep; }
+    public void setMobileTotpLastAcceptedStep(Long mobileTotpLastAcceptedStep) {
+        this.mobileTotpLastAcceptedStep = mobileTotpLastAcceptedStep;
+    }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

@@ -186,6 +186,29 @@ public class UserController {
         return response;
     }
 
+    @PatchMapping("/{id}/reset-mobile-mfa")
+    public ResponseEntity<java.util.Map<String, String>> resetMobileMfa(
+            @PathVariable Long id,
+            Authentication auth,
+            HttpServletRequest request
+    ) {
+        User user = get(id);
+        if (!"operator".equalsIgnoreCase(user.getRole()) || user.isTestAccount()) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.CONFLICT)
+                    .body(java.util.Map.of("error", "La verificación móvil solo aplica a cuentas reales de operador."));
+        }
+        user.setMobileTotpSecret(null);
+        user.setMobileTotpEnabled(false);
+        user.setMobileTotpLastAcceptedStep(null);
+        user.setSessionsValidFrom(LocalDateTime.now());
+        repo.save(user);
+        auditLogService.recordEvent(auth.getName(), "reset-mobile-mfa", "user", user.getUsername(),
+                request.getRemoteAddr(), "success");
+        return ResponseEntity.ok(java.util.Map.of(
+                "message", "MFA móvil restablecido. El operador deberá volver a configurar su app autenticadora."
+        ));
+    }
+
     private User get(Long id) {
         return repo.findById(Objects.requireNonNull(id)).orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }

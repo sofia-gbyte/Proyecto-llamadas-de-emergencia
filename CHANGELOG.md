@@ -2,6 +2,18 @@
 
 Este archivo resume los cambios funcionales y de operación relevantes por versión de CODES. Las versiones de las bibliotecas se mantienen documentadas por separado en [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) y en `pom.xml`.
 
+## [1.1.3] - 2026-11-17
+
+### APK y acceso móvil
+
+- Se corrige el inicio de sesión del APK: ahora se conserva el token que ALTCHA entrega al completar la verificación de seguridad.
+- Se actualiza la APK a la versión `1.1.3` (versionCode `5`).
+
+### Validación y distribución
+
+- El app-image de Windows y el APK se generan para `1.1.3`; quedan en `dist\1.1.3\CODES` y `android\app\build\outputs\apk\debug\app-debug.apk`, respectivamente. Se prepara además una copia del APK en `dist\1.1.3`.
+- `mvn clean verify` pasó con 142 pruebas.
+
 ## [1.1.2] - 2026-11-16
 
 ### Cuentas y correo

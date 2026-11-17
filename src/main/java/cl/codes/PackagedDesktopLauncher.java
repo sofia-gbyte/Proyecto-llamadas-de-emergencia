@@ -161,6 +161,11 @@ final class PackagedDesktopLauncher {
         navigation.add(integrations);
         navigation.add(Box.createVerticalStrut(8));
 
+        JButton mobileAccess = navigationButton("Conexión móvil", "Acceso HTTPS opcional para operadores");
+        mobileAccess.addActionListener(event -> runSafely(this::configureMobileLan));
+        navigation.add(mobileAccess);
+        navigation.add(Box.createVerticalStrut(8));
+
         JButton data = navigationButton("Datos y respaldos", "Copias de seguridad y limpieza");
         data.addActionListener(event -> runSafely(this::manageLocalData));
         navigation.add(data);
@@ -234,7 +239,8 @@ final class PackagedDesktopLauncher {
         activityCard.add(activityScroll, BorderLayout.CENTER);
         dashboard.add(activityCard);
         dashboard.add(Box.createVerticalGlue());
-        JLabel safetyNote = new JLabel("CODES no admite conexiones desde otros equipos.");
+        JLabel safetyNote = new JLabel("<html>CODES solo admite conexiones desde este equipo, salvo que actives<br>"
+                + "la conexión móvil HTTPS para una red privada de confianza.</html>");
         safetyNote.setForeground(MUTED);
         safetyNote.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));
         safetyNote.setBorder(BorderFactory.createEmptyBorder(12, 2, 0, 0));
@@ -545,6 +551,7 @@ final class PackagedDesktopLauncher {
         if (savedMapProvider == null || savedMapProvider.isBlank()) {
             savedMapProvider = mapTiles.getText().isBlank() ? "esri" : "custom";
         }
+
         JComboBox<String> mapProvider = new JComboBox<>(new String[]{
                 "Esri World Imagery", "Geoapify OSM Carto", "Geoapify OSM Bright",
                 "Geoapify Toner", "URL personalizada"
@@ -711,6 +718,95 @@ final class PackagedDesktopLauncher {
         dialog.pack();
         fitDialogToScreen(dialog);
         dialog.setVisible(true);
+    }
+
+    private void configureMobileLan() {
+        if (!requireStoppedService("Detenga CODES antes de cambiar la configuración de acceso móvil.")) return;
+
+        java.util.List<cl.codes.config.MobileLanNetwork.Address> addresses =
+                cl.codes.config.MobileLanNetwork.availableAddresses();
+        JCheckBox enabled = new JCheckBox("Permitir conexión desde el APK por HTTPS",
+                Boolean.parseBoolean(cl.codes.config.LocalSecretBootstrap
+                        .getLocalSetting("CODES_MOBILE_LAN_ENABLED")));
+        JComboBox<cl.codes.config.MobileLanNetwork.Address> addressSelector =
+                new JComboBox<>(addresses.toArray(cl.codes.config.MobileLanNetwork.Address[]::new));
+        String savedAddress = cl.codes.config.LocalSecretBootstrap.getLocalSetting("CODES_MOBILE_LAN_ADDRESS");
+        for (int i = 0; i < addresses.size(); i++) {
+            if (addresses.get(i).ipAddress().equals(savedAddress)) {
+                addressSelector.setSelectedIndex(i);
+                break;
+            }
+        }
+        addressSelector.setEnabled(enabled.isSelected() && !addresses.isEmpty());
+        enabled.addActionListener(event -> addressSelector.setEnabled(enabled.isSelected() && !addresses.isEmpty()));
+
+        JTextArea information = new JTextArea(addresses.isEmpty()
+                ? "No se detectó una dirección privada IPv4 activa. Conecta el PC a una red local y vuelve a abrir esta configuración."
+                : "El modo móvil queda desactivado por defecto. Al activarlo, el APK podrá conectarse solo por HTTPS desde la misma subred privada. No habilita acceso desde Internet. Usa una red Wi-Fi de confianza.");
+        information.setEditable(false);
+        information.setLineWrap(true);
+        information.setWrapStyleWord(true);
+        information.setRows(5);
+        information.setBackground(SURFACE);
+        information.setForeground(TEXT);
+        information.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+
+        JButton showPairing = new JButton("Mostrar dirección y huella HTTPS");
+        showPairing.addActionListener(event -> {
+            if (addressSelector.getSelectedItem() == null) {
+                information.setText("Selecciona una dirección de red local antes de consultar los datos de conexión.");
+                return;
+            }
+            try {
+                cl.codes.config.MobileTlsIdentity identity =
+                        cl.codes.config.MobileLanTlsConfiguration.identityForDesktop();
+                cl.codes.config.MobileLanNetwork.Address selected =
+                        (cl.codes.config.MobileLanNetwork.Address) addressSelector.getSelectedItem();
+                information.setText("Configura en el APK esta dirección:\nhttps://"
+                        + selected.ipAddress() + ":"
+                        + cl.codes.config.MobileLanTlsConfiguration.HTTPS_PORT
+                        + "\n\nHuella SHA-256 del certificado:\n" + identity.fingerprint()
+                        + "\n\nLa huella debe coincidir exactamente para que el APK confíe en CODES.");
+            } catch (RuntimeException exception) {
+                log.error("Could not prepare the mobile HTTPS certificate.", exception);
+                information.setText("No se pudo preparar el certificado HTTPS. Revisa los permisos y el espacio disponible.");
+            }
+        });
+
+        JPanel content = new JPanel(new BorderLayout(8, 8));
+        content.setBackground(SURFACE);
+        content.add(enabled, BorderLayout.NORTH);
+        JPanel selection = new JPanel(new BorderLayout(8, 0));
+        selection.setOpaque(false);
+        selection.add(new JLabel("Interfaz de red:"), BorderLayout.WEST);
+        selection.add(addressSelector, BorderLayout.CENTER);
+        JPanel center = new JPanel(new BorderLayout(8, 8));
+        center.setOpaque(false);
+        center.add(selection, BorderLayout.NORTH);
+        center.add(new JScrollPane(information), BorderLayout.CENTER);
+        center.add(showPairing, BorderLayout.SOUTH);
+        content.add(center, BorderLayout.CENTER);
+
+        int choice = JOptionPane.showConfirmDialog(frame, content, "Conexión móvil segura",
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (choice != JOptionPane.OK_OPTION) return;
+        if (enabled.isSelected() && addressSelector.getSelectedItem() == null) {
+            showMessage("No hay una dirección privada disponible para habilitar la conexión móvil.",
+                    "Conexión móvil", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        java.util.Map<String, String> settings = new java.util.LinkedHashMap<>();
+        settings.put("CODES_MOBILE_LAN_ENABLED", Boolean.toString(enabled.isSelected()));
+        if (addressSelector.getSelectedItem() instanceof cl.codes.config.MobileLanNetwork.Address selected) {
+            settings.put("CODES_MOBILE_LAN_ADDRESS", selected.ipAddress());
+        }
+        cl.codes.config.LocalSecretBootstrap.saveLocalSettings(settings);
+        showMessage(enabled.isSelected()
+                        ? "Acceso móvil HTTPS configurado. Reinicia CODES para aplicar los cambios. "
+                        + "El APK necesitará la dirección y huella SHA-256 mostradas desde esta pantalla."
+                        : "El acceso móvil quedó desactivado. CODES seguirá limitado a este equipo.",
+                "Conexión móvil", JOptionPane.INFORMATION_MESSAGE);
     }
 
     private JTextField settingField(String name, String fallback) {

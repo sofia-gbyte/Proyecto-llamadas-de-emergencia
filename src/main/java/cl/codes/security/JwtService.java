@@ -17,6 +17,8 @@ import java.util.Date;
  */
 @Service
 public class JwtService {
+    private static final long MOBILE_SESSION_EXPIRATION_MINUTES = 120;
+    private static final long MOBILE_ENROLLMENT_EXPIRATION_MINUTES = 5;
 
     private final SecretKey signingKey;
     private final long sessionExpirationMinutes;
@@ -55,6 +57,35 @@ public class JwtService {
         return generateToken(username, role, sessionExpirationMinutes);
     }
 
+    public String generateMobileToken(String username) {
+        Date now = new Date();
+        Date expiresAt = new Date(now.getTime() + MOBILE_SESSION_EXPIRATION_MINUTES * 60_000);
+
+        return Jwts.builder()
+                .subject(username)
+                .claim("rol", "operator")
+                .claim("client", "mobile")
+                .issuedAt(now)
+                .expiration(expiresAt)
+                .signWith(signingKey)
+                .compact();
+    }
+
+    public String generateMobileEnrollmentToken(String username) {
+        Date now = new Date();
+        Date expiresAt = new Date(now.getTime() + MOBILE_ENROLLMENT_EXPIRATION_MINUTES * 60_000);
+
+        return Jwts.builder()
+                .subject(username)
+                .claim("rol", "operator")
+                .claim("client", "mobile")
+                .claim("mobile_enrollment", true)
+                .issuedAt(now)
+                .expiration(expiresAt)
+                .signWith(signingKey)
+                .compact();
+    }
+
     /**
      * Igual que {@link #generateToken(String, String)} pero con una
      * expiración propia, más corta que la sesión normal de turno. Se usa
@@ -88,5 +119,9 @@ public class JwtService {
 
     public long getExpirationMinutes() {
         return sessionExpirationMinutes;
+    }
+
+    public long getMobileExpirationMinutes() {
+        return MOBILE_SESSION_EXPIRATION_MINUTES;
     }
 }

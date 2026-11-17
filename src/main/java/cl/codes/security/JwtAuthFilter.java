@@ -34,6 +34,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getServletPath();
         return path.equals("/api/auth/login")
+                || path.equals("/api/auth/mobile/login")
                 || path.equals("/api/auth/register")
                 || path.equals("/api/health")
                 || path.equals("/api/heartbeat")
@@ -57,15 +58,39 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
             if (claims != null) {
                 String username = claims.getSubject();
+                String client = claims.get("client", String.class);
+                boolean mobileClient = "mobile".equals(client);
+                boolean mobileEnrollment = Boolean.TRUE.equals(claims.get("mobile_enrollment", Boolean.class));
+                boolean unknownClient = client != null && !mobileClient;
+                boolean mobileLogout = "/api/auth/mobile/logout".equals(request.getServletPath());
+                String path = request.getServletPath();
+                boolean mobileTotpPath = path.equals("/api/auth/mobile/totp/setup")
+                        || path.equals("/api/auth/mobile/totp/verify-setup");
+                if (mobileClient && (mobileEnrollment
+                        ? !mobileTotpPath
+                        : !path.startsWith("/api/mobile/") && !mobileLogout && !mobileTotpPath)) {
+                    response.sendError(HttpServletResponse.SC_FORBIDDEN);
+                    return;
+                }
                 Optional<User> user = userRepository.findByUsername(username);
 
-                if (user.isPresent() && user.get().isActive() && isSessionStillValid(user.get(), claims)) {
+                if (!unknownClient && user.isPresent() && user.get().isActive()
+                        && isSessionStillValid(user.get(), claims)) {
                     String role = user.get().getRole();
-                    List<GrantedAuthority> authorities =
-                            List.of(new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()));
+                    if (mobileClient && !"operator".equalsIgnoreCase(role)) {
+                        response.sendError(HttpServletResponse.SC_FORBIDDEN);
+                        return;
+                    }
+                    String authority = mobileEnrollment
+                            ? "ROLE_MOBILE_ENROLLMENT"
+                            : mobileClient ? "ROLE_MOBILE_OPERATOR" : "ROLE_" + role.toUpperCase();
+                    List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority(authority));
 
                     var auth = new UsernamePasswordAuthenticationToken(username, null, authorities);
                     SecurityContextHolder.getContext().setAuthentication(auth);
+                } else if (unknownClient) {
+                    response.sendError(HttpServletResponse.SC_FORBIDDEN);
+                    return;
                 }
             }
         }

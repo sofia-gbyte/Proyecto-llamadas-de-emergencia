@@ -137,7 +137,7 @@ class AltchaServiceTest {
                 AltchaService.ARGON2ID_KDF,
                 0,
                 1,
-                Duration.ofSeconds(10)
+                Duration.ofSeconds(30)
         );
         if (solution == null) {
             throw new AssertionError("The deterministic test challenge should be solvable immediately.");

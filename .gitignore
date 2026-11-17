@@ -1,6 +1,13 @@
 # Build and generated output
 /target/
 /dist/
+android/.gradle/
+android/build/
+android/local.properties
+android/app/build/
+android/**/*.jks
+android/**/*.keystore
+android/signing.properties
 .github/
 .vscode/
 logs/

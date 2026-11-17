@@ -2,6 +2,8 @@ package cl.codes.controller;
 
 import cl.codes.controller.dto.LoginRequest;
 import cl.codes.controller.dto.LoginResponse;
+import cl.codes.controller.dto.MobileLoginRequest;
+import cl.codes.controller.dto.MobileTotpVerifyRequest;
 import cl.codes.controller.dto.RegisterRequest;
 import cl.codes.controller.dto.UserResponse;
 import cl.codes.exception.ResourceNotFoundException;
@@ -17,6 +19,7 @@ import cl.codes.service.SecurityService;
 import cl.codes.service.AuditLogService;
 import cl.codes.service.AccountRegistrationService;
 import cl.codes.service.EmailVerificationService;
+import cl.codes.service.MobileMfaService;
 import cl.codes.security.JwtService;
 import cl.codes.security.AuthRateLimitService;
 import cl.codes.security.LoginAttemptService;
@@ -59,6 +62,7 @@ public class AuthController {
     private final AuditLogService auditLogService;
     private final AccountRegistrationService accountRegistrationService;
     private final EmailVerificationService emailVerificationService;
+    private final MobileMfaService mobileMfaService;
 
     public AuthController(
             AuthenticationManager authenticationManager,
@@ -71,7 +75,8 @@ public class AuthController {
             PasswordResetService passwordResetService,
             AuditLogService auditLogService,
             AccountRegistrationService accountRegistrationService,
-            EmailVerificationService emailVerificationService
+            EmailVerificationService emailVerificationService,
+            MobileMfaService mobileMfaService
     ) {
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
@@ -84,6 +89,7 @@ public class AuthController {
         this.auditLogService = auditLogService;
         this.accountRegistrationService = accountRegistrationService;
         this.emailVerificationService = emailVerificationService;
+        this.mobileMfaService = mobileMfaService;
     }
 
     @PostMapping("/login")
@@ -128,17 +134,143 @@ public class AuthController {
         }
     }
 
+    @PostMapping("/mobile/login")
+    public ResponseEntity<?> mobileLogin(@Valid @RequestBody MobileLoginRequest req, HttpServletRequest request) {
+        if (!authRateLimitService.allowLogin(request.getRemoteAddr())) {
+            return tooManyRequests();
+        }
+        if (!altchaService.verify(req.captchaToken(), "login")) {
+            return captchaRequired();
+        }
+        String identifier = req.username().strip();
+        String username = userRepository.findByUsername(identifier)
+                .or(() -> userRepository.findByEmailIgnoreCase(identifier))
+                .map(User::getUsername)
+                .orElse(identifier);
+
+        if (loginAttemptService.isBlocked(username)) {
+            long minutes = loginAttemptService.remainingBlockMinutes(username);
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body(Map.of("error", "Too many failed attempts. Try again in " + minutes + " min."));
+        }
+
+        try {
+            Authentication auth = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(username, req.password())
+            );
+            if (!auth.getAuthorities().stream().anyMatch(authority ->
+                    "ROLE_OPERATOR".equals(authority.getAuthority()))) {
+                auditLogService.recordEvent(username, "mobile-login", "session", null,
+                        request.getRemoteAddr(), "rejected-role");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("error", "La app móvil está disponible solo para cuentas de operador."));
+            }
+            if (userRepository.findByUsername(username).map(User::isTestAccount).orElse(false)) {
+                auditLogService.recordEvent(username, "mobile-login", "session", null,
+                        request.getRemoteAddr(), "rejected-test-account");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("error", "La app móvil no está disponible para cuentas de prueba."));
+            }
+
+            User mobileUser = userRepository.findByUsername(username)
+                    .orElseThrow(() -> new IllegalStateException("No se encontró la cuenta de operador."));
+            if (!mobileUser.isMobileTotpEnabled()) {
+                loginAttemptService.registerSuccess(username);
+                String enrollmentToken = jwtService.generateMobileEnrollmentToken(username);
+                auditLogService.recordEvent(username, "mobile-mfa-enrollment-required", "session", null,
+                        request.getRemoteAddr(), "success");
+                return ResponseEntity.ok()
+                        .cacheControl(CacheControl.noStore())
+                        .body(Map.of("mfaSetupRequired", true, "token", enrollmentToken, "role", "operator"));
+            }
+            if (!authRateLimitService.allowLogin(request.getRemoteAddr())
+                    || !mobileMfaService.consumeLoginCode(username, req.totpCode())) {
+                loginAttemptService.registerFailure(username);
+                auditLogService.recordEvent(username, "mobile-login", "session", null,
+                        request.getRemoteAddr(), "failure-totp");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .cacheControl(CacheControl.noStore())
+                        .body(Map.of("error", "El código de autenticación no es válido.", "mfaRequired", true));
+            }
+
+            loginAttemptService.registerSuccess(username);
+            String token = jwtService.generateMobileToken(username);
+            auditLogService.recordEvent(username, "mobile-login", "session", null,
+                    request.getRemoteAddr(), "success");
+            return ResponseEntity.ok()
+                    .cacheControl(CacheControl.noStore())
+                    .body(new LoginResponse(token, username, "operator", jwtService.getMobileExpirationMinutes()));
+        } catch (AuthenticationException exception) {
+            if (!(exception instanceof DisabledException)) {
+                loginAttemptService.registerFailure(username);
+            }
+            auditLogService.recordEvent(username, "mobile-login", "session", null,
+                    request.getRemoteAddr(), "failure");
+            return invalidCredentials();
+        }
+    }
+
+    @PostMapping("/mobile/totp/setup")
+    @PreAuthorize("hasRole('MOBILE_ENROLLMENT')")
+    public ResponseEntity<?> beginMobileTotpSetup(Authentication auth, HttpServletRequest request) {
+        if (!authRateLimitService.allowLogin(request.getRemoteAddr())) return tooManyRequests();
+        return mobileMfaService.beginEnrollment(auth.getName())
+                .<ResponseEntity<?>>map(setup -> ResponseEntity.ok()
+                        .cacheControl(CacheControl.noStore())
+                        .body(Map.of("secret", setup.secret(), "otpauthUri", setup.otpauthUri())))
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(Map.of("error", "La autenticación ya está configurada.")));
+    }
+
+    @PostMapping("/mobile/totp/verify-setup")
+    @PreAuthorize("hasRole('MOBILE_ENROLLMENT')")
+    public ResponseEntity<?> verifyMobileTotpSetup(
+            @Valid @RequestBody MobileTotpVerifyRequest req,
+            Authentication auth,
+            HttpServletRequest request
+    ) {
+        if (!authRateLimitService.allowLogin(request.getRemoteAddr())) return tooManyRequests();
+        if (!mobileMfaService.completeEnrollment(auth.getName(), req.code())) {
+            loginAttemptService.registerFailure(auth.getName());
+            return ResponseEntity.badRequest()
+                    .cacheControl(CacheControl.noStore())
+                    .body(Map.of("error", "El código no coincide. Comprueba la hora del teléfono e inténtalo otra vez."));
+        }
+        loginAttemptService.registerSuccess(auth.getName());
+        String token = jwtService.generateMobileToken(auth.getName());
+        auditLogService.recordEvent(auth.getName(), "mobile-mfa-enrollment", "session", null,
+                request.getRemoteAddr(), "success");
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(new LoginResponse(token, auth.getName(), "operator", jwtService.getMobileExpirationMinutes()));
+    }
+
     @PostMapping("/logout")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> logout(Authentication auth, HttpServletRequest request) {
+        return invalidateSession(auth.getName(), "logout", request);
+    }
+
+    @PostMapping("/mobile/logout")
+    @PreAuthorize("hasRole('MOBILE_OPERATOR')")
+    public ResponseEntity<?> mobileLogout(Authentication auth, HttpServletRequest request) {
+        return invalidateSession(auth.getName(), "mobile-logout", request);
+    }
+
+    private ResponseEntity<?> invalidateSession(
+            String username,
+            String event,
+            HttpServletRequest request
+    ) {
         // Sesión sin estado (JWT): "cerrar sesión" significa que el token
         // actual -y cualquier otro que el mismo usuario tuviera abierto-
         // deja de aceptarse desde este momento, aunque no haya expirado.
-        User user = userRepository.findByUsername(auth.getName())
+        User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         user.setSessionsValidFrom(LocalDateTime.now());
         userRepository.save(user);
-        auditLogService.recordEvent(user.getUsername(), "logout", "session", null, request.getRemoteAddr(), "success");
+        auditLogService.recordEvent(user.getUsername(), event, "session", null,
+                request.getRemoteAddr(), "success");
         return ResponseEntity.ok(Map.of("message", "Sesión cerrada"));
     }
 

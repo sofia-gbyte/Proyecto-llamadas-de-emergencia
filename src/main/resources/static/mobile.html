@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a1428">
+  <meta name="robots" content="noindex,nofollow">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; base-uri 'none'; object-src 'none'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; form-action 'self'">
+  <title>CODES Operaciones</title>
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/mobile-app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="/codes-logo.png" alt="" width="38" height="38">
+      <div><strong>CODES</strong><span>OPERACIONES</span></div>
+    </div>
+    <div id="connection-status" class="connection" role="status">Conectando…</div>
+  </header>
+
+  <main>
+    <section id="login-view" class="panel login-panel">
+      <p class="eyebrow">ACCESO DE OPERADOR</p>
+      <h1>Iniciar sesión</h1>
+      <p class="muted">Usa tu cuenta de operador CODES.</p>
+      <form id="login-form">
+        <label for="username">Usuario o correo</label>
+        <input id="username" name="username" autocomplete="username" required>
+        <label for="password">Contraseña</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <div id="totp-login-area" hidden>
+          <label for="totp-code">Código de la app autenticadora</label>
+          <input id="totp-code" name="totpCode" inputmode="numeric" autocomplete="one-time-code"
+            pattern="[0-9]{6}" maxlength="6" placeholder="000000">
+        </div>
+        <div id="captcha-area" class="captcha-area" hidden>
+          <altcha-widget id="login-captcha"
+            challenge="/api/auth/captcha-challenge?purpose=login"
+            type="checkbox" auto="off" language="es-419" name="captchaToken" workers="1"
+            configuration='{"hideLogo":true,"hideFooter":true,"retryOnOutOfMemoryError":true}'>
+          </altcha-widget>
+        </div>
+        <p id="login-error" class="message error" role="alert" hidden></p>
+        <button id="login-button" class="primary-button" type="submit">Entrar</button>
+      </form>
+      <p class="footnote">Esta aplicación es solo para operadores. La administración y la recepción de llamadas se realizan en CODES para escritorio.</p>
+    </section>
+
+    <section id="totp-setup-view" class="panel login-panel" hidden>
+      <p class="eyebrow">PROTECCIÓN DE LA CUENTA</p>
+      <h1>Configura tu verificación</h1>
+      <p class="muted">Agrega CODES a Google Authenticator, Microsoft Authenticator, Aegis u otra app compatible con TOTP. Ingresa este secreto manualmente; se mostrará solo durante la configuración.</p>
+      <p id="totp-setup-secret" class="totp-secret" aria-label="Secreto para configurar la app autenticadora"></p>
+      <p class="footnote">Guarda este secreto únicamente en tu app autenticadora. No lo compartas ni tomes capturas.</p>
+      <form id="totp-setup-form">
+        <label for="totp-setup-code">Código de 6 dígitos</label>
+        <input id="totp-setup-code" inputmode="numeric" autocomplete="one-time-code"
+          pattern="[0-9]{6}" maxlength="6" placeholder="000000" required>
+        <p id="totp-setup-error" class="message error" role="alert" hidden></p>
+        <button id="totp-setup-button" class="primary-button" type="submit">Verificar y activar</button>
+      </form>
+      <button id="cancel-totp-setup" class="text-button" type="button">Cancelar</button>
+    </section>
+
+    <section id="cases-view" hidden>
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">PANEL DEL OPERADOR</p>
+          <h1>Mis casos</h1>
+        </div>
+        <button id="refresh-button" class="icon-button" type="button" aria-label="Actualizar casos">↻</button>
+      </div>
+      <p id="sync-message" class="sync-message" role="status">Sincronizando…</p>
+      <section>
+        <h2>En curso <span id="in-progress-count" class="count">0</span></h2>
+        <div id="in-progress-list" class="case-list"></div>
+        <p id="in-progress-empty" class="empty-state">No tienes casos asignados.</p>
+      </section>
+      <section class="pending-section">
+        <h2>Pendientes <span id="pending-count" class="count">0</span></h2>
+        <div id="pending-list" class="case-list"></div>
+        <p id="pending-empty" class="empty-state">No hay casos pendientes para tu institución.</p>
+      </section>
+      <button id="logout-button" class="text-button" type="button">Cerrar sesión</button>
+    </section>
+
+    <section id="detail-view" hidden>
+      <button id="back-button" class="text-button back-button" type="button">← Volver a mis casos</button>
+      <article id="case-detail" class="panel"></article>
+    </section>
+  </main>
+
+  <script>
+    window.altchaReadyPromise = () => import('/vendor/altcha/altcha.min.js')
+      .then(() => new Promise((resolve, reject) => {
+        const locale = document.createElement('script');
+        locale.src = '/vendor/altcha/es-419.js';
+        locale.onload = resolve;
+        locale.onerror = () => reject(new Error('No se pudo cargar la traducción ALTCHA.'));
+        document.head.appendChild(locale);
+      }))
+      .then(() => customElements.whenDefined('altcha-widget'))
+      .then(() => {
+        if (!window.$altcha) throw new Error('No se pudo inicializar ALTCHA.');
+        window.$altcha.algorithms.set('ARGON2ID', () => new Worker('/vendor/altcha/argon2id.js'));
+      });
+  </script>
+  <script src="/mobile-app.js"></script>
+</body>
+</html>
