@@ -1,10 +1,10 @@
-# CODES 1.1.3 — Sistema de llamadas de emergencia
+# CODES 1.1.4 — Sistema de llamadas de emergencia
 
 CODES es una aplicación web para apoyar la recepción, registro y gestión de llamadas de emergencia. El sistema permite trabajar con llamadas en vivo, transcripción con Groq Whisper, clasificación inicial, geocodificación con Geoapify y seguimiento de los casos desde una interfaz web.
 
-**Versión del proyecto: `1.1.3`.** Consulta el [historial de cambios](CHANGELOG.md) para ver las novedades de esta versión y las notas de compatibilidad.
+**Versión del proyecto: `1.1.4`.** Consulta el [historial de cambios](CHANGELOG.md) para ver las novedades de esta versión y las notas de compatibilidad.
 
-La interfaz de escritorio y su API principal se limitan al mismo equipo. Como opción separada, el APK de operadores puede conectarse por HTTPS desde la misma subred privada; no se admite exposición a Internet.
+La interfaz de escritorio y su API principal se limitan al mismo equipo. Como opción separada, el APK puede conectarse por HTTPS desde la misma Wi-Fi privada o por Tailscale con la IP del teléfono autorizada; el puerto de CODES nunca se debe publicar en Internet.
 
 > Leaflet se incluye dentro de la aplicación. Por privacidad, las integraciones externas (mapas, rutas, geocodificación, transcripción y correo) están desactivadas por defecto; no se envían datos a terceros a menos que un administrador habilite explícitamente los proveedores. Ver [operación local](OPERACION_LOCAL.md) y el [inventario de licencias y servicios](THIRD_PARTY_LICENSES.md).
 
@@ -25,7 +25,7 @@ La interfaz de escritorio y su API principal se limitan al mismo equipo. Como op
 
 ---
 
-> **Alcance de la versión 1.1.3:** versión para pruebas locales de baja capacidad, con datos sintéticos y servicios externos aprobados por el operador. No implica que CODES esté preparado para su exposición a Internet ni para despachos reales sin las revisiones operativas, legales, de privacidad y disponibilidad descritas en [operación local](OPERACION_LOCAL.md).
+> **Alcance de la versión 1.1.4:** versión para pruebas locales de baja capacidad, con datos sintéticos y servicios externos aprobados por el operador. No implica que CODES esté preparado para su exposición a Internet ni para despachos reales sin las revisiones operativas, legales, de privacidad y disponibilidad descritas en [operación local](OPERACION_LOCAL.md).
 
 ## Funcionalidades principales
 
@@ -159,7 +159,7 @@ Las llamadas en vivo se envían a Groq al detener y guardar la grabación. El l�
 Para usar el app-image validado de esta entrega, inicia:
 
 ```text
-dist\1.1.3\CODES\CODES.exe
+dist\1.1.4\CODES\CODES.exe
 ```
 
 El menú del EXE abre maximizado e inicia/detiene CODES, muestra un diagnóstico local resumido, configura integraciones, crea respaldos y limpia archivos regenerables. Las pestañas de configuración se ajustan al espacio disponible y permiten desplazarse si hace falta. Conserva toda la carpeta `CODES` y su subdirectorio `runtime`; el EXE no es autónomo. El app-image incluye Java y es el único punto de entrada para usuarios. Para construir otro paquete desde el código fuente, consulta [App-image para Windows](#app-image-para-windows).
@@ -212,7 +212,7 @@ Para H2 local, el nombre de usuario predeterminado es `sa` y la contraseña qued
 
 ## Inicio de CODES en Windows
 
-El punto de entrada para usuarios es `dist\1.1.3\CODES\CODES.exe`, incluido en el app-image. Su menú usa el logo de CODES y agrupa las acciones por propósito: iniciar el sistema, configurar servicios, revisar diagnóstico y administrar datos/respaldos. No copies ni distribuyas solo el EXE: conserva la carpeta completa con `runtime`. El menú no incluye una acción que pueda borrar todos los casos y audios. Se retiró el lanzador por lotes; los scripts `.ps1` de compilación y mantenimiento no forman parte del paquete entregable.
+El punto de entrada para usuarios es `dist\1.1.4\CODES\CODES.exe`, incluido en el app-image. Su menú usa el logo de CODES y agrupa las acciones por propósito: iniciar el sistema, configurar servicios, revisar diagnóstico y administrar datos/respaldos. No copies ni distribuyas solo el EXE: conserva la carpeta completa con `runtime`. El menú no incluye una acción que pueda borrar todos los casos y audios. Se retiró el lanzador por lotes; los scripts `.ps1` de compilación y mantenimiento no forman parte del paquete entregable.
 
 El app-image puede crear o reutilizar estos archivos locales:
 
@@ -248,7 +248,7 @@ Para construir o actualizar el app-image desde el código fuente se necesita Win
 .\tools\package_codes_windows.ps1 -ReplaceExisting
 ```
 
-Si PowerShell bloquea el script, no uses `ExecutionPolicy Bypass` ni reduzcas la política de seguridad; solicita el procedimiento autorizado al administrador del equipo. El ejecutable de esta versión queda en `dist\1.1.3\CODES\CODES.exe`, y el runtime Java en `dist\1.1.3\CODES\runtime`. Distribuye la carpeta completa, no solo el `.exe`; el usuario final no necesita scripts de compilación o mantenimiento. Al iniciar el sistema desde el menú, el EXE abre `http://127.0.0.1:8000` cuando el servidor está listo. La base H2, los audios, la caché y los secretos se guardan fuera del paquete en `%LOCALAPPDATA%\CODES\data` (o en `CODES_DATA_DIR` si se define). No incluyas archivos de datos o secretos al distribuir el app-image.
+Si PowerShell bloquea el script, no uses `ExecutionPolicy Bypass` ni reduzcas la política de seguridad; solicita el procedimiento autorizado al administrador del equipo. El ejecutable de esta versión queda en `dist\1.1.4\CODES\CODES.exe`, y el runtime Java en `dist\1.1.4\CODES\runtime`. Distribuye la carpeta completa, no solo el `.exe`; el usuario final no necesita scripts de compilación o mantenimiento. Al iniciar el sistema desde el menú, el EXE abre `http://127.0.0.1:8000` cuando el servidor está listo. La base H2, los audios, la caché y los secretos se guardan fuera del paquete en `%LOCALAPPDATA%\CODES\data` (o en `CODES_DATA_DIR` si se define). No incluyas archivos de datos o secretos al distribuir el app-image.
 
 El script genera `package-manifest.json` con la lista de archivos, tamaños y SHA-256, además de `SHA256SUMS.txt`. Una segunda compilación puede usar otro destino (`-DestinationDirectory dist\phase2`) o reemplazar un app-image previo creado por el mismo script con `-ReplaceExisting`. El paquete se inspecciona para rechazar scripts y datos locales. Para usar CODES, el usuario final solo abre `CODES.exe`; no necesita ejecutar scripts, instalar Maven/Java ni configurar Java. La app-image es una carpeta autocontenida para distribución, no un EXE independiente: conserva su carpeta completa y el subdirectorio `runtime`.
 
@@ -278,7 +278,7 @@ La API principal rechaza una dirección `server.address` que no sea loopback y f
 
 El APK es una interfaz móvil reducida para cuentas de operador. Permite consultar casos pendientes y propios en curso, asignarse un caso, abrir su dirección en una aplicación de mapas y cerrar un caso asignado con un comentario. No incluye administración, recepción de llamadas, micrófono, grabación ni permisos de ubicación. Actualiza los casos cada 10 segundos mientras la pantalla está abierta.
 
-La conexión es opcional, solo por HTTPS dentro de la misma subred privada y con certificado fijado por su huella SHA-256. El listener usa el puerto `8443`; la interfaz web y la API principal siguen en loopback. No habilites reenvío de puertos ni acceso desde Internet. Usa una Wi-Fi privada de confianza; las redes de invitados pueden impedir la comunicación entre dispositivos. Si Windows Firewall pregunta, permite la conexión solo en redes privadas.
+La conexión es opcional, solo por HTTPS y con certificado fijado por su huella SHA-256. Puede usar la misma Wi-Fi privada o una VPN Tailscale entre el PC y el teléfono. El listener usa el puerto `8443` y se enlaza únicamente a la dirección de la interfaz seleccionada; la interfaz web y la API principal siguen en loopback. En Tailscale, CODES exige además la IPv4 exacta del teléfono. No habilites reenvío de puertos ni acceso desde Internet. Tailscale usa conexiones salientes y puede usar relés; no requiere publicar el puerto de CODES. Consulta también los [controles de acceso de Tailscale](https://tailscale.com/docs/features/access-control/acls): por defecto, el tailnet nuevo puede permitir que todos sus dispositivos se comuniquen.
 
 En Android, la dirección y la huella se cifran con AES-GCM usando una clave no exportable del Android Keystore. El JWT de la sesión permanece en memoria, no en preferencias ni en el almacenamiento web; dura como máximo 2 horas y **Cerrar sesión** lo invalida en el servidor. La app desactiva HTTP sin cifrar, cookies, caché y almacenamiento web, y excluye sus datos de respaldos. La pantalla móvil usa una política CSP para limitar recursos al propio servidor. JavaScript se habilita únicamente para la interfaz web servida por CODES; la navegación a otros hosts se bloquea.
 
@@ -286,20 +286,23 @@ El acceso móvil combina contraseña, ALTCHA y TOTP. En el primer inicio de sesi
 
 ### Conectar el APK
 
-1. En CODES para escritorio, detén el servidor y abre **Conexión móvil**.
-2. Selecciona la interfaz de red que comparte el teléfono y pulsa **Mostrar dirección y huella HTTPS**. Copia la IPv4 privada y la huella SHA-256 antes de cerrar la ventana.
-3. Activa **Permitir conexión desde el APK por HTTPS**, guarda la configuración y reinicia CODES. El servidor y el teléfono deben permanecer en la misma red.
-4. Abre el APK, introduce esa dirección y huella exactamente y pulsa **Conectar a CODES**. Inicia sesión con una cuenta activa de operador; las cuentas de prueba, supervisores y administradores no pueden iniciar sesión en el APK.
+1. Instala y activa Tailscale en Windows y Android. Inicia sesión en ambos con la misma cuenta y verifica que estén autorizados en el mismo tailnet.
+2. En la app Tailscale del teléfono, copia su IPv4 `100.x.y.z`. No publiques ni compartas con terceros los datos de acceso a tu tailnet.
+3. En CODES para escritorio, detén el servidor y abre **Conexión móvil**. Selecciona **Tailscale (VPN)** e introduce las IPv4 Tailscale exactas de los teléfonos permitidos, separadas por comas.
+4. Pulsa **Mostrar dirección y huella HTTPS**, activa **Permitir conexión desde el APK por HTTPS**, guarda y reinicia CODES. Usa la dirección Tailscale del PC que muestra CODES y copia la huella SHA-256.
+5. En la APK, introduce solo la IPv4 del PC y la huella exacta; pulsa **Conectar a CODES**. Inicia sesión con una cuenta activa de operador.
+
+CODES solo acepta las IPs Tailscale exactas configuradas en el PC; los otros dispositivos del tailnet reciben rechazo. Añade o quita teléfonos de la lista separando sus IPv4 con comas. La política de Tailscale puede tener acceso general entre dispositivos por defecto; conserva solo los equipos de confianza en tu tailnet y revisa sus controles de acceso. La app móvil además exige autenticación de operador, ALTCHA y TOTP. No configures reenvío de puertos ni reglas públicas para `8443`.
 
 Si la IP de la computadora cambia, detén CODES, selecciona la nueva interfaz/dirección, vuelve a mostrar la huella y actualiza ambos valores en el APK. La huella solo cambia si se elimina o reemplaza el certificado local guardado en el directorio de datos.
 
 Para obtener el EXE de escritorio que incluye esta opción sin reemplazar un app-image existente:
 
 ```powershell
-.\tools\package_codes_windows.ps1 -DestinationDirectory 'dist\1.1.3'
+.\tools\package_codes_windows.ps1 -DestinationDirectory 'dist\1.1.4'
 ```
 
-El ejecutable queda en `dist\1.1.3\CODES\CODES.exe`; conserva toda la carpeta `CODES`, incluido el runtime.
+El ejecutable queda en `dist\1.1.4\CODES\CODES.exe`; conserva toda la carpeta `CODES`, incluido el runtime.
 
 ### Construir el APK de prueba
 
@@ -309,7 +312,7 @@ En Windows se requiere Android SDK (API 37) y JDK 17 o superior. Desde la raíz 
 .\android\gradlew.bat -p .\android assembleDebug
 ```
 
-El APK de depuración `1.1.3` queda en `android\app\build\outputs\apk\debug\app-debug.apk`; también se copia a `dist\1.1.3\CODES-1.1.3.apk` para preparar la carpeta de entrega. Incluye firma de desarrollo y sirve para pruebas, no para distribución. Google Play Protect puede seguir mostrando avisos al instalar APK descargados o poco conocidos; **ninguna modificación del código puede garantizar que desaparezcan**. Una firma propia identifica el paquete y permite actualizaciones coherentes, pero no equivale a una revisión ni reputación de Google Play.
+El APK de depuración `1.1.4` queda en `android\app\build\outputs\apk\debug\app-debug.apk`; incluye la validación para direcciones Tailscale `100.64.0.0/10`. Incluye firma de desarrollo y sirve para pruebas, no para distribución. Google Play Protect puede seguir mostrando avisos al instalar APK descargados o poco conocidos; **ninguna modificación del código puede garantizar que desaparezcan**. Una firma propia identifica el paquete y permite actualizaciones coherentes, pero no equivale a una revisión ni reputación de Google Play.
 
 Los builds `release` activan R8 (minificación/ofuscación) y reducción de recursos, y fallan si no se configura una firma de release. Define las cuatro variables de entorno con una clave privada tuya que guardes fuera del repositorio:
 
@@ -757,7 +760,7 @@ El repositorio contiene pruebas automatizadas, pero una compilación o ejecució
 
 # Uso local y preparación operativa
 
-El app-image `1.1.3` está preparado para pruebas locales de baja capacidad, no certificado como sistema de producción para datos personales reales ni para despacho de emergencias. El EXE mantiene su interfaz y API principal en `127.0.0.1`; solo el APK puede habilitar, de forma explícita, un listener HTTPS restringido a una interfaz y subred privadas. No habilites acceso a Internet, redirección de puertos ni reglas de firewall públicas. Las integraciones externas están desactivadas por defecto y la interfaz no contacta a proveedores si no se habilitan. El app-image de esta versión está en `dist\1.1.3\CODES`; reemplazar la carpeta del app-image no reemplaza los datos persistidos bajo `%LOCALAPPDATA%\CODES\data`.
+El app-image `1.1.4` está preparado para pruebas locales de baja capacidad, no certificado como sistema de producción para datos personales reales ni para despacho de emergencias. El EXE mantiene su interfaz y API principal en `127.0.0.1`; el APK puede habilitar explícitamente un listener HTTPS enlazado solo a una interfaz privada Wi-Fi o Tailscale y, por Tailscale, a la IPv4 exacta del teléfono. No habilites acceso a Internet, redirección de puertos ni reglas de firewall públicas. Las integraciones externas están desactivadas por defecto y la interfaz no contacta a proveedores si no se habilitan. El app-image de esta versión está en `dist\1.1.4\CODES`; reemplazar la carpeta del app-image no reemplaza los datos persistidos bajo `%LOCALAPPDATA%\CODES\data`.
 
 Antes de una prueba, configura un usuario Windows dedicado con acceso restringido al equipo, conserva el paquete íntegro y verifica el manifiesto/hash desde un canal confiable. El EXE de esta entrega no está firmado digitalmente; los hashes detectan cambios solo si el manifiesto llega por un canal confiable y no autentican al editor.
 
@@ -765,7 +768,7 @@ Antes de una prueba, configura un usuario Windows dedicado con acceso restringid
 
 Para un uso operativo con datos sensibles todavía se requiere, como mínimo, definir e implementar cifrado en reposo para H2 y secretos, protección y recuperación de claves, política de retención/eliminación, restauración probada de respaldos, control de acceso del sistema operativo, distribución firmada y revisión de privacidad/legal de cada flujo externo. La app no sustituye un sistema de despacho certificado ni el criterio de un operador.
 
-La versión `1.1.3` se validó con `mvn clean verify` y con el manifiesto del app-image generado por el script de empaquetado. La validación no es una certificación de seguridad ni reemplaza pruebas en el equipo de destino.
+La versión `1.1.4` se validó con `mvn clean verify` y con el manifiesto del app-image generado por el script de empaquetado. La validación no es una certificación de seguridad ni reemplaza pruebas en el equipo de destino.
 
 La configuración actual utiliza H2 con:
 

@@ -343,10 +343,12 @@ public final class MainActivity extends Activity {
     }
 
     private boolean isValidConfiguration(String address, String fingerprint) {
-        return isPrivateIpv4(address) && fingerprint != null && fingerprint.matches("[0-9A-Fa-f]{64}");
+        return isPrivateOrTailscaleIpv4(address)
+                && fingerprint != null
+                && fingerprint.matches("[0-9A-Fa-f]{64}");
     }
 
-    private static boolean isPrivateIpv4(String value) {
+    private static boolean isPrivateOrTailscaleIpv4(String value) {
         if (value == null || !value.matches("\\d{1,3}(?:\\.\\d{1,3}){3}")) return false;
         String[] parts = value.split("\\.");
         int[] octets = new int[4];
@@ -358,9 +360,11 @@ public final class MainActivity extends Activity {
         } catch (NumberFormatException exception) {
             return false;
         }
-        return octets[0] == 10
+        boolean privateLan = octets[0] == 10
                 || octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31
                 || octets[0] == 192 && octets[1] == 168;
+        boolean tailscale = octets[0] == 100 && octets[1] >= 64 && octets[1] <= 127;
+        return privateLan || tailscale;
     }
 
     private static String normalizeFingerprint(String input) {

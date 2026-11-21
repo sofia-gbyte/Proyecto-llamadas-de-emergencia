@@ -24,6 +24,7 @@ class LocalSecretBootstrapTest {
     private final String previousGeocoderCenterLat = System.getProperty("CODES_GEOCODER_CENTER_LAT");
     private final String previousGeocoderCenterLng = System.getProperty("CODES_GEOCODER_CENTER_LNG");
     private final String previousGeocoderRadiusKm = System.getProperty("CODES_GEOCODER_RADIUS_KM");
+    private final String previousMobileLanPeerAddress = System.getProperty("CODES_MOBILE_LAN_PEER_ADDRESS");
 
     @AfterEach
     void restoreProperties() {
@@ -36,6 +37,7 @@ class LocalSecretBootstrapTest {
         restoreProperty("CODES_GEOCODER_CENTER_LAT", previousGeocoderCenterLat);
         restoreProperty("CODES_GEOCODER_CENTER_LNG", previousGeocoderCenterLng);
         restoreProperty("CODES_GEOCODER_RADIUS_KM", previousGeocoderRadiusKm);
+        restoreProperty("CODES_MOBILE_LAN_PEER_ADDRESS", previousMobileLanPeerAddress);
     }
 
     @Test
@@ -140,6 +142,20 @@ class LocalSecretBootstrapTest {
         assertEquals("geoapify", LocalSecretBootstrap.getLocalSetting("CODES_ROUTING_PROVIDER"));
         assertEquals(true, Files.exists(dataDirectory.resolve(".codes-secrets.properties")));
         assertEquals(false, Files.exists(dataDirectory.resolve(".codes-secrets.ps1")));
+    }
+
+    @Test
+    void persistsTailscalePeerAddressAsAnEditableLocalSetting() {
+        Assumptions.assumeTrue(System.getenv("CODES_MOBILE_LAN_PEER_ADDRESS") == null,
+                "The test should not override an externally configured mobile peer address.");
+        System.setProperty("CODES_DATA_DIR", tempDir.resolve("data").toString());
+        System.clearProperty("CODES_MOBILE_LAN_PEER_ADDRESS");
+
+        LocalSecretBootstrap.saveLocalSettings(
+                Map.of("CODES_MOBILE_LAN_PEER_ADDRESS", "100.88.58.43, 100.99.156.37"));
+
+        assertEquals("100.88.58.43, 100.99.156.37",
+                LocalSecretBootstrap.getLocalSetting("CODES_MOBILE_LAN_PEER_ADDRESS"));
     }
 
     @Test

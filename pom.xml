@@ -13,7 +13,7 @@
 
     <groupId>cl.codes</groupId>
     <artifactId>codes</artifactId>
-    <version>1.1.3</version>
+    <version>1.1.4</version>
     <name>CODES - Centro de Emergencias</name>
 
     <properties>

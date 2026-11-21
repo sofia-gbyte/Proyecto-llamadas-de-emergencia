@@ -17,13 +17,16 @@ import java.io.IOException;
 public class MobileLanAccessFilter extends OncePerRequestFilter {
     private final boolean enabled;
     private final String localAddress;
+    private final String allowedTailscalePeerAddress;
 
     public MobileLanAccessFilter(
             @Value("${app.mobile.lan-enabled:false}") boolean enabled,
-            @Value("${app.mobile.lan-address:}") String localAddress
+            @Value("${app.mobile.lan-address:}") String localAddress,
+            @Value("${app.mobile.lan-peer-address:}") String allowedTailscalePeerAddress
     ) {
         this.enabled = enabled;
         this.localAddress = localAddress;
+        this.allowedTailscalePeerAddress = allowedTailscalePeerAddress;
     }
 
     @Override
@@ -32,10 +35,17 @@ public class MobileLanAccessFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
-        if (request.getLocalPort() == MobileLanTlsConfiguration.HTTPS_PORT
-                && (!enabled || !MobileLanNetwork.isOnSameSubnet(localAddress, request.getRemoteAddr()))) {
-            response.sendError(HttpServletResponse.SC_FORBIDDEN);
-            return;
+        if (request.getLocalPort() == MobileLanTlsConfiguration.HTTPS_PORT) {
+            boolean allowedPeer = MobileLanNetwork.isOnAllowedMobileNetwork(
+                    localAddress, request.getRemoteAddr());
+            if (MobileLanNetwork.isTailscaleIpv4(localAddress)) {
+                allowedPeer &= MobileLanNetwork.isAllowedTailscalePeer(
+                        request.getRemoteAddr(), allowedTailscalePeerAddress);
+            }
+            if (!enabled || !allowedPeer) {
+                response.sendError(HttpServletResponse.SC_FORBIDDEN);
+                return;
+            }
         }
         filterChain.doFilter(request, response);
     }

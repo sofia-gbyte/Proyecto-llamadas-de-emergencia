@@ -737,12 +737,31 @@ final class PackagedDesktopLauncher {
                 break;
             }
         }
+        String savedTailscalePeerAddresses =
+                cl.codes.config.LocalSecretBootstrap.getLocalSetting("CODES_MOBILE_LAN_PEER_ADDRESS");
+        JTextField tailscalePeerAddress = new JTextField(
+                savedTailscalePeerAddresses == null ? "" : savedTailscalePeerAddresses, 28);
+        JPanel tailscalePeerPanel = new JPanel(new BorderLayout(8, 0));
+        tailscalePeerPanel.setOpaque(false);
+        tailscalePeerPanel.add(new JLabel("IPs Tailscale permitidas:"), BorderLayout.WEST);
+        tailscalePeerPanel.add(tailscalePeerAddress, BorderLayout.CENTER);
+        tailscalePeerPanel.setToolTipText("Introduce una o más IPv4, separadas por comas.");
+        tailscalePeerAddress.setToolTipText("Una o más IPv4 Tailscale separadas por comas.");
+        tailscalePeerPanel.setVisible(selectedAddressIsTailscale(addressSelector));
+
         addressSelector.setEnabled(enabled.isSelected() && !addresses.isEmpty());
+        tailscalePeerAddress.setEnabled(enabled.isSelected());
         enabled.addActionListener(event -> addressSelector.setEnabled(enabled.isSelected() && !addresses.isEmpty()));
+        enabled.addActionListener(event -> tailscalePeerAddress.setEnabled(enabled.isSelected()));
+        addressSelector.addActionListener(event -> {
+            tailscalePeerPanel.setVisible(selectedAddressIsTailscale(addressSelector));
+            tailscalePeerPanel.revalidate();
+            tailscalePeerPanel.repaint();
+        });
 
         JTextArea information = new JTextArea(addresses.isEmpty()
-                ? "No se detectó una dirección privada IPv4 activa. Conecta el PC a una red local y vuelve a abrir esta configuración."
-                : "El modo móvil queda desactivado por defecto. Al activarlo, el APK podrá conectarse solo por HTTPS desde la misma subred privada. No habilita acceso desde Internet. Usa una red Wi-Fi de confianza.");
+                ? "No se detectó una dirección IPv4 privada activa ni una interfaz Tailscale. Conecta el PC a una red local o activa Tailscale y vuelve a abrir esta configuración."
+                : "El modo móvil queda desactivado por defecto. El APK puede conectarse por HTTPS desde la misma Wi-Fi privada o por Tailscale. En Tailscale puedes autorizar varios teléfonos indicando sus IPs separadas por comas. El puerto de CODES se enlaza solo a la interfaz seleccionada; no abras el puerto 8443 en el router.");
         information.setEditable(false);
         information.setLineWrap(true);
         information.setWrapStyleWord(true);
@@ -762,10 +781,14 @@ final class PackagedDesktopLauncher {
                         cl.codes.config.MobileLanTlsConfiguration.identityForDesktop();
                 cl.codes.config.MobileLanNetwork.Address selected =
                         (cl.codes.config.MobileLanNetwork.Address) addressSelector.getSelectedItem();
+                String networkGuidance = selected.tailscale()
+                        ? "VPN Tailscale: activa Tailscale en cada teléfono e inicia sesión en el mismo tailnet. CODES solo aceptará las IPv4 Tailscale indicadas abajo. No configures reenvío de puertos ni expongas 8443 a Internet."
+                        : "Red local: el teléfono debe estar en la misma Wi-Fi privada que este PC.";
                 information.setText("Configura en el APK esta dirección:\nhttps://"
                         + selected.ipAddress() + ":"
                         + cl.codes.config.MobileLanTlsConfiguration.HTTPS_PORT
                         + "\n\nHuella SHA-256 del certificado:\n" + identity.fingerprint()
+                        + "\n\n" + networkGuidance
                         + "\n\nLa huella debe coincidir exactamente para que el APK confíe en CODES.");
             } catch (RuntimeException exception) {
                 log.error("Could not prepare the mobile HTTPS certificate.", exception);
@@ -782,7 +805,11 @@ final class PackagedDesktopLauncher {
         selection.add(addressSelector, BorderLayout.CENTER);
         JPanel center = new JPanel(new BorderLayout(8, 8));
         center.setOpaque(false);
-        center.add(selection, BorderLayout.NORTH);
+        JPanel networkSettings = new JPanel(new BorderLayout(8, 8));
+        networkSettings.setOpaque(false);
+        networkSettings.add(selection, BorderLayout.NORTH);
+        networkSettings.add(tailscalePeerPanel, BorderLayout.SOUTH);
+        center.add(networkSettings, BorderLayout.NORTH);
         center.add(new JScrollPane(information), BorderLayout.CENTER);
         center.add(showPairing, BorderLayout.SOUTH);
         content.add(center, BorderLayout.CENTER);
@@ -796,17 +823,39 @@ final class PackagedDesktopLauncher {
             return;
         }
 
+        cl.codes.config.MobileLanNetwork.Address selectedAddress =
+                addressSelector.getSelectedItem() instanceof cl.codes.config.MobileLanNetwork.Address selected
+                        ? selected : null;
+        String allowedTailscalePeers = tailscalePeerAddress.getText().trim();
+        if (enabled.isSelected() && selectedAddress != null && selectedAddress.tailscale()
+                && !cl.codes.config.MobileLanNetwork.isValidTailscalePeerAddresses(allowedTailscalePeers)) {
+            showMessage("Introduce una o más IPv4 Tailscale válidas (100.64.0.0 a 100.127.255.255), separadas por comas.",
+                    "Conexión móvil segura", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
         java.util.Map<String, String> settings = new java.util.LinkedHashMap<>();
         settings.put("CODES_MOBILE_LAN_ENABLED", Boolean.toString(enabled.isSelected()));
-        if (addressSelector.getSelectedItem() instanceof cl.codes.config.MobileLanNetwork.Address selected) {
-            settings.put("CODES_MOBILE_LAN_ADDRESS", selected.ipAddress());
-        }
+        settings.put("CODES_MOBILE_LAN_ADDRESS",
+                selectedAddress == null ? "" : selectedAddress.ipAddress());
+        settings.put("CODES_MOBILE_LAN_PEER_ADDRESS",
+                enabled.isSelected() && selectedAddress != null && selectedAddress.tailscale()
+                        ? allowedTailscalePeers : "");
         cl.codes.config.LocalSecretBootstrap.saveLocalSettings(settings);
         showMessage(enabled.isSelected()
                         ? "Acceso móvil HTTPS configurado. Reinicia CODES para aplicar los cambios. "
-                        + "El APK necesitará la dirección y huella SHA-256 mostradas desde esta pantalla."
+                        + (selectedAddress != null && selectedAddress.tailscale()
+                        ? "Solo se permitirán los dispositivos con las IPv4 Tailscale indicadas."
+                        : "El APK necesitará la dirección y huella SHA-256 mostradas desde esta pantalla.")
                         : "El acceso móvil quedó desactivado. CODES seguirá limitado a este equipo.",
                 "Conexión móvil", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private boolean selectedAddressIsTailscale(
+            JComboBox<cl.codes.config.MobileLanNetwork.Address> addressSelector
+    ) {
+        return addressSelector.getSelectedItem() instanceof cl.codes.config.MobileLanNetwork.Address selected
+                && selected.tailscale();
     }
 
     private JTextField settingField(String name, String fallback) {

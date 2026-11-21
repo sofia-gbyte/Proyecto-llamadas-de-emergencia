@@ -1,4 +1,4 @@
 <resources>
-    <string name="invalid_server_config">Introduce una IPv4 privada válida y la huella SHA-256 exacta que muestra CODES.</string>
+    <string name="invalid_server_config">Introduce una IPv4 privada de LAN o Tailscale válida y la huella SHA-256 exacta que muestra CODES.</string>
     <string name="save_server_config_error">No se pudo guardar la configuración cifrada. Comprueba el almacenamiento del dispositivo.</string>
 </resources>

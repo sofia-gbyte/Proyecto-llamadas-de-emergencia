@@ -23,8 +23,8 @@ public class MobileLanTlsConfiguration {
             @Value("${app.mobile.lan-address:}") String address
     ) {
         if (!enabled) return factory -> {};
-        if (!MobileLanNetwork.isPrivateIpv4(address)) {
-            throw new IllegalStateException("El acceso móvil requiere seleccionar una dirección IPv4 privada activa.");
+        if (!MobileLanNetwork.isMobileIpv4(address)) {
+            throw new IllegalStateException("El acceso móvil requiere una IPv4 privada de LAN o Tailscale.");
         }
         boolean available = MobileLanNetwork.availableAddresses().stream()
                 .anyMatch(candidate -> candidate.ipAddress().equals(address));

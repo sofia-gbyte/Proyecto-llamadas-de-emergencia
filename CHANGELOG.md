@@ -2,6 +2,15 @@
 
 Este archivo resume los cambios funcionales y de operación relevantes por versión de CODES. Las versiones de las bibliotecas se mantienen documentadas por separado en [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) y en `pom.xml`.
 
+## [1.1.4] - 2026-11-21
+
+### Conexión móvil remota y segura
+
+- El APK puede conectarse al servidor desde otra red usando la interfaz Tailscale del PC; la conexión LAN Wi-Fi permanece disponible.
+- CODES enlaza HTTPS solo a la interfaz seleccionada y, para Tailscale, exige además una lista de IPv4 exactas de los teléfonos permitidos.
+- La APK acepta el rango Tailscale `100.64.0.0/10`. No se abre ni se reenvía el puerto `8443` a Internet.
+- `mvn clean verify` pasó con 147 pruebas; `assembleDebug` compiló la APK 1.1.4 y el app-image de Windows contiene su runtime y 207 archivos verificados.
+
 ## [1.1.3] - 2026-11-17
 
 ### APK y acceso móvil

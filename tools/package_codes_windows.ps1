@@ -40,7 +40,7 @@ if (-not $versionMatch.Success -or [int]$versionMatch.Groups[1].Value -lt 21) {
 }
 
 if ([string]::IsNullOrWhiteSpace($DestinationDirectory)) {
-    $DestinationDirectory = Join-Path $root 'dist\1.1.3'
+    $DestinationDirectory = Join-Path $root 'dist\1.1.4'
 } elseif (-not [System.IO.Path]::IsPathRooted($DestinationDirectory)) {
     $DestinationDirectory = Join-Path $root $DestinationDirectory
 }
@@ -75,7 +75,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Maven terminó con código $LASTEXITCODE; no se creó el paquete."
 }
 
-$jar = Join-Path $root 'target\codes-1.1.3.jar'
+$jar = Join-Path $root 'target\codes-1.1.4.jar'
 if (-not (Test-Path $jar)) {
     throw "No se encontró el JAR ejecutable: $jar"
 }
@@ -84,7 +84,7 @@ if (Test-Path $inputDirectory) {
     Remove-Item -LiteralPath $inputDirectory -Recurse -Force
 }
 New-Item -ItemType Directory -Path $inputDirectory | Out-Null
-Copy-Item -LiteralPath $jar -Destination (Join-Path $inputDirectory 'codes-1.1.3.jar')
+Copy-Item -LiteralPath $jar -Destination (Join-Path $inputDirectory 'codes-1.1.4.jar')
 $iconPath = Join-Path $root 'tools\assets\CODES.ico'
 if (-not (Test-Path $iconPath)) {
     throw "No se encontró el icono de Windows: $iconPath"
@@ -99,10 +99,10 @@ Write-Host 'Generando app-image de Windows con runtime incluido...' -ForegroundC
 & $jpackage `
     --type app-image `
     --name CODES `
-    --app-version '1.1.3' `
+    --app-version '1.1.4' `
     --icon $iconPath `
     --input $inputDirectory `
-    --main-jar 'codes-1.1.3.jar' `
+    --main-jar 'codes-1.1.4.jar' `
     --dest $stagingDirectory `
     --add-modules $runtimeModules `
     --java-options '-Dcodes.packaged=true'
@@ -142,7 +142,7 @@ $manifestEntries = @(
 )
 $manifest = [ordered]@{
     application = 'CODES'
-    version = '1.1.3'
+    version = '1.1.4'
     packageType = 'Windows app-image'
     entryPoint = 'CODES.exe'
     runtimeIncluded = $true
