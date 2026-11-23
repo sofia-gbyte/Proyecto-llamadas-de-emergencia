@@ -94,6 +94,8 @@ La API está orientada a los recursos `users` y `llamadas`. Las operaciones admi
 
 Las peticiones JSON usan `Content-Type: application/json` y las operaciones protegidas requieren `Authorization: Bearer <JWT>`. La creación de llamadas en vivo usa `multipart/form-data`: la parte `datos` contiene la transcripción y coordenadas del operador, y `audio` es opcional.
 
+La colección [CODES.postman_collection.json](CODES.postman_collection.json), en la raíz del repositorio, se puede importar desde Postman. Por defecto apunta a `http://127.0.0.1:8000`; completa las variables de usuario y contraseña y, si ALTCHA está habilitado, resuelve el desafío antes de iniciar sesión.
+
 Ejemplos de contratos:
 
 ```json

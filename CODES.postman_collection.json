@@ -1,0 +1,922 @@
+{
+  "info": {
+    "_postman_id": "bc4b39eb-261b-46c9-85b2-1c4f884ab6e1",
+    "name": "CODES API",
+    "description": "Colección para probar la API REST local de CODES. Inicia la aplicación y usa http://127.0.0.1:8000 como baseUrl. Completa username/password con una cuenta existente. Si ALTCHA está habilitado, solicita un desafío en CAPTCHA, resuélvelo con el componente ALTCHA de la aplicación y pega el token en captchaToken antes de iniciar sesión o registrarte. Las rutas administrativas y de operadores requieren el rol correspondiente. La API está pensada para uso local; no expongas el puerto a Internet.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000",
+      "type": "string"
+    },
+    {
+      "key": "username",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "captchaToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "mobileToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "enrollmentToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "callId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "closedLimit",
+      "value": "50",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Público y configuración",
+      "item": [
+        {
+          "name": "Estado de la API",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/health",
+            "description": "Comprueba que el servidor responda."
+          },
+          "response": [],
+          "auth": {
+            "type": "noauth"
+          }
+        },
+        {
+          "name": "Configuración pública",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/public-config"
+          },
+          "response": [],
+          "auth": {
+            "type": "noauth"
+          }
+        },
+        {
+          "name": "Configuración CAPTCHA",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/auth/captcha-config"
+          },
+          "response": [],
+          "auth": {
+            "type": "noauth"
+          }
+        },
+        {
+          "name": "Solicitar desafío CAPTCHA",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/auth/captcha-challenge?purpose=login",
+            "description": "Usa purpose=login o purpose=register. Resuelve el desafío con ALTCHA y copia el token resultante en la variable captchaToken."
+          },
+          "response": [],
+          "auth": {
+            "type": "noauth"
+          }
+        },
+        {
+          "name": "Heartbeat",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/heartbeat"
+          },
+          "response": [],
+          "auth": {
+            "type": "noauth"
+          }
+        },
+        {
+          "name": "Métricas de llamadas",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/metrics"
+          },
+          "response": []
+        },
+        {
+          "name": "Ruta entre coordenadas",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/maps/route?originLat=-33.4489&originLng=-70.6693&destinationLat=-33.4372&destinationLng=-70.6506"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Autenticación",
+      "item": [
+        {
+          "name": "Iniciar sesión web",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.token) pm.collectionVariables.set('token', data.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\",\n  \"captchaToken\": \"{{captchaToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          },
+          "response": [],
+          "auth": {
+            "type": "noauth"
+          }
+        },
+        {
+          "name": "Cerrar sesión web",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/auth/logout"
+          },
+          "response": []
+        },
+        {
+          "name": "Cambiar contraseña",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{password}}\",\n  \"newPassword\": \"NuevaClaveSegura!2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/auth/change-password"
+          },
+          "response": []
+        },
+        {
+          "name": "Registrar cuenta",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"nuevo.operador\",\n  \"password\": \"ClaveSegura!2026\",\n  \"nombre\": \"Nombre\",\n  \"apellido\": \"Apellido\",\n  \"correo\": \"operador@example.org\",\n  \"institucion\": \"bomberos\",\n  \"captchaToken\": \"{{captchaToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/auth/register"
+          },
+          "response": [],
+          "auth": {
+            "type": "noauth"
+          }
+        },
+        {
+          "name": "Confirmar correo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"PEGA_AQUI_EL_TOKEN_DE_CONFIRMACION\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/auth/verify-email"
+          },
+          "response": [],
+          "auth": {
+            "type": "noauth"
+          }
+        },
+        {
+          "name": "Reenviar confirmación de correo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"operador@example.org\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/auth/resend-verification"
+          },
+          "response": [],
+          "auth": {
+            "type": "noauth"
+          }
+        },
+        {
+          "name": "Solicitar recuperación de contraseña",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"operador@example.org\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/auth/forgot-password"
+          },
+          "response": [],
+          "auth": {
+            "type": "noauth"
+          }
+        },
+        {
+          "name": "Restablecer contraseña",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"PEGA_AQUI_EL_TOKEN_DE_RECUPERACION\",\n  \"newPassword\": \"NuevaClaveSegura!2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/auth/reset-password"
+          },
+          "response": [],
+          "auth": {
+            "type": "noauth"
+          }
+        },
+        {
+          "name": "Iniciar sesión móvil",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.token && data.mfaSetupRequired) pm.collectionVariables.set('enrollmentToken', data.token);",
+                  "  if (data.token && !data.mfaSetupRequired) pm.collectionVariables.set('mobileToken', data.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\",\n  \"captchaToken\": \"{{captchaToken}}\",\n  \"totpCode\": \"000000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/auth/mobile/login",
+            "description": "Elimina totpCode si la cuenta aún no tiene MFA configurado. Si la respuesta incluye mfaSetupRequired=true, continúa con las solicitudes de inscripción TOTP."
+          },
+          "response": [],
+          "auth": {
+            "type": "noauth"
+          }
+        },
+        {
+          "name": "Preparar inscripción TOTP móvil",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/auth/mobile/totp/setup",
+            "description": "Usa el enrollmentToken generado por el inicio de sesión móvil cuando se requiere configurar MFA. Añade el secreto u otpauthUri a una aplicación autenticadora."
+          },
+          "response": [],
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{enrollmentToken}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "Verificar inscripción TOTP móvil",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.token) pm.collectionVariables.set('mobileToken', data.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"000000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/auth/mobile/totp/verify-setup"
+          },
+          "response": [],
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{enrollmentToken}}",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "Cerrar sesión móvil",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/auth/mobile/logout"
+          },
+          "response": [],
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{mobileToken}}",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Llamadas",
+      "item": [
+        {
+          "name": "Listar pendientes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/llamadas/pending"
+          },
+          "response": []
+        },
+        {
+          "name": "Listar en curso",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/llamadas/in-progress"
+          },
+          "response": []
+        },
+        {
+          "name": "Listar cerradas",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/llamadas/closed?limit={{closedLimit}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Obtener llamada",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/llamadas/{{callId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Crear llamada en vivo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id !== undefined) pm.collectionVariables.set('callId', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "datos",
+                  "value": "{\"transcription\":\"Llamada de prueba: se reporta una emergencia en Av. Central 123.\",\"latitudOperador\":-33.4489,\"longitudOperador\":-70.6693}",
+                  "contentType": "application/json",
+                  "type": "text"
+                },
+                {
+                  "key": "audio",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/api/llamadas/live",
+            "description": "La parte datos debe ser JSON. audio es opcional; selecciona un archivo local si deseas probar una grabación."
+          },
+          "response": []
+        },
+        {
+          "name": "Asignar llamada",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/llamadas/{{callId}}/assign"
+          },
+          "response": []
+        },
+        {
+          "name": "Agregar información al caso",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"updateId\": \"ec6de66d-c7d4-4d38-97ad-1afbf15ecf00\",\n  \"information\": \"Información adicional de prueba para el caso.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/llamadas/{{callId}}/updates",
+            "description": "Genera un updateId UUID nuevo por cada actualización y reutiliza el mismo valor al reintentar esa misma solicitud."
+          },
+          "response": []
+        },
+        {
+          "name": "Corregir resumen y dirección",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operationalSummary\": \"Resumen operativo corregido para pruebas.\",\n  \"address\": \"Av. Central 123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/llamadas/{{callId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Cerrar llamada",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Cierre de prueba.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/llamadas/{{callId}}/close"
+          },
+          "response": []
+        },
+        {
+          "name": "Archivar llamada pendiente",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/llamadas/{{callId}}",
+            "description": "Solo administrador; únicamente archiva una llamada pendiente sin asignar."
+          },
+          "response": []
+        },
+        {
+          "name": "Archivar todos los casos",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/llamadas/archive-all",
+            "description": "Solo administrador. Archiva llamadas activas sin eliminar registros ni audios."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Usuarios (administrador)",
+      "item": [
+        {
+          "name": "Listar usuarios",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/users"
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar usuario",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/users/{{userId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Crear usuario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id !== undefined) pm.collectionVariables.set('userId', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"nuevo.operador\",\n  \"password\": \"ClaveSegura!2026\",\n  \"rol\": \"operator\",\n  \"institution\": \"bomberos\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/users"
+          },
+          "response": []
+        },
+        {
+          "name": "Actualizar usuario",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rol\": \"supervisor\",\n  \"institution\": \"bomberos\",\n  \"firstName\": \"Ana\",\n  \"lastName\": \"Pérez\",\n  \"email\": \"ana@example.org\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/users/{{userId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Deshabilitar usuario",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/api/users/{{userId}}/disable"
+          },
+          "response": []
+        },
+        {
+          "name": "Habilitar usuario",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/api/users/{{userId}}/enable"
+          },
+          "response": []
+        },
+        {
+          "name": "Restablecer contraseña de usuario",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/api/users/{{userId}}/reset-password",
+            "description": "Genera una contraseña temporal. La respuesta la incluye para entregarla por un canal seguro."
+          },
+          "response": []
+        },
+        {
+          "name": "Cerrar sesiones de usuario",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/api/users/{{userId}}/close-sessions"
+          },
+          "response": []
+        },
+        {
+          "name": "Restablecer MFA móvil",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/api/users/{{userId}}/reset-mobile-mfa"
+          },
+          "response": []
+        },
+        {
+          "name": "Eliminar usuario",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/users/{{userId}}"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Administración",
+      "item": [
+        {
+          "name": "Estado administrativo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/admin/status"
+          },
+          "response": []
+        },
+        {
+          "name": "Ejecutar autochequeo",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/admin/selftest"
+          },
+          "response": []
+        },
+        {
+          "name": "Abrir sesión de vista previa",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.token) pm.collectionVariables.set('token', data.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/admin/preview-session/bomberos",
+            "description": "Admite bomberos, carabineros o samu. El token recibido es de solo lectura y reemplazará la variable token."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Aplicación móvil",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{mobileToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Consultar colas móviles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/mobile/cases"
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar caso móvil",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/mobile/cases/{{callId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Asignar caso móvil",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/mobile/cases/{{callId}}/assign"
+          },
+          "response": []
+        },
+        {
+          "name": "Cerrar caso móvil",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Caso atendido durante la prueba.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/mobile/cases/{{callId}}/close"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
