@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "bc4b39eb-261b-46c9-85b2-1c4f884ab6e1",
     "name": "CODES API",
-    "description": "Colección para probar la API REST local de CODES. Inicia la aplicación y usa http://127.0.0.1:8000 como baseUrl. Completa username/password con una cuenta existente. Si ALTCHA está habilitado, solicita un desafío en CAPTCHA, resuélvelo con el componente ALTCHA de la aplicación y pega el token en captchaToken antes de iniciar sesión o registrarte. Las rutas administrativas y de operadores requieren el rol correspondiente. La API está pensada para uso local; no expongas el puerto a Internet.",
+    "description": "Colección para probar la API REST local de CODES. Inicia la aplicación y usa http://127.0.0.1:8000 como baseUrl. Completa username/password con una cuenta existente. Si ALTCHA está habilitado, solicita un desafío en CAPTCHA, resuélvelo con el componente ALTCHA de la aplicación y pega el token en captchaToken antes de iniciar sesión o registrarte. Las rutas administrativas y de operadores requieren el rol correspondiente. La API está pensada para uso local; no expongas el puerto a Internet. Las pruebas comunes comprueban que no haya respuestas HTTP 5xx y que el JSON tenga formato válido. Los ejemplos marcados como ficticios son solo referenciales; ejecuta el request para ver la respuesta real.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -15,6 +15,26 @@
       }
     ]
   },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('La respuesta no es un error del servidor (5xx)', function () {",
+          "  pm.expect(pm.response.code).to.be.below(500);",
+          "});",
+          "",
+          "const contentType = pm.response.headers.get('Content-Type') || '';",
+          "if (/json/i.test(contentType)) {",
+          "  pm.test('El cuerpo JSON tiene formato válido', function () {",
+          "    pm.response.json();",
+          "  });",
+          "}"
+        ]
+      }
+    }
+  ],
   "variable": [
     {
       "key": "baseUrl",
@@ -79,7 +99,27 @@
             "url": "{{baseUrl}}/api/health",
             "description": "Comprueba que el servidor responda."
           },
-          "response": [],
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/health"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Estado de la API\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ],
           "auth": {
             "type": "noauth"
           }
@@ -91,7 +131,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/public-config"
           },
-          "response": [],
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/public-config"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Configuración pública\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ],
           "auth": {
             "type": "noauth"
           }
@@ -179,7 +239,27 @@
             "url": "{{baseUrl}}/api/auth/captcha-challenge?purpose=login",
             "description": "Usa purpose=login o purpose=register. Resuelve el desafío con ALTCHA y copia el token resultante en la variable captchaToken."
           },
-          "response": [],
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/auth/captcha-challenge?purpose=login"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Solicitar desafío CAPTCHA\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ],
           "auth": {
             "type": "noauth"
           }
@@ -191,7 +271,22 @@
             "header": [],
             "url": "{{baseUrl}}/api/heartbeat"
           },
-          "response": [],
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/api/heartbeat"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "text",
+              "header": [],
+              "cookie": [],
+              "body": ""
+            }
+          ],
           "auth": {
             "type": "noauth"
           }
@@ -203,7 +298,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/metrics"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/metrics"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Métricas de llamadas\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Ruta entre coordenadas",
@@ -212,7 +327,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/maps/route?originLat=-33.4489&originLng=-70.6693&destinationLat=-33.4372&destinationLng=-70.6506"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/maps/route?originLat=-33.4489&originLng=-70.6693&destinationLat=-33.4372&destinationLng=-70.6506"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Ruta entre coordenadas\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         }
       ]
     },
@@ -254,7 +389,41 @@
             },
             "url": "{{baseUrl}}/api/auth/login"
           },
-          "response": [],
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/auth/login",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\",\n  \"captchaToken\": \"{{captchaToken}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Iniciar sesión web\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ],
           "auth": {
             "type": "noauth"
           }
@@ -266,7 +435,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/auth/logout"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/api/auth/logout"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Cerrar sesión web\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Cambiar contraseña",
@@ -289,7 +478,41 @@
             },
             "url": "{{baseUrl}}/api/auth/change-password"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/auth/change-password",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"currentPassword\": \"{{password}}\",\n  \"newPassword\": \"NuevaClaveSegura!2026\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Cambiar contraseña\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Registrar cuenta",
@@ -312,7 +535,41 @@
             },
             "url": "{{baseUrl}}/api/auth/register"
           },
-          "response": [],
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/auth/register",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"nuevo.operador\",\n  \"password\": \"ClaveSegura!2026\",\n  \"nombre\": \"Nombre\",\n  \"apellido\": \"Apellido\",\n  \"correo\": \"operador@example.org\",\n  \"institucion\": \"bomberos\",\n  \"captchaToken\": \"{{captchaToken}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Registrar cuenta\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ],
           "auth": {
             "type": "noauth"
           }
@@ -338,7 +595,41 @@
             },
             "url": "{{baseUrl}}/api/auth/verify-email"
           },
-          "response": [],
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/auth/verify-email",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"token\": \"PEGA_AQUI_EL_TOKEN_DE_CONFIRMACION\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Confirmar correo\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ],
           "auth": {
             "type": "noauth"
           }
@@ -364,7 +655,41 @@
             },
             "url": "{{baseUrl}}/api/auth/resend-verification"
           },
-          "response": [],
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/auth/resend-verification",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"operador@example.org\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Reenviar confirmación de correo\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ],
           "auth": {
             "type": "noauth"
           }
@@ -390,7 +715,41 @@
             },
             "url": "{{baseUrl}}/api/auth/forgot-password"
           },
-          "response": [],
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/auth/forgot-password",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"operador@example.org\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Solicitar recuperación de contraseña\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ],
           "auth": {
             "type": "noauth"
           }
@@ -416,7 +775,41 @@
             },
             "url": "{{baseUrl}}/api/auth/reset-password"
           },
-          "response": [],
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/auth/reset-password",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"token\": \"PEGA_AQUI_EL_TOKEN_DE_RECUPERACION\",\n  \"newPassword\": \"NuevaClaveSegura!2026\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Restablecer contraseña\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ],
           "auth": {
             "type": "noauth"
           }
@@ -458,7 +851,41 @@
             "url": "{{baseUrl}}/api/auth/mobile/login",
             "description": "Elimina totpCode si la cuenta aún no tiene MFA configurado. Si la respuesta incluye mfaSetupRequired=true, continúa con las solicitudes de inscripción TOTP."
           },
-          "response": [],
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/auth/mobile/login",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\",\n  \"captchaToken\": \"{{captchaToken}}\",\n  \"totpCode\": \"000000\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Iniciar sesión móvil\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ],
           "auth": {
             "type": "noauth"
           }
@@ -471,7 +898,27 @@
             "url": "{{baseUrl}}/api/auth/mobile/totp/setup",
             "description": "Usa el enrollmentToken generado por el inicio de sesión móvil cuando se requiere configurar MFA. Añade el secreto u otpauthUri a una aplicación autenticadora."
           },
-          "response": [],
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/api/auth/mobile/totp/setup"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Preparar inscripción TOTP móvil\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ],
           "auth": {
             "type": "bearer",
             "bearer": [
@@ -518,7 +965,41 @@
             },
             "url": "{{baseUrl}}/api/auth/mobile/totp/verify-setup"
           },
-          "response": [],
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/auth/mobile/totp/verify-setup",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"code\": \"000000\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Verificar inscripción TOTP móvil\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ],
           "auth": {
             "type": "bearer",
             "bearer": [
@@ -537,7 +1018,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/auth/mobile/logout"
           },
-          "response": [],
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/api/auth/mobile/logout"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Cerrar sesión móvil\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ],
           "auth": {
             "type": "bearer",
             "bearer": [
@@ -561,7 +1062,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/llamadas/pending"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/llamadas/pending"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Listar pendientes\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Listar en curso",
@@ -570,7 +1091,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/llamadas/in-progress"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/llamadas/in-progress"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Listar en curso\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Listar cerradas",
@@ -579,7 +1120,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/llamadas/closed?limit={{closedLimit}}"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/llamadas/closed?limit={{closedLimit}}"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Listar cerradas\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Obtener llamada",
@@ -588,7 +1149,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/llamadas/{{callId}}"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/llamadas/{{callId}}"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Obtener llamada\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Crear llamada en vivo",
@@ -628,7 +1209,43 @@
             "url": "{{baseUrl}}/api/llamadas/live",
             "description": "La parte datos debe ser JSON. audio es opcional; selecciona un archivo local si deseas probar una grabación."
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/api/llamadas/live",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "datos",
+                      "value": "{\"transcription\":\"Llamada de prueba: se reporta una emergencia en Av. Central 123.\",\"latitudOperador\":-33.4489,\"longitudOperador\":-70.6693}",
+                      "contentType": "application/json",
+                      "type": "text"
+                    },
+                    {
+                      "key": "audio",
+                      "type": "file",
+                      "src": ""
+                    }
+                  ]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Crear llamada en vivo\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Asignar llamada",
@@ -637,7 +1254,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/llamadas/{{callId}}/assign"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/api/llamadas/{{callId}}/assign"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Asignar llamada\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Agregar información al caso",
@@ -661,7 +1298,41 @@
             "url": "{{baseUrl}}/api/llamadas/{{callId}}/updates",
             "description": "Genera un updateId UUID nuevo por cada actualización y reutiliza el mismo valor al reintentar esa misma solicitud."
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/llamadas/{{callId}}/updates",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"updateId\": \"ec6de66d-c7d4-4d38-97ad-1afbf15ecf00\",\n  \"information\": \"Información adicional de prueba para el caso.\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Agregar información al caso\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Corregir resumen y dirección",
@@ -684,7 +1355,41 @@
             },
             "url": "{{baseUrl}}/api/llamadas/{{callId}}"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/llamadas/{{callId}}",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"operationalSummary\": \"Resumen operativo corregido para pruebas.\",\n  \"address\": \"Av. Central 123\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Corregir resumen y dirección\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Cerrar llamada",
@@ -707,7 +1412,41 @@
             },
             "url": "{{baseUrl}}/api/llamadas/{{callId}}/close"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/llamadas/{{callId}}/close",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"comment\": \"Cierre de prueba.\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Cerrar llamada\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Archivar llamada pendiente",
@@ -717,7 +1456,22 @@
             "url": "{{baseUrl}}/api/llamadas/{{callId}}",
             "description": "Solo administrador; únicamente archiva una llamada pendiente sin asignar."
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": "{{baseUrl}}/api/llamadas/{{callId}}"
+              },
+              "status": "No Content",
+              "code": 204,
+              "_postman_previewlanguage": "text",
+              "header": [],
+              "cookie": [],
+              "body": ""
+            }
+          ]
         },
         {
           "name": "Archivar todos los casos",
@@ -727,7 +1481,27 @@
             "url": "{{baseUrl}}/api/llamadas/archive-all",
             "description": "Solo administrador. Archiva llamadas activas sin eliminar registros ni audios."
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/api/llamadas/archive-all"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Archivar todos los casos\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         }
       ]
     },
@@ -741,7 +1515,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/users"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/users"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Listar usuarios\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Consultar usuario",
@@ -750,7 +1544,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/users/{{userId}}"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/users/{{userId}}"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Consultar usuario\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Crear usuario",
@@ -787,7 +1601,41 @@
             },
             "url": "{{baseUrl}}/api/users"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/users",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"nuevo.operador\",\n  \"password\": \"ClaveSegura!2026\",\n  \"rol\": \"operator\",\n  \"institution\": \"bomberos\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Crear usuario\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Actualizar usuario",
@@ -810,7 +1658,41 @@
             },
             "url": "{{baseUrl}}/api/users/{{userId}}"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/users/{{userId}}",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"rol\": \"supervisor\",\n  \"institution\": \"bomberos\",\n  \"firstName\": \"Ana\",\n  \"lastName\": \"Pérez\",\n  \"email\": \"ana@example.org\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Actualizar usuario\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Deshabilitar usuario",
@@ -819,7 +1701,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/users/{{userId}}/disable"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [],
+                "url": "{{baseUrl}}/api/users/{{userId}}/disable"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Deshabilitar usuario\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Habilitar usuario",
@@ -828,7 +1730,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/users/{{userId}}/enable"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [],
+                "url": "{{baseUrl}}/api/users/{{userId}}/enable"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Habilitar usuario\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Restablecer contraseña de usuario",
@@ -838,7 +1760,27 @@
             "url": "{{baseUrl}}/api/users/{{userId}}/reset-password",
             "description": "Genera una contraseña temporal. La respuesta la incluye para entregarla por un canal seguro."
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [],
+                "url": "{{baseUrl}}/api/users/{{userId}}/reset-password"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Restablecer contraseña de usuario\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Cerrar sesiones de usuario",
@@ -847,7 +1789,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/users/{{userId}}/close-sessions"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [],
+                "url": "{{baseUrl}}/api/users/{{userId}}/close-sessions"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Cerrar sesiones de usuario\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Restablecer MFA móvil",
@@ -856,7 +1818,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/users/{{userId}}/reset-mobile-mfa"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [],
+                "url": "{{baseUrl}}/api/users/{{userId}}/reset-mobile-mfa"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Restablecer MFA móvil\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Eliminar usuario",
@@ -865,7 +1847,22 @@
             "header": [],
             "url": "{{baseUrl}}/api/users/{{userId}}"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": "{{baseUrl}}/api/users/{{userId}}"
+              },
+              "status": "No Content",
+              "code": 204,
+              "_postman_previewlanguage": "text",
+              "header": [],
+              "cookie": [],
+              "body": ""
+            }
+          ]
         }
       ]
     },
@@ -879,7 +1876,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/admin/status"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/admin/status"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Estado administrativo\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Ejecutar autochequeo",
@@ -888,7 +1905,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/admin/selftest"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/api/admin/selftest"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Ejecutar autochequeo\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Abrir sesión de vista previa",
@@ -912,7 +1949,27 @@
             "url": "{{baseUrl}}/api/admin/preview-session/bomberos",
             "description": "Admite bomberos, carabineros o samu. El token recibido es de solo lectura y reemplazará la variable token."
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/api/admin/preview-session/bomberos"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Abrir sesión de vista previa\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         }
       ]
     },
@@ -936,7 +1993,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/mobile/cases"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/mobile/cases"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Consultar colas móviles\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Consultar caso móvil",
@@ -945,7 +2022,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/mobile/cases/{{callId}}"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/mobile/cases/{{callId}}"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Consultar caso móvil\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Asignar caso móvil",
@@ -954,7 +2051,27 @@
             "header": [],
             "url": "{{baseUrl}}/api/mobile/cases/{{callId}}/assign"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/api/mobile/cases/{{callId}}/assign"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Asignar caso móvil\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         },
         {
           "name": "Cerrar caso móvil",
@@ -977,7 +2094,41 @@
             },
             "url": "{{baseUrl}}/api/mobile/cases/{{callId}}/close"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Ejemplo ficticio (referencial)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/mobile/cases/{{callId}}/close",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"comment\": \"Caso atendido durante la prueba.\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"ejemploFicticio\": true,\n  \"request\": \"Cerrar caso móvil\",\n  \"nota\": \"Respuesta de referencia ficticia; ejecuta el request para consultar datos reales.\"\n}"
+            }
+          ]
         }
       ]
     }
