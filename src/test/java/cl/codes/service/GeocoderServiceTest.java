@@ -35,9 +35,12 @@ class GeocoderServiceTest {
             String text = queryParameters(exchange.getRequestURI()).getOrDefault("text", "");
             boolean dehesa = text.contains("Dehesa");
             boolean eliodoroYanez = text.toLowerCase(java.util.Locale.ROOT).contains("eliodoro");
+            boolean calleCuatro = text.toLowerCase(java.util.Locale.ROOT).contains("calle cuatro");
             boolean hospitalMismatch = text.toLowerCase(java.util.Locale.ROOT).contains("barros");
             String formatted = eliodoroYanez
                     ? "Eliodoro Yáñez 1630, Providencia, Santiago, Chile"
+                    : calleCuatro
+                    ? "Calle Cuatro, Providencia, Santiago, Chile"
                     : hospitalMismatch
                     ? "Hospital Traumatológico, San Pablo, Santiago, Chile"
                     : dehesa
@@ -78,7 +81,7 @@ class GeocoderServiceTest {
     }
 
     @Test
-    void usesGeoapifyAndConstrainsSearchToConfiguredCoverage() {
+    void usesGeoapifyWithProximityBiasWithoutRestrictingProviderSearch() {
         GeocoderService service = service();
 
         GeocoderService.Coordinates result = service.geocode(
@@ -93,22 +96,23 @@ class GeocoderServiceTest {
         assertTrue(parameters.get("text").contains("Chile"));
         assertFalse(parameters.get("text").contains("#"));
         assertEquals("es", parameters.get("lang"));
-        assertTrue(parameters.get("filter").startsWith("circle:"));
+        assertFalse(parameters.containsKey("filter"));
         assertTrue(parameters.get("bias").startsWith("proximity:"));
     }
 
     @Test
     void geocodesAHouseNumberExtractedFromAChileanCallTranscript() {
+        String transcript = "Hay un choque en Eliodoro Yáñez 1630, Providencia. Hay personas lesionadas.";
         String address = cl.codes.classifier.Classifier.extractAddress(
-                "Hay un choque en Eliodoro Yáñez 1630, Providencia. Hay personas lesionadas.");
+                transcript);
         assertEquals("Eliodoro Yáñez #1630", address);
 
-        GeocoderService.Coordinates result = service().geocode(address);
+        GeocoderService.Coordinates result = service().geocode(address, transcript);
 
         assertTrue(result.isPresent());
         assertEquals("Eliodoro Yáñez 1630, Providencia, Santiago, Chile", result.formattedAddress());
         Map<String, String> parameters = queryParameters(lastRequest.get());
-        assertEquals("Eliodoro Yáñez 1630, Chile", parameters.get("text"));
+        assertEquals("Eliodoro Yáñez 1630, Providencia, Chile", parameters.get("text"));
         assertEquals("es", parameters.get("lang"));
     }
 
@@ -126,7 +130,7 @@ class GeocoderServiceTest {
     }
 
     @Test
-    void usesOperatorLocationAsTheEightKilometerCoverageCenter() {
+    void usesOperatorLocationAsProximityBiasAndKeepsLocalCoverageCheck() {
         GeocoderService service = new GeocoderService(
                 tempDir.resolve("operator-geocache.json").toString(),
                 "Chile",
@@ -149,7 +153,7 @@ class GeocoderServiceTest {
 
         assertTrue(result.isPresent());
         Map<String, String> parameters = queryParameters(lastRequest.get());
-        assertEquals("circle:-70.61,-33.44,8000", parameters.get("filter"));
+        assertFalse(parameters.containsKey("filter"));
         assertEquals("proximity:-70.61,-33.44", parameters.get("bias"));
     }
 
@@ -272,7 +276,7 @@ class GeocoderServiceTest {
     }
 
     @Test
-    void doesNotSendAnAmbiguousStreetWithoutHouseNumberToTheProvider() {
+    void letsGeoapifyResolveAOneWordStreetNameWithoutAHouseNumber() {
         GeocoderService service = service();
 
         GeocoderService.Coordinates result = service.geocode(
@@ -280,8 +284,10 @@ class GeocoderServiceTest {
                 "Accidente en Calle Cuatro"
         );
 
-        assertFalse(result.isPresent());
-        assertNull(lastRequest.get());
+        assertTrue(result.isPresent());
+        assertEquals("Calle Cuatro, Providencia, Santiago, Chile", result.formattedAddress());
+        assertNotNull(lastRequest.get());
+        assertFalse(queryParameters(lastRequest.get()).containsKey("filter"));
     }
 
     private GeocoderService service() {

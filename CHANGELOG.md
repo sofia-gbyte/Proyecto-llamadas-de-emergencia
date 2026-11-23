@@ -8,7 +8,8 @@ Este archivo resume los cambios funcionales y de operación relevantes por versi
 
 - La extracción desde transcripciones prioriza ubicaciones introducidas por «en» o «por», evitando incluir el inicio del relato (por ejemplo, «choque en») como parte del nombre de la calle.
 - Se elimina el marcador interno `#` del número antes de consultar Geoapify y se solicita respuesta en español.
-- Se conserva el filtro de cobertura configurado. La prueba de regresión usa un servidor HTTP local simulado; no envía direcciones de llamadas a Geoapify.
+- La búsqueda de direcciones ya no envía a Geoapify un filtro circular de 8 km: el centro operativo solo ordena por proximidad. CODES conserva la validación local de cobertura y la comprobación de coincidencia antes de aceptar coordenadas.
+- Se conserva la validación local de cobertura. Las pruebas usan un servidor HTTP local simulado; no envían direcciones de llamadas a Geoapify.
 - La APK permanece en `1.1.4`; no se modificó el código Android.
 
 ## [1.1.4] - 2026-11-21

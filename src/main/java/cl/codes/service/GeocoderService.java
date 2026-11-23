@@ -23,10 +23,8 @@ import java.util.*;
 /**
  * Geocodificación tolerante mediante Geoapify.
  *
- * Área de cobertura: TODO resultado se descarta si queda a más de
- * app.geocoder.radio-km del centro operativo configurado en
- * app.geocoder.centro-*.
- * La consulta y el filtro posterior respetan el área operativa configurada.
+ * La ubicación operativa prioriza los resultados de Geoapify y el radio
+ * configurado se mantiene como límite local de aceptación.
  *
  * La transcripción original nunca se modifica; solo se normaliza la consulta.
  */
@@ -158,14 +156,10 @@ public class GeocoderService {
             log.info("Geoapify Geocoding no está configurado; se probará Places si hay una clave disponible.");
         }
 
-        // Geoapify busca solo dentro del radio operativo y la coincidencia
-        // territorial se usa tanto para construir la consulta como para puntuar.
+        // El centro operativo solo sesga la búsqueda; Geoapify debe poder
+        // devolver candidatos que luego se validan contra el radio local.
         for (String query : queries) {
-            if (!hasReliableLocationTokens(query)) {
-                log.info("Geocodificación omitida: la ubicación reportada es demasiado general para ubicarla con seguridad.");
-                continue;
-            }
-            List<Candidate> candidates = searchGeoapify(query, territory, centerLat, centerLng, true);
+            List<Candidate> candidates = searchGeoapify(query, territory, centerLat, centerLng);
             Candidate bestCandidate = chooseBestCandidate(
                     candidates, query, territory, centerLat, centerLng, true);
             if (bestCandidate != null) {
@@ -174,6 +168,15 @@ public class GeocoderService {
                         new Coordinates(bestCandidate.lat(), bestCandidate.lng(), bestCandidate.displayName()),
                         false, radiusKm);
             }
+            if (checkOutsideCoverage) {
+                Candidate matchingCandidate = chooseBestCandidate(
+                        candidates, query, territory, centerLat, centerLng, false);
+                if (matchingCandidate != null
+                        && distanceKilometers(centerLat, centerLng,
+                        matchingCandidate.lat(), matchingCandidate.lng()) > radiusKm) {
+                    outsideCoverage = true;
+                }
+            }
         }
 
         Optional<Coordinates> namedPlace = placesService.findNamedHealthcarePlace(
@@ -181,32 +184,6 @@ public class GeocoderService {
         if (namedPlace.isPresent()) return new GeocodingResult(namedPlace.get(), false, radiusKm);
 
         if (checkOutsideCoverage) {
-            for (String query : queries) {
-                if (!hasReliableLocationTokens(query)) continue;
-                List<Candidate> unrestricted = searchGeoapify(query, territory, centerLat, centerLng, false);
-                Candidate matchingInsideCoverage = chooseBestCandidate(
-                        unrestricted, query, territory, centerLat, centerLng, true);
-                if (matchingInsideCoverage != null) {
-                    return new GeocodingResult(
-                            new Coordinates(matchingInsideCoverage.lat(), matchingInsideCoverage.lng(),
-                                    matchingInsideCoverage.displayName()),
-                            false, radiusKm);
-                }
-                Candidate matchingCandidate = chooseBestCandidate(
-                        unrestricted, query, territory, centerLat, centerLng, false);
-                if (matchingCandidate != null) {
-                    double distanceKm = distanceKilometers(
-                            centerLat, centerLng, matchingCandidate.lat(), matchingCandidate.lng());
-                    if (distanceKm <= radiusKm) {
-                        return new GeocodingResult(
-                                new Coordinates(matchingCandidate.lat(), matchingCandidate.lng(),
-                                        matchingCandidate.displayName()),
-                                false, radiusKm);
-                    }
-                    outsideCoverage = true;
-                }
-            }
-
             Optional<Coordinates> unrestrictedPlace = placesService.findNamedHealthcarePlace(
                     address, context, centerLat, centerLng, radiusKm, false);
             if (unrestrictedPlace.isPresent()) {
@@ -230,13 +207,13 @@ public class GeocoderService {
     }
 
     private List<Candidate> searchGeoapify(
-            String query, String territory, double centerLat, double centerLng, boolean restrictToCoverage) {
+            String query, String territory, double centerLat, double centerLng) {
         if (geoapifyApiKey.isBlank() || geoapifyBaseUrl.isBlank()) return List.of();
         String normalized = normalizeQuery(query);
         if (normalized.isBlank()) return List.of();
         String text = normalized + (territory == null || territory.isBlank() ? "" : ", " + territory) + ", " + country;
         String cacheKey = String.join("|", text, Double.toString(centerLat), Double.toString(centerLng),
-                Double.toString(radiusKm), Boolean.toString(restrictToCoverage));
+                "proximity-bias");
         List<Candidate> cachedCandidates = geocodeCache.get(cacheKey);
         if (cachedCandidates != null) return cachedCandidates;
         try {
@@ -244,11 +221,6 @@ public class GeocoderService {
                     .append("?text=").append(URLEncoder.encode(text, StandardCharsets.UTF_8))
                     .append("&apiKey=").append(URLEncoder.encode(geoapifyApiKey, StandardCharsets.UTF_8))
                     .append("&format=json&limit=10&lang=es");
-            if (restrictToCoverage) {
-                long radiusMeters = Math.max(1000L, Math.round(radiusKm * 1000));
-                String circle = "circle:" + centerLng + "," + centerLat + "," + radiusMeters;
-                url.append("&filter=").append(URLEncoder.encode(circle, StandardCharsets.UTF_8));
-            }
             url.append("&bias=").append(URLEncoder.encode("proximity:" + centerLng + "," + centerLat,
                     StandardCharsets.UTF_8));
             URI uri = URI.create(url.toString());
@@ -295,7 +267,6 @@ public class GeocoderService {
         if (candidates.isEmpty()) return null;
         String q = normalizeText(query);
         String terr = territory == null ? "" : normalizeText(territory);
-        if (!hasReliableLocationTokens(query)) return null;
         Candidate bestCandidate = null;
         double bestScore = 0.0;
         for (Candidate c : candidates) {
@@ -333,6 +304,7 @@ public class GeocoderService {
 
     static boolean matchesSpecificLocation(String query, String candidate) {
         List<String> tokens = specificLocationTokens(query);
+        if (tokens.isEmpty()) return false;
         String normalizedCandidate = normalizeText(candidate);
         long matchingTokens = tokens.stream()
                 .filter(token -> Arrays.stream(normalizedCandidate.split("\\s+"))
@@ -424,7 +396,7 @@ public class GeocoderService {
             if (explicitMunicipality.find()) return explicitMunicipality.group(1);
 
             java.util.regex.Matcher m = java.util.regex.Pattern.compile(
-                    "(?i)\\b(?:en|por)\\s+(?:la\\s+)?([A-Za-zÁÉÍÓÚÑáéíóúñ'-]{4,30})(?=\\s|,|$)"
+                    "(?i)(?:\\b\\d{1,6}|\\b(?:calle|pasaje|avenida|av\\.?|sector|poblaci[oó]n|villa|camino|ruta|carretera|caletera|autopista|callej[oó]n)\\s+[^,.]{3,60})\\s*,\\s*(?:comuna\\s+(?:de\\s+)?)?([\\p{L}][\\p{L}'-]*(?:\\s+[\\p{L}][\\p{L}'-]*){0,2})(?=\\s*(?:,|\\.|;|$|\\b(?:hay|necesita|requiere|presenta|est[aá]n?)\\b))"
             ).matcher(context);
             while (m.find()) {
                 String candidate = m.group(1);
@@ -433,7 +405,7 @@ public class GeocoderService {
         }
         if (address != null) {
             String[] parts = address.split(",");
-            for (int i = parts.length - 1; i >= 0; i--) {
+            for (int i = parts.length - 1; i >= 1; i--) {
                 String candidate = parts[i].trim();
                 if (!candidate.isBlank() && !isCommonWord(candidate)
                         && !candidate.matches(".*\\d.*")) {
