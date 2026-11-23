@@ -98,12 +98,75 @@
         },
         {
           "name": "Configuración CAPTCHA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Responde con HTTP 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Devuelve contenido JSON', function () {",
+                  "  const contentType = pm.response.headers.get('Content-Type') || '';",
+                  "  pm.expect(contentType.toLowerCase()).to.include('application/json');",
+                  "});",
+                  "",
+                  "pm.test('Incluye enabled como valor booleano', function () {",
+                  "  const data = pm.response.json();",
+                  "  pm.expect(data).to.have.property('enabled');",
+                  "  pm.expect(data.enabled).to.be.a('boolean');",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/api/auth/captcha-config"
           },
-          "response": [],
+          "response": [
+            {
+              "name": "CAPTCHA habilitado (ejemplo)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/auth/captcha-config"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"enabled\": true\n}"
+            },
+            {
+              "name": "CAPTCHA deshabilitado (ejemplo)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/auth/captcha-config"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"enabled\": false\n}"
+            }
+          ],
           "auth": {
             "type": "noauth"
           }
