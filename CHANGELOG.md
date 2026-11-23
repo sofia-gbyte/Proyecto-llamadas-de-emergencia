@@ -2,6 +2,15 @@
 
 Este archivo resume los cambios funcionales y de operación relevantes por versión de CODES. Las versiones de las bibliotecas se mantienen documentadas por separado en [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) y en `pom.xml`.
 
+## [1.1.5] - 2026-11-23
+
+### Geocodificación de direcciones (Windows/servidor)
+
+- La extracción desde transcripciones prioriza ubicaciones introducidas por «en» o «por», evitando incluir el inicio del relato (por ejemplo, «choque en») como parte del nombre de la calle.
+- Se elimina el marcador interno `#` del número antes de consultar Geoapify y se solicita respuesta en español.
+- Se conserva el filtro de cobertura configurado. La prueba de regresión usa un servidor HTTP local simulado; no envía direcciones de llamadas a Geoapify.
+- La APK permanece en `1.1.4`; no se modificó el código Android.
+
 ## [1.1.4] - 2026-11-21
 
 ### Conexión móvil remota y segura

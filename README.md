@@ -1,8 +1,8 @@
-# CODES 1.1.4 — Sistema de llamadas de emergencia
+# CODES 1.1.5 — Sistema de llamadas de emergencia
 
 CODES es una aplicación web para apoyar la recepción, registro y gestión de llamadas de emergencia. El sistema permite trabajar con llamadas en vivo, transcripción con Groq Whisper, clasificación inicial, geocodificación con Geoapify y seguimiento de los casos desde una interfaz web.
 
-**Versión del proyecto: `1.1.4`.** Consulta el [historial de cambios](CHANGELOG.md) para ver las novedades de esta versión y las notas de compatibilidad.
+**Versión del servidor y app-image de Windows: `1.1.5`. La APK permanece en `1.1.4`.** Consulta el [historial de cambios](CHANGELOG.md) para ver las novedades de esta versión y las notas de compatibilidad.
 
 La interfaz de escritorio y su API principal se limitan al mismo equipo. Como opción separada, el APK puede conectarse por HTTPS desde la misma Wi-Fi privada o por Tailscale con la IP del teléfono autorizada; el puerto de CODES nunca se debe publicar en Internet.
 
@@ -25,7 +25,7 @@ La interfaz de escritorio y su API principal se limitan al mismo equipo. Como op
 
 ---
 
-> **Alcance de la versión 1.1.4:** versión para pruebas locales de baja capacidad, con datos sintéticos y servicios externos aprobados por el operador. No implica que CODES esté preparado para su exposición a Internet ni para despachos reales sin las revisiones operativas, legales, de privacidad y disponibilidad descritas en [operación local](OPERACION_LOCAL.md).
+> **Alcance de la versión 1.1.5:** versión para pruebas locales de baja capacidad, con datos sintéticos y servicios externos aprobados por el operador. No implica que CODES esté preparado para su exposición a Internet ni para despachos reales sin las revisiones operativas, legales, de privacidad y disponibilidad descritas en [operación local](OPERACION_LOCAL.md).
 
 ## Funcionalidades principales
 
@@ -159,7 +159,7 @@ Las llamadas en vivo se envían a Groq al detener y guardar la grabación. El l�
 Para usar el app-image validado de esta entrega, inicia:
 
 ```text
-dist\1.1.4\CODES\CODES.exe
+dist\1.1.5\CODES\CODES.exe
 ```
 
 El menú del EXE abre maximizado e inicia/detiene CODES, muestra un diagnóstico local resumido, configura integraciones, crea respaldos y limpia archivos regenerables. Las pestañas de configuración se ajustan al espacio disponible y permiten desplazarse si hace falta. Conserva toda la carpeta `CODES` y su subdirectorio `runtime`; el EXE no es autónomo. El app-image incluye Java y es el único punto de entrada para usuarios. Para construir otro paquete desde el código fuente, consulta [App-image para Windows](#app-image-para-windows).
@@ -212,7 +212,7 @@ Para H2 local, el nombre de usuario predeterminado es `sa` y la contraseña qued
 
 ## Inicio de CODES en Windows
 
-El punto de entrada para usuarios es `dist\1.1.4\CODES\CODES.exe`, incluido en el app-image. Su menú usa el logo de CODES y agrupa las acciones por propósito: iniciar el sistema, configurar servicios, revisar diagnóstico y administrar datos/respaldos. No copies ni distribuyas solo el EXE: conserva la carpeta completa con `runtime`. El menú no incluye una acción que pueda borrar todos los casos y audios. Se retiró el lanzador por lotes; los scripts `.ps1` de compilación y mantenimiento no forman parte del paquete entregable.
+El punto de entrada para usuarios es `dist\1.1.5\CODES\CODES.exe`, incluido en el app-image. Su menú usa el logo de CODES y agrupa las acciones por propósito: iniciar el sistema, configurar servicios, revisar diagnóstico y administrar datos/respaldos. No copies ni distribuyas solo el EXE: conserva la carpeta completa con `runtime`. El menú no incluye una acción que pueda borrar todos los casos y audios. Se retiró el lanzador por lotes; los scripts `.ps1` de compilación y mantenimiento no forman parte del paquete entregable.
 
 El app-image puede crear o reutilizar estos archivos locales:
 
@@ -248,7 +248,7 @@ Para construir o actualizar el app-image desde el código fuente se necesita Win
 .\tools\package_codes_windows.ps1 -ReplaceExisting
 ```
 
-Si PowerShell bloquea el script, no uses `ExecutionPolicy Bypass` ni reduzcas la política de seguridad; solicita el procedimiento autorizado al administrador del equipo. El ejecutable de esta versión queda en `dist\1.1.4\CODES\CODES.exe`, y el runtime Java en `dist\1.1.4\CODES\runtime`. Distribuye la carpeta completa, no solo el `.exe`; el usuario final no necesita scripts de compilación o mantenimiento. Al iniciar el sistema desde el menú, el EXE abre `http://127.0.0.1:8000` cuando el servidor está listo. La base H2, los audios, la caché y los secretos se guardan fuera del paquete en `%LOCALAPPDATA%\CODES\data` (o en `CODES_DATA_DIR` si se define). No incluyas archivos de datos o secretos al distribuir el app-image.
+Si PowerShell bloquea el script, no uses `ExecutionPolicy Bypass` ni reduzcas la política de seguridad; solicita el procedimiento autorizado al administrador del equipo. El ejecutable de esta versión queda en `dist\1.1.5\CODES\CODES.exe`, y el runtime Java en `dist\1.1.5\CODES\runtime`. Distribuye la carpeta completa, no solo el `.exe`; el usuario final no necesita scripts de compilación o mantenimiento. Al iniciar el sistema desde el menú, el EXE abre `http://127.0.0.1:8000` cuando el servidor está listo. La base H2, los audios, la caché y los secretos se guardan fuera del paquete en `%LOCALAPPDATA%\CODES\data` (o en `CODES_DATA_DIR` si se define). No incluyas archivos de datos o secretos al distribuir el app-image.
 
 El script genera `package-manifest.json` con la lista de archivos, tamaños y SHA-256, además de `SHA256SUMS.txt`. Una segunda compilación puede usar otro destino (`-DestinationDirectory dist\phase2`) o reemplazar un app-image previo creado por el mismo script con `-ReplaceExisting`. El paquete se inspecciona para rechazar scripts y datos locales. Para usar CODES, el usuario final solo abre `CODES.exe`; no necesita ejecutar scripts, instalar Maven/Java ni configurar Java. La app-image es una carpeta autocontenida para distribución, no un EXE independiente: conserva su carpeta completa y el subdirectorio `runtime`.
 
@@ -299,10 +299,10 @@ Si la IP de la computadora cambia, detén CODES, selecciona la nueva interfaz/di
 Para obtener el EXE de escritorio que incluye esta opción sin reemplazar un app-image existente:
 
 ```powershell
-.\tools\package_codes_windows.ps1 -DestinationDirectory 'dist\1.1.4'
+.\tools\package_codes_windows.ps1 -DestinationDirectory 'dist\1.1.5'
 ```
 
-El ejecutable queda en `dist\1.1.4\CODES\CODES.exe`; conserva toda la carpeta `CODES`, incluido el runtime.
+El ejecutable queda en `dist\1.1.5\CODES\CODES.exe`; conserva toda la carpeta `CODES`, incluido el runtime.
 
 ### Construir el APK de prueba
 
@@ -760,7 +760,7 @@ El repositorio contiene pruebas automatizadas, pero una compilación o ejecució
 
 # Uso local y preparación operativa
 
-El app-image `1.1.4` está preparado para pruebas locales de baja capacidad, no certificado como sistema de producción para datos personales reales ni para despacho de emergencias. El EXE mantiene su interfaz y API principal en `127.0.0.1`; el APK puede habilitar explícitamente un listener HTTPS enlazado solo a una interfaz privada Wi-Fi o Tailscale y, por Tailscale, a la IPv4 exacta del teléfono. No habilites acceso a Internet, redirección de puertos ni reglas de firewall públicas. Las integraciones externas están desactivadas por defecto y la interfaz no contacta a proveedores si no se habilitan. El app-image de esta versión está en `dist\1.1.4\CODES`; reemplazar la carpeta del app-image no reemplaza los datos persistidos bajo `%LOCALAPPDATA%\CODES\data`.
+El app-image `1.1.5` está preparado para pruebas locales de baja capacidad, no certificado como sistema de producción para datos personales reales ni para despacho de emergencias. El EXE mantiene su interfaz y API principal en `127.0.0.1`; el APK puede habilitar explícitamente un listener HTTPS enlazado solo a una interfaz privada Wi-Fi o Tailscale y, por Tailscale, a la IPv4 exacta del teléfono. No habilites acceso a Internet, redirección de puertos ni reglas de firewall públicas. Las integraciones externas están desactivadas por defecto y la interfaz no contacta a proveedores si no se habilitan. El app-image de esta versión está en `dist\1.1.5\CODES`; reemplazar la carpeta del app-image no reemplaza los datos persistidos bajo `%LOCALAPPDATA%\CODES\data`.
 
 Antes de una prueba, configura un usuario Windows dedicado con acceso restringido al equipo, conserva el paquete íntegro y verifica el manifiesto/hash desde un canal confiable. El EXE de esta entrega no está firmado digitalmente; los hashes detectan cambios solo si el manifiesto llega por un canal confiable y no autentican al editor.
 
@@ -768,7 +768,7 @@ Antes de una prueba, configura un usuario Windows dedicado con acceso restringid
 
 Para un uso operativo con datos sensibles todavía se requiere, como mínimo, definir e implementar cifrado en reposo para H2 y secretos, protección y recuperación de claves, política de retención/eliminación, restauración probada de respaldos, control de acceso del sistema operativo, distribución firmada y revisión de privacidad/legal de cada flujo externo. La app no sustituye un sistema de despacho certificado ni el criterio de un operador.
 
-La versión `1.1.4` se validó con `mvn clean verify` y con el manifiesto del app-image generado por el script de empaquetado. La validación no es una certificación de seguridad ni reemplaza pruebas en el equipo de destino.
+La versión `1.1.5` se validó con `mvn clean verify` y con el manifiesto del app-image generado por el script de empaquetado. La validación no es una certificación de seguridad ni reemplaza pruebas en el equipo de destino. La APK de Android permanece en la versión `1.1.4`.
 
 La configuración actual utiliza H2 con:
 

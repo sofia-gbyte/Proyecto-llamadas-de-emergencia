@@ -2,7 +2,7 @@
 
 Revision del proyecto al 2026-11-03. Este documento identifica componentes visibles en el codigo y dependencias directas; no es asesoramiento legal ni sustituye la revision del artefacto final.
 
-Versión de CODES documentada: `1.1.4` (definida en `pom.xml`). Este número identifica el artefacto de la aplicación; no representa la versión de Spring Boot ni de las dependencias.
+Versión del servidor y app-image de Windows documentada: `1.1.5` (definida en `pom.xml`). La APK de Android permanece en `1.1.4`. Este número identifica el artefacto de la aplicación; no representa la versión de Spring Boot ni de las dependencias.
 
 ## Codigo y dependencias directas
 

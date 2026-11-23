@@ -93,6 +93,12 @@ class ClassifierTest {
                 assertTrue(result.address().equals("Manuel Montt"));
         }
 
+            @Test
+            void extractsAccentedStreetAndHouseNumberFromTranscript() {
+                assertEquals("Eliodoro Yáñez #1630", Classifier.extractAddress(
+                        "Hay un choque en Eliodoro Yáñez 1630, Providencia. Hay personas lesionadas."));
+            }
+
         @Test
         void classifiesCommonAccidentAndMedicalEmergencyVariants() {
             assertEquals("ROJA", Classifier.classifyCall("Dos autos chocaron.").priority());

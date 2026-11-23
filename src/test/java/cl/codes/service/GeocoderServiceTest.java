@@ -34,14 +34,19 @@ class GeocoderServiceTest {
             lastRequest.set(exchange.getRequestURI());
             String text = queryParameters(exchange.getRequestURI()).getOrDefault("text", "");
             boolean dehesa = text.contains("Dehesa");
+            boolean eliodoroYanez = text.toLowerCase(java.util.Locale.ROOT).contains("eliodoro");
             boolean hospitalMismatch = text.toLowerCase(java.util.Locale.ROOT).contains("barros");
-            String formatted = hospitalMismatch
+            String formatted = eliodoroYanez
+                    ? "Eliodoro Yáñez 1630, Providencia, Santiago, Chile"
+                    : hospitalMismatch
                     ? "Hospital Traumatológico, San Pablo, Santiago, Chile"
                     : dehesa
                         ? "Avenida La Dehesa, Lo Barnechea, Santiago, Chile"
                         : "Avenida Manuel Montt, Providencia, Santiago, Chile";
             String latitude = outsideCoverage.get() ? "-34.42" : "-33.42";
-            String response = "{\"results\":[{\"lat\":" + latitude + ",\"lon\":-70.61,"
+            String response = text.contains("#")
+                    ? "{\"results\":[]}"
+                    : "{\"results\":[{\"lat\":" + latitude + ",\"lon\":-70.61,"
                     + "\"formatted\":\"" + formatted + "\",\"result_type\":\""
                     + (hospitalMismatch ? "amenity" : "street") + "\","
                     + "\"city\":\"" + (dehesa ? "Lo Barnechea" : "Providencia") + "\"}]}";
@@ -86,8 +91,25 @@ class GeocoderServiceTest {
         Map<String, String> parameters = queryParameters(lastRequest.get());
         assertEquals("test-key", parameters.get("apiKey"));
         assertTrue(parameters.get("text").contains("Chile"));
+        assertFalse(parameters.get("text").contains("#"));
+        assertEquals("es", parameters.get("lang"));
         assertTrue(parameters.get("filter").startsWith("circle:"));
         assertTrue(parameters.get("bias").startsWith("proximity:"));
+    }
+
+    @Test
+    void geocodesAHouseNumberExtractedFromAChileanCallTranscript() {
+        String address = cl.codes.classifier.Classifier.extractAddress(
+                "Hay un choque en Eliodoro Yáñez 1630, Providencia. Hay personas lesionadas.");
+        assertEquals("Eliodoro Yáñez #1630", address);
+
+        GeocoderService.Coordinates result = service().geocode(address);
+
+        assertTrue(result.isPresent());
+        assertEquals("Eliodoro Yáñez 1630, Providencia, Santiago, Chile", result.formattedAddress());
+        Map<String, String> parameters = queryParameters(lastRequest.get());
+        assertEquals("Eliodoro Yáñez 1630, Chile", parameters.get("text"));
+        assertEquals("es", parameters.get("lang"));
     }
 
     @Test

@@ -243,7 +243,7 @@ public class GeocoderService {
             StringBuilder url = new StringBuilder(geoapifyBaseUrl)
                     .append("?text=").append(URLEncoder.encode(text, StandardCharsets.UTF_8))
                     .append("&apiKey=").append(URLEncoder.encode(geoapifyApiKey, StandardCharsets.UTF_8))
-                    .append("&format=json&limit=10");
+                    .append("&format=json&limit=10&lang=es");
             if (restrictToCoverage) {
                 long radiusMeters = Math.max(1000L, Math.round(radiusKm * 1000));
                 String circle = "circle:" + centerLng + "," + centerLat + "," + radiusMeters;
@@ -478,6 +478,7 @@ public class GeocoderService {
     private String normalizeQuery(String text) {
         String t = text.strip();
         return t.replaceAll("(?i)\\b(esquina con|con|a la altura de)\\b", " ")
+                .replaceAll("#\\s*(\\d+)", " $1")
                 .replaceAll("\\s+", " ").trim();
     }
 

@@ -419,10 +419,10 @@ public final class Classifier {
     );
 
     // Respaldo cuando el ASR omite la palabra "calle/avenida/..." (muy común):
-    // nombre propio (una o más palabras con mayúscula, o cualquier palabra si
-    // viene precedido de "en/por") seguido directamente de un número de casa.
+    // nombre propio (una o más palabras con mayúscula) después de "en/por",
+    // al inicio de una oración, o seguido directamente de un número de casa.
     private static final Pattern NAME_NUMBER_PATTERN = Pattern.compile(
-            "(?i)(?:\\b(?:en|por)\\s+)?"
+            "(?i)(?:\\b(?:en|por)\\s+|(?:^|[,.!?;:]\\s+))"
                     + "([A-ZÁÉÍÓÚÑ][\\wáéíóúñ]*(?:\\s+[A-ZÁÉÍÓÚÑ0-9][\\wáéíóúñ]*){0,3})"
                     + "\\s+(?:n[uú]mero\\s+|#\\s*)?(\\d{1,5})\\b"
     );
