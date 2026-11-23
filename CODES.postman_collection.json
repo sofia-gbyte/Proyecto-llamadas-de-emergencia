@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "bc4b39eb-261b-46c9-85b2-1c4f884ab6e1",
     "name": "CODES API",
-    "description": "Colección para probar la API REST local de CODES. Inicia la aplicación y usa http://127.0.0.1:8000 como baseUrl. Completa username/password con una cuenta existente. Si ALTCHA está habilitado, solicita un desafío en CAPTCHA, resuélvelo con el componente ALTCHA de la aplicación y pega el token en captchaToken antes de iniciar sesión o registrarte. Las rutas administrativas y de operadores requieren el rol correspondiente. La API está pensada para uso local; no expongas el puerto a Internet. Las pruebas comunes comprueban que no haya respuestas HTTP 5xx y que el JSON tenga formato válido. Los ejemplos usan datos de demostracion y respetan la estructura de respuesta de la API; ejecuta cada request para consultar valores actuales.",
+    "description": "Coleccion de Postman para CODES. Para ejecutar una demostracion que crea datos y valida el flujo completo sin tocar la base local real, inicia tools\\iniciar_postman_demo.ps1 y ejecuta la carpeta \"Demo ejecutable (datos aislados)\". Usa una base H2 temporal, ALTCHA desactivado solo en esa instancia y servicios externos apagados. Fuera de la demo, baseUrl y credenciales se pueden cambiar en las variables de la coleccion; las rutas administrativas requieren un usuario administrador.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -15,40 +15,20 @@
       }
     ]
   },
-  "event": [
-    {
-      "listen": "test",
-      "script": {
-        "type": "text/javascript",
-        "exec": [
-          "pm.test('La respuesta no es un error del servidor (5xx)', function () {",
-          "  pm.expect(pm.response.code).to.be.below(500);",
-          "});",
-          "",
-          "const contentType = pm.response.headers.get('Content-Type') || '';",
-          "if (/json/i.test(contentType)) {",
-          "  pm.test('El cuerpo JSON tiene formato válido', function () {",
-          "    pm.response.json();",
-          "  });",
-          "}"
-        ]
-      }
-    }
-  ],
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://127.0.0.1:8000",
+      "value": "http://127.0.0.1:8001",
       "type": "string"
     },
     {
       "key": "username",
-      "value": "",
+      "value": "postman-admin",
       "type": "string"
     },
     {
       "key": "password",
-      "value": "",
+      "value": "PostmanDemo!2026",
       "type": "string"
     },
     {
@@ -88,6 +68,505 @@
     }
   ],
   "item": [
+    {
+      "name": "Demo ejecutable (datos aislados)",
+      "description": "Ejecuta esta carpeta completa con Collection Runner despues de iniciar tools\\iniciar_postman_demo.ps1. Crea y modifica un administrador, un usuario y una llamada reales en una base temporal dentro de target/; no usa data/, no envia datos a proveedores externos y no afecta las cuentas existentes. La API debe responder en http://127.0.0.1:8001.",
+      "item": [
+        {
+          "name": "1. Salud de API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('API disponible', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('ok');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/health"
+          },
+          "auth": {
+            "type": "noauth"
+          }
+        },
+        {
+          "name": "2. Configuracion de prueba",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Servicios externos deshabilitados en el entorno de demo', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const data = pm.response.json();",
+                  "  pm.expect(data.externalServicesEnabled).to.eql(false);",
+                  "  pm.expect(data).to.have.property('mapConfigured');",
+                  "  pm.expect(data).to.have.property('routingConfigured');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/public-config"
+          },
+          "auth": {
+            "type": "noauth"
+          }
+        },
+        {
+          "name": "3. CAPTCHA desactivado solo para la demo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login de demo no requiere un desafio externo', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().enabled).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/auth/captcha-config"
+          },
+          "auth": {
+            "type": "noauth"
+          }
+        },
+        {
+          "name": "4. Login administrador aislado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login de administrador exitoso', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const data = pm.response.json();",
+                  "  pm.expect(data.token).to.be.a('string').and.not.empty;",
+                  "  pm.expect(data.role).to.eql('administrator');",
+                  "  pm.collectionVariables.set('token', data.token);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\",\n  \"captchaToken\": \"{{captchaToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          },
+          "auth": {
+            "type": "noauth"
+          }
+        },
+        {
+          "name": "5. Consultar estado administrativo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Estado administrativo devuelve datos', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const data = pm.response.json();",
+                  "  pm.expect(data.usuariosTotales).to.be.at.least(1);",
+                  "  pm.expect(data).to.have.property('llamadasTotales');",
+                  "  pm.expect(data).to.have.property('ultimoAutochequeo');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/admin/status"
+          }
+        },
+        {
+          "name": "6. Crear usuario sintetico",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('demoUsername', 'postman.operator.' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('El usuario de prueba se crea realmente', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const data = pm.response.json();",
+                  "  pm.expect(data.username).to.eql(pm.collectionVariables.get('demoUsername'));",
+                  "  pm.expect(data.role).to.eql('operator');",
+                  "  pm.expect(data.id).to.be.a('number');",
+                  "  pm.collectionVariables.set('userId', data.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{demoUsername}}\",\n  \"password\": \"DemoOperator!2026\",\n  \"rol\": \"operator\",\n  \"institution\": \"bomberos\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/users",
+            "description": "Crea un usuario descartable en la base aislada del entorno de demo."
+          }
+        },
+        {
+          "name": "7. Leer usuario recien creado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Se recupera el usuario guardado', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const data = pm.response.json();",
+                  "  pm.expect(data.id).to.eql(Number(pm.collectionVariables.get('userId')));",
+                  "  pm.expect(data.username).to.eql(pm.collectionVariables.get('demoUsername'));",
+                  "  pm.expect(data.institution).to.eql('bomberos');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/users/{{userId}}"
+          }
+        },
+        {
+          "name": "8. Crear llamada sintetica en la API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Se guarda y clasifica la llamada', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const data = pm.response.json();",
+                  "  pm.expect(data.id).to.be.a('number');",
+                  "  pm.expect(data.transcription.toLowerCase()).to.include('incendio');",
+                  "  pm.expect(data.priority).to.be.oneOf(['URGENTE', 'ROJA', 'MEDIA', 'VERDE']);",
+                  "  pm.expect(data.incidentCategories).to.be.an('array').that.is.not.empty;",
+                  "  pm.collectionVariables.set('callId', data.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "datos",
+                  "value": "{\"transcription\":\"Incendio estructural en una vivienda; una persona atrapada solicita rescate.\",\"latitudOperador\":-33.4489,\"longitudOperador\":-70.6693}",
+                  "contentType": "application/json",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/api/llamadas/live",
+            "description": "Envia transcripcion sintetica sin audio a la API; guarda la llamada en H2 y guarda el ID para los siguientes pasos."
+          }
+        },
+        {
+          "name": "9. Leer llamada guardada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('El detalle coincide con la llamada recien creada', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const data = pm.response.json();",
+                  "  pm.expect(data.id).to.eql(Number(pm.collectionVariables.get('callId')));",
+                  "  pm.expect(data.scores).to.have.property('urgente');",
+                  "  pm.expect(data.institutionRecommendations).to.be.an('array');",
+                  "  pm.expect(data.informationUpdates).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/llamadas/{{callId}}"
+          }
+        },
+        {
+          "name": "10. Asignar llamada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('La llamada queda asignada al administrador de demo', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().message).to.include(String(pm.collectionVariables.get('callId')));",
+                  "  pm.expect(pm.response.json().message).to.include('postman-admin');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/llamadas/{{callId}}/assign"
+          }
+        },
+        {
+          "name": "11. Agregar actualizacion operativa",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('demoUpdateId', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('La actualizacion queda guardada en la llamada', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const data = pm.response.json();",
+                  "  pm.expect(data.informationUpdates).to.be.an('array').that.is.not.empty;",
+                  "  pm.expect(data.informationUpdates[0].information).to.include('unidad');",
+                  "  pm.expect(data.informationUpdates[0].createdBy).to.eql('postman-admin');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"updateId\": \"{{demoUpdateId}}\",\n  \"information\": \"Unidad de prueba despachada; se coordina el rescate.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/llamadas/{{callId}}/updates"
+          }
+        },
+        {
+          "name": "12. Revisar cola en curso",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('La cola muestra la llamada asignada', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const callId = Number(pm.collectionVariables.get('callId'));",
+                  "  const data = pm.response.json();",
+                  "  const call = data.find(item => item.id === callId);",
+                  "  pm.expect(call, 'La llamada creada debe aparecer en curso').to.exist;",
+                  "  pm.expect(call.assigned).to.eql(true);",
+                  "  pm.expect(call.informationUpdates).to.be.an('array').that.is.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/llamadas/in-progress"
+          }
+        },
+        {
+          "name": "13. Revisar metricas guardadas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Las metricas reflejan la llamada creada', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const data = pm.response.json();",
+                  "  pm.expect(data.totalCalls).to.be.at.least(1);",
+                  "  pm.expect(data.enProgreso).to.be.at.least(1);",
+                  "  pm.expect(data).to.have.property('urgentesActivas');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/metrics"
+          }
+        },
+        {
+          "name": "14. Cerrar llamada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('La llamada se cierra', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().message).to.include(String(pm.collectionVariables.get('callId')));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Prueba de flujo completada en la base sintetica.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/llamadas/{{callId}}/close"
+          }
+        },
+        {
+          "name": "15. Verificar historial cerrado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('El cierre persiste en el historial', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const callId = Number(pm.collectionVariables.get('callId'));",
+                  "  const call = pm.response.json().find(item => item.id === callId);",
+                  "  pm.expect(call, 'La llamada debe aparecer en el historial cerrado').to.exist;",
+                  "  pm.expect(call.closureDate).to.be.a('string').and.not.empty;",
+                  "  pm.expect(call.closureComment).to.include('Prueba de flujo');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/llamadas/closed?limit=50"
+          }
+        },
+        {
+          "name": "16. Eliminar usuario sintetico",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Se limpia el usuario descartable', function () {",
+                  "  pm.response.to.have.status(204);",
+                  "  pm.expect(pm.response.text()).to.eql('');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/users/{{userId}}",
+            "description": "Elimina ?nicamente el usuario creado en este flujo de demo. La llamada de prueba queda en el historial aislado."
+          }
+        }
+      ]
+    },
     {
       "name": "Público y configuración",
       "item": [
